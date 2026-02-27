@@ -1,0 +1,20 @@
+# Database
+apthunt.db
+apthunt.db-wal
+apthunt.db-shm
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Environment
+.env
+venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store

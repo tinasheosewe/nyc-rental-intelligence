@@ -63,7 +63,7 @@ def build_scorers(
         "schools": lambda: SchoolsScorer(store, cache),
         "rent_stabilized": lambda: RentStabilizedScorer(store, cache),
         "management": lambda: ManagementScorer(store, cache),
-        "amenity": lambda: AmenityScorer(cache),
+        "amenity": lambda: AmenityScorer(store, cache),
     }
 
     if only:

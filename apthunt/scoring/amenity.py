@@ -1,7 +1,7 @@
 """
 AmenityScorer — scores listings by nearby everyday amenities.
 
-Uses the OpenStreetMap Overpass API (free, no key required) to count
+Uses pre-downloaded OpenStreetMap amenity data (via DataStore) to count
 grocery stores, pharmacies, gyms, laundromats, cafés, and restaurants
 within a walkable radius.
 
@@ -21,34 +21,14 @@ Output columns:
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
-import urllib.request
-import urllib.parse
-import time
 
 from apthunt.data.block_cache import BlockCache
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 
 log = logging.getLogger(__name__)
-
-_OVERPASS_URL = "https://overpass-api.de/api/interpreter"
-
-# Template: {lat}, {lon}, {radius_m}
-_OVERPASS_QUERY = """
-[out:json][timeout:15];
-(
-  node["shop"="supermarket"](around:{radius},{lat},{lon});
-  node["shop"="convenience"](around:{radius},{lat},{lon});
-  node["amenity"="pharmacy"](around:{radius},{lat},{lon});
-  node["leisure"="fitness_centre"](around:{radius},{lat},{lon});
-  node["shop"="laundry"](around:{radius},{lat},{lon});
-  node["amenity"="cafe"](around:{radius},{lat},{lon});
-  node["amenity"="restaurant"](around:{radius},{lat},{lon});
-);
-out tags;
-"""
 
 # Category weights (essentials > lifestyle)
 _WEIGHTS = {
@@ -59,11 +39,15 @@ _WEIGHTS = {
     "dining": 1,
 }
 
+_CATEGORIES = list(_WEIGHTS.keys())
+
 
 class AmenityScorer(Scorer):
 
-    def __init__(self, cache: BlockCache):
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
+        self._store.ensure_downloaded("amenities", quiet=True)
 
     @property
     def name(self) -> str:
@@ -91,14 +75,14 @@ class AmenityScorer(Scorer):
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in geohash_to_latlon.items():
-            cached = self._cache.get(gh, "amenity")
+            cached = self._cache.get(gh, "amenity_v2")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
 
-            stats = self._query_overpass(lat, lon, RADIUS_M)
+            stats = self._count_nearby(lat, lon, RADIUS_M)
             block_stats[gh] = stats
-            self._cache.put(gh, "amenity", stats)
+            self._cache.put(gh, "amenity_v2", stats)
 
         # Percentile-rank by weighted total
         raw = [block_stats[lst["geohash"]]["amenity_total"] for lst in listings]
@@ -125,60 +109,28 @@ class AmenityScorer(Scorer):
 
     # ------------------------------------------------------------------
 
-    def _query_overpass(
-        self, lat: float, lon: float, radius_m: int
-    ) -> dict:
-        """Query Overpass API for amenities near (lat, lon)."""
-        query = _OVERPASS_QUERY.format(lat=lat, lon=lon, radius=radius_m)
-        data = urllib.parse.urlencode({"data": query}).encode()
-
-        grocery, pharmacy, gym, laundry, dining = 0, 0, 0, 0, 0
-
-        try:
-            req = urllib.request.Request(
-                _OVERPASS_URL, data=data,
-                headers={"User-Agent": "AptHunt/1.0"},
-            )
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                body = json.loads(resp.read())
-
-            for el in body.get("elements", []):
-                tags = el.get("tags", {})
-                shop = tags.get("shop", "")
-                amenity = tags.get("amenity", "")
-                leisure = tags.get("leisure", "")
-
-                if shop in ("supermarket", "convenience"):
-                    grocery += 1
-                elif amenity == "pharmacy":
-                    pharmacy += 1
-                elif leisure == "fitness_centre":
-                    gym += 1
-                elif shop == "laundry":
-                    laundry += 1
-                elif amenity in ("cafe", "restaurant"):
-                    dining += 1
-
-            # Courtesy rate-limit: Overpass asks for ≤ 1 req/sec
-            time.sleep(1.0)
-
-        except Exception as exc:
-            log.warning("Overpass query failed for (%.4f, %.4f): %s", lat, lon, exc)
-
-        weighted = (
-            grocery * _WEIGHTS["grocery"]
-            + pharmacy * _WEIGHTS["pharmacy"]
-            + gym * _WEIGHTS["gym"]
-            + laundry * _WEIGHTS["laundry"]
-            + dining * _WEIGHTS["dining"]
+    def _count_nearby(self, lat: float, lon: float, radius_m: int) -> dict:
+        """Count amenities within radius_m of (lat, lon) using local data."""
+        nearby = self._store.query_circle(
+            "amenities", lat, lon, radius_m,
+            select="category",
+            lat_col="lat", lon_col="lon",
         )
 
+        counts = {cat: 0 for cat in _CATEGORIES}
+        for row in nearby:
+            cat = row.get("category", "")
+            if cat in counts:
+                counts[cat] += 1
+
+        weighted = sum(counts[cat] * _WEIGHTS[cat] for cat in _CATEGORIES)
+
         return {
-            "amenity_grocery": grocery,
-            "amenity_pharmacy": pharmacy,
-            "amenity_gym": gym,
-            "amenity_laundry": laundry,
-            "amenity_dining": dining,
+            "amenity_grocery": counts["grocery"],
+            "amenity_pharmacy": counts["pharmacy"],
+            "amenity_gym": counts["gym"],
+            "amenity_laundry": counts["laundry"],
+            "amenity_dining": counts["dining"],
             "amenity_total": weighted,
         }
 

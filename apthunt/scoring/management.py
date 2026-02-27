@@ -149,7 +149,11 @@ class ManagementScorer(Scorer):
         for row in bbls:
             bbl = row.get("bbl")
             if bbl:
-                bbl_set.add(str(bbl))
+                # Normalize: PLUTO stores "1234567890.00000000", HPD uses "1234567890"
+                try:
+                    bbl_set.add(str(int(float(bbl))))
+                except (ValueError, TypeError):
+                    bbl_set.add(str(bbl))
             try:
                 total_units += int(float(row.get("unitsres") or 0))
             except (ValueError, TypeError):

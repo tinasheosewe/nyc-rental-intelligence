@@ -37,18 +37,22 @@ SCORE_COLUMNS = [
     "parks_score",
     "schools_score",
     "rent_stabilized_score",
+    "management_score",
+    "amenity_score",
 ]
 
 COMPONENT_COLUMNS = {
     "deal_score": ["comp_median", "comp_set_size", "comp_scope"],
     "transit_score": ["transit_station_count", "transit_routes_served", "transit_nearest_m"],
     "flood_risk_score": ["flood_firm07", "flood_pfirm15"],
-    "crime_score": ["crime_felony_count", "crime_misdemeanor_count", "crime_violation_count", "crime_weighted_total"],
-    "noise_score": ["noise_complaint_count", "noise_rodent_count", "noise_heat_count"],
+    "crime_score": ["crime_felony_count", "crime_misdemeanor_count", "crime_violation_count", "crime_weighted_total", "crime_trend_ratio", "crime_trend_direction"],
+    "noise_score": ["noise_complaint_count", "noise_rodent_count", "noise_heat_count", "noise_trend_ratio", "noise_trend_direction"],
     "building_violations_score": ["building_violation_count", "building_unitsres", "building_violations_per_unit"],
     "parks_score": ["parks_distance_m", "parks_name"],
     "schools_score": ["school_name", "school_rating"],
     "rent_stabilized_score": ["rent_stabilized", "building_year"],
+    "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_complaints_per_unit"],
+    "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
 }
 
 # Pretty labels
@@ -62,6 +66,8 @@ SCORE_LABELS = {
     "parks_score": "Parks/Green Space",
     "schools_score": "School Quality",
     "rent_stabilized_score": "Rent Stabilized",
+    "management_score": "Management",
+    "amenity_score": "Amenities",
 }
 
 # Methodology descriptions — shown as help text on the Score Analysis tab

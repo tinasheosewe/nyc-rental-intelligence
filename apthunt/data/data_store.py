@@ -32,6 +32,8 @@ import logging
 import os
 import sqlite3
 import time
+import urllib.request
+import urllib.parse
 from dataclasses import dataclass, field
 from datetime import datetime, timezone, timedelta
 from typing import Optional
@@ -50,7 +52,7 @@ DOMAIN = "data.cityofnewyork.us"
 class DatasetDef:
     """Specification for a single downloadable dataset."""
     name: str                          # table will be ds_{name}
-    soda_id: str                       # NYC Open Data 4×4 identifier
+    soda_id: str                       # NYC Open Data 4×4 identifier (or "" for non-SODA)
     select: str                        # SoQL $select — columns to keep
     refresh_days: int                  # how often to re-download
     where: str = ""                    # optional SoQL $where filter
@@ -58,6 +60,7 @@ class DatasetDef:
     index_columns: list[str] = field(default_factory=list)  # extra cols to index
     page_size: int = 50_000           # rows per SODA request
     post_process: str = ""            # optional post-processing hook name
+    source: str = "soda"              # "soda" or "overpass"
 
 
 # All datasets we bulk-download
@@ -135,6 +138,15 @@ DATASETS: dict[str, DatasetDef] = {
         where="received_date > '{TWELVE_MONTHS_AGO}'",
         index_columns=["bbl"],
     ),
+
+    "amenities": DatasetDef(
+        name="amenities",
+        soda_id="",                # not a SODA dataset
+        select="",
+        refresh_days=90,          # quarterly — OSM changes slowly
+        geo_columns=["lat", "lon"],
+        source="overpass",
+    ),
 }
 
 
@@ -211,21 +223,24 @@ class DataStore:
         staging = f"_staging_{name}"
         t0 = time.time()
 
-        where = ddef.where
-        if "{TWELVE_MONTHS_AGO}" in where:
-            cutoff = (datetime.now() - timedelta(days=365)).strftime(
-                "%Y-%m-%dT00:00:00"
-            )
-            where = where.replace("{TWELVE_MONTHS_AGO}", cutoff)
+        if ddef.source == "overpass":
+            total = self._overpass_download(staging, quiet=quiet)
+        else:
+            where = ddef.where
+            if "{TWELVE_MONTHS_AGO}" in where:
+                cutoff = (datetime.now() - timedelta(days=365)).strftime(
+                    "%Y-%m-%dT00:00:00"
+                )
+                where = where.replace("{TWELVE_MONTHS_AGO}", cutoff)
 
-        total = self._paginated_download(
-            ddef.soda_id,
-            staging,
-            select=ddef.select,
-            where=where,
-            page_size=ddef.page_size,
-            quiet=quiet,
-        )
+            total = self._paginated_download(
+                ddef.soda_id,
+                staging,
+                select=ddef.select,
+                where=where,
+                page_size=ddef.page_size,
+                quiet=quiet,
+            )
         elapsed = time.time() - t0
 
         if total == 0:
@@ -358,10 +373,18 @@ class DataStore:
         lat_delta = radius_m / 111_320
         lon_delta = radius_m / 85_000
 
+        # Ensure geo columns are always included in SELECT for Haversine
+        bbox_select = select
+        if select != "*":
+            sel_cols = {c.strip() for c in select.split(",")}
+            missing = {lat_col, lon_col} - sel_cols
+            if missing:
+                bbox_select = select + ", " + ", ".join(missing)
+
         # Pre-filter: bbox
         candidates = self.query_bbox(
             dataset, lat, lon, delta=max(lat_delta, lon_delta),
-            select=select, lat_col=lat_col, lon_col=lon_col,
+            select=bbox_select, lat_col=lat_col, lon_col=lon_col,
         )
 
         # Post-filter: exact Haversine
@@ -419,7 +442,7 @@ class DataStore:
         quiet: bool,
     ) -> int:
         """Download via paginated SODA queries into a staging table."""
-        client = Socrata(DOMAIN, self._app_token, timeout=60)
+        client = Socrata(DOMAIN, self._app_token, timeout=120)
 
         # Drop staging table if it exists from a previous failed run
         self._conn.execute(f"DROP TABLE IF EXISTS [{table}]")
@@ -428,6 +451,7 @@ class DataStore:
         total = 0
         offset = 0
         table_created = False
+        max_retries = 3
 
         try:
             while True:
@@ -440,13 +464,31 @@ class DataStore:
                 if where:
                     kwargs["where"] = where
 
-                rows = client.get(soda_id, **kwargs)
+                # Retry with exponential back-off on transient failures
+                for attempt in range(1, max_retries + 1):
+                    try:
+                        rows = client.get(soda_id, **kwargs)
+                        break
+                    except Exception as exc:
+                        if attempt == max_retries:
+                            raise
+                        wait = 5 * attempt
+                        log.warning(
+                            "  SODA request failed (attempt %d/%d): %s — retrying in %ds",
+                            attempt, max_retries, exc, wait,
+                        )
+                        time.sleep(wait)
+
                 if not rows:
                     break
 
                 if not table_created:
-                    # Create table from first batch's keys
-                    columns = list(rows[0].keys())
+                    # Derive columns from the select clause so we don't miss
+                    # any columns that happen to be all-NULL in the first batch.
+                    if select and select != "*":
+                        columns = [c.strip() for c in select.split(",")]
+                    else:
+                        columns = list(rows[0].keys())
                     col_defs = ", ".join(f"[{c}] TEXT" for c in columns)
                     self._conn.execute(
                         f"CREATE TABLE [{table}] ({col_defs})"
@@ -454,7 +496,7 @@ class DataStore:
                     table_created = True
 
                 # Bulk insert — serialize any dict/list values to JSON
-                columns = list(rows[0].keys())
+                # Use the canonical column list from table creation
                 placeholders = ", ".join("?" for _ in columns)
                 col_names = ", ".join(f"[{c}]" for c in columns)
 
@@ -486,6 +528,80 @@ class DataStore:
             client.close()
 
         return total
+
+    # Overpass (OpenStreetMap) bulk download
+
+    _OVERPASS_URL = "https://overpass-api.de/api/interpreter"
+    _OVERPASS_QUERY = """
+[out:json][timeout:120];
+(
+  node["shop"="supermarket"](40.49,-74.26,40.92,-73.70);
+  node["shop"="convenience"](40.49,-74.26,40.92,-73.70);
+  node["amenity"="pharmacy"](40.49,-74.26,40.92,-73.70);
+  node["leisure"="fitness_centre"](40.49,-74.26,40.92,-73.70);
+  node["shop"="laundry"](40.49,-74.26,40.92,-73.70);
+  node["amenity"="cafe"](40.49,-74.26,40.92,-73.70);
+  node["amenity"="restaurant"](40.49,-74.26,40.92,-73.70);
+);
+out body;
+"""
+
+    def _overpass_download(self, table: str, *, quiet: bool) -> int:
+        """Download all NYC amenity nodes from Overpass into *table*."""
+        self._conn.execute(f"DROP TABLE IF EXISTS [{table}]")
+        self._conn.execute(
+            f"CREATE TABLE [{table}] "
+            "(osm_id INTEGER, category TEXT, name TEXT, lat REAL, lon REAL)"
+        )
+        self._conn.commit()
+
+        data = urllib.parse.urlencode({"data": self._OVERPASS_QUERY}).encode()
+        req = urllib.request.Request(
+            self._OVERPASS_URL, data=data,
+            headers={"User-Agent": "AptHunt/1.0"},
+        )
+        if not quiet:
+            log.info("amenities: requesting Overpass API (all NYC) ...")
+        with urllib.request.urlopen(req, timeout=120) as resp:
+            body = json.loads(resp.read())
+
+        rows: list[tuple] = []
+        for el in body.get("elements", []):
+            tags = el.get("tags", {})
+            shop = tags.get("shop", "")
+            amenity = tags.get("amenity", "")
+            leisure = tags.get("leisure", "")
+
+            if shop in ("supermarket", "convenience"):
+                cat = "grocery"
+            elif amenity == "pharmacy":
+                cat = "pharmacy"
+            elif leisure == "fitness_centre":
+                cat = "gym"
+            elif shop == "laundry":
+                cat = "laundry"
+            elif amenity in ("cafe", "restaurant"):
+                cat = "dining"
+            else:
+                continue  # should not happen given the query, but be safe
+
+            rows.append((
+                el.get("id"),
+                cat,
+                tags.get("name", ""),
+                el.get("lat"),
+                el.get("lon"),
+            ))
+
+        self._conn.executemany(
+            f"INSERT INTO [{table}] (osm_id, category, name, lat, lon) "
+            "VALUES (?, ?, ?, ?, ?)",
+            rows,
+        )
+        self._conn.commit()
+        if not quiet:
+            log.info("amenities: %s nodes downloaded", f"{len(rows):,}")
+        return len(rows)
 
     def _build_indexes(self, table: str, geo_columns: list[str]):
         """Create indexes on geo columns for fast bbox queries."""
