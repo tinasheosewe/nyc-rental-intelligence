@@ -69,12 +69,14 @@ SCORE_DESCRIPTIONS = {
     "deal_score": "Z-score vs comp-set median. 50 = average deal; higher = below-market.",
     "transit_score": "Subway stations & routes within 800 m. Linear: 12 pts/station + 3 pts/route, max 100.",
     "flood_risk_score": "Binary: 100 = not in a FEMA flood zone, 0 = flood zone (FIRM07/PFIRM15).",
-    "crime_score": "NYPD complaints within 400 m (12 mo), severity-weighted. 50 = median; 100 = zero crime.",
-    "noise_score": "311 quality-of-life complaints within 300 m (12 mo). 50 = median; 100 = zero complaints.",
+    "crime_score": "NYPD complaints within 400 m (12 mo), severity-weighted. 50 = median; 100 = zero crime. Includes trend.",
+    "noise_score": "311 quality-of-life complaints within 300 m (12 mo). 50 = median; 100 = zero complaints. Includes trend.",
     "building_violations_score": "Active DOB violations per unit, percentile-ranked. 50 = median; higher = fewer violations.",
-    "parks_score": "Distance to nearest park border. Linear: 100 at 0 m, 0 at ≥ 1500 m.",
+    "parks_score": "Distance to nearest park border. Linear: 100 at 0 m, 0 at \u2265 1500 m.",
     "schools_score": "Best nearby HS quality (attendance + safety), percentile-ranked. 50 = median.",
     "rent_stabilized_score": "Binary flag: likely rent-stabilized if built pre-1974 with 6+ units (PLUTO heuristic).",
+    "management_score": "Owner/management company HPD complaint rate across portfolio, percentile-ranked.",
+    "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
 }
 
 # Scoring method type — controls how scores are displayed and colored
@@ -88,6 +90,8 @@ SCORE_METHODS = {
     "parks_score": "linear",
     "schools_score": "percentile",
     "rent_stabilized_score": "binary",
+    "management_score": "percentile",
+    "amenity_score": "percentile",
 }
 
 # Human-readable component labels
@@ -104,9 +108,13 @@ COMPONENT_LABELS = {
     "crime_misdemeanor_count": "Misdemeanors (12 mo)",
     "crime_violation_count": "Violations (12 mo)",
     "crime_weighted_total": "Weighted total",
+    "crime_trend_ratio": "Crime trend ratio",
+    "crime_trend_direction": "Crime trend",
     "noise_complaint_count": "Noise complaints",
     "noise_rodent_count": "Rodent complaints",
     "noise_heat_count": "Heat/hot-water complaints",
+    "noise_trend_ratio": "Noise trend ratio",
+    "noise_trend_direction": "Noise trend",
     "building_violation_count": "Active violations",
     "building_unitsres": "Residential units",
     "building_violations_per_unit": "Violations per unit",
@@ -116,6 +124,17 @@ COMPONENT_LABELS = {
     "school_rating": "School quality composite",
     "rent_stabilized": "Likely rent-stabilized",
     "building_year": "Year built",
+    "mgmt_owner": "Owner / management co.",
+    "mgmt_owner_buildings": "Owner portfolio (buildings)",
+    "mgmt_owner_units": "Owner portfolio (units)",
+    "mgmt_complaints": "HPD complaints (12 mo)",
+    "mgmt_complaints_per_unit": "Complaints per unit",
+    "amenity_grocery": "Grocery / convenience",
+    "amenity_pharmacy": "Pharmacies",
+    "amenity_gym": "Gyms / fitness",
+    "amenity_laundry": "Laundromats",
+    "amenity_dining": "Restaurants & caf\u00e9s",
+    "amenity_total": "Weighted amenity total",
 }
 
 

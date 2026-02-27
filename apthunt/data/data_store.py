@@ -55,6 +55,7 @@ class DatasetDef:
     refresh_days: int                  # how often to re-download
     where: str = ""                    # optional SoQL $where filter
     geo_columns: list[str] = field(default_factory=list)  # lat/lon cols to index
+    index_columns: list[str] = field(default_factory=list)  # extra cols to index
     page_size: int = 50_000           # rows per SODA request
     post_process: str = ""            # optional post-processing hook name
 
@@ -84,9 +85,10 @@ DATASETS: dict[str, DatasetDef] = {
         name="pluto",
         soda_id="64uk-42ks",
         select="bbl,address,yearbuilt,numfloors,unitsres,"
-               "firm07_flag,pfirm15_flag,latitude,longitude",
+               "firm07_flag,pfirm15_flag,latitude,longitude,ownername",
         refresh_days=180,         # biannual MapPLUTO releases
         geo_columns=["latitude", "longitude"],
+        index_columns=["ownername"],
     ),
 
     # ── Incident (large, change frequently) ──────────────────────
@@ -122,6 +124,16 @@ DATASETS: dict[str, DatasetDef] = {
                "violation_type,violation_category,issue_date",
         refresh_days=30,          # monthly
         where="violation_category NOT LIKE '%Resolved%'",
+    ),
+
+    "hpd_complaints": DatasetDef(
+        name="hpd_complaints",
+        soda_id="ygpa-z7cr",
+        select="complaint_id,bbl,received_date,major_category,"
+               "minor_category,complaint_status",
+        refresh_days=7,           # weekly
+        where="received_date > '{TWELVE_MONTHS_AGO}'",
+        index_columns=["bbl"],
     ),
 }
 
@@ -233,6 +245,9 @@ class DataStore:
 
         # Build spatial indexes
         self._build_indexes(table, ddef.geo_columns)
+
+        # Build extra indexes (non-geo columns)
+        self._build_indexes(table, ddef.index_columns)
 
         # Update metadata
         now = datetime.now(timezone.utc).isoformat()
