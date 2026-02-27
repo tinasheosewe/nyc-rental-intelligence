@@ -92,11 +92,13 @@ class BuildingViolationsScorer(Scorer):
             unitsres = max(1, int(float(nearest.get("unitsres") or 0)))
 
             # 3. Parse BBL → boro / block / lot for DOB query
+            #    PLUTO BBL is 10 digits: boro(1) + block(5) + lot(4)
+            #    DOB stores lot as 5 digits, so zero-pad.
             try:
                 bbl_str = str(int(float(bbl_raw))).zfill(10)
                 boro = bbl_str[0]
                 block = bbl_str[1:6]
-                lot = bbl_str[6:10]
+                lot = bbl_str[6:10].zfill(5)
             except (ValueError, IndexError):
                 stats = {
                     "building_violation_count": 0,
@@ -194,10 +196,13 @@ class BuildingViolationsScorer(Scorer):
         block: str,
         lot: str,
     ) -> list[dict]:
-        """Fetch active DOB violations for a given BBL."""
+        """Fetch unresolved DOB violations for a given BBL.
+
+        Excludes resolved violations (category contains 'Resolved').
+        """
         where = (
             f"boro='{boro}' AND block='{block}' AND lot='{lot}' "
-            f"AND violation_category LIKE '%ACTIVE%'"
+            f"AND violation_category NOT LIKE '%Resolved%'"
         )
         return self._soda.query(
             "dob_violations",

@@ -5,12 +5,10 @@ Uses NYC Parks Properties dataset (MultiPolygon geometries).
 Computes minimum distance from listing to any vertex on the nearest
 park polygon border — not the centroid.
 
-Scoring (metres to nearest park border):
-    ≤ 100 m  → 100
-    ≤ 300 m  →  80
-    ≤ 600 m  →  60
-    ≤ 1000 m →  40
-    > 1000 m →  20
+Scoring (continuous, based on distance):
+    0 m     → 100
+    1500 m+ →   0
+    Linear interpolation in between.
 """
 
 from __future__ import annotations
@@ -69,16 +67,8 @@ class ParksScorer(Scorer):
             dist = stats["parks_distance_m"]
             name = stats["parks_name"]
 
-            if dist <= 100:
-                sc = 100.0
-            elif dist <= 300:
-                sc = 80.0
-            elif dist <= 600:
-                sc = 60.0
-            elif dist <= 1000:
-                sc = 40.0
-            else:
-                sc = 20.0
+            # Continuous linear: 100 at 0 m, 0 at ≥ 1500 m
+            sc = round(max(0.0, 100.0 * (1.0 - dist / 1500.0)), 1)
 
             results.append(
                 ScorerResult(
