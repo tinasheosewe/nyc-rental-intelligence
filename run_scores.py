@@ -24,9 +24,13 @@ from apthunt.scoring.transit import TransitScorer
 from apthunt.scoring.flood_risk import FloodRiskScorer
 from apthunt.scoring.crime import CrimeScorer
 from apthunt.scoring.noise import NoiseScorer
+
 from apthunt.data.soda_client import SodaClient
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.transit_data import TransitData
+from apthunt.scoring.building_violations import BuildingViolationsScorer
+from apthunt.scoring.parks import ParksScorer
+from apthunt.scoring.schools import SchoolsScorer
 
 
 # Path to bundled GTFS stops.txt (download from MTA and place here)
@@ -46,12 +50,16 @@ def build_scorers(
     cache = BlockCache(conn)
     transit = TransitData(STOPS_PATH)
 
+
     all_scorers = {
         "deal": lambda: DealScorer(),
         "transit": lambda: TransitScorer(transit, cache),
         "flood_risk": lambda: FloodRiskScorer(soda, cache),
         "crime": lambda: CrimeScorer(soda, cache),
         "noise": lambda: NoiseScorer(soda, cache),
+        "building_violations": lambda: BuildingViolationsScorer(soda, cache),
+        "parks": lambda: ParksScorer(soda, cache),
+        "schools": lambda: SchoolsScorer(soda, cache),
     }
 
     if only:
@@ -94,12 +102,14 @@ def main():
 
     if args.list:
         print("Available scorers:")
-        print("  deal        - Comp-set deal scoring (no external API)")
-        print("  transit     - Subway station proximity (requires data/stops.txt)")
-        print("  flood_risk  - FEMA flood zone flags (PLUTO via SODA API)")
-        print("\nFuture (stub):")
-        print("  crime       - NYPD complaint density")
-        print("  noise       - 311 quality-of-life complaints")
+        print("  deal                 - Comp-set deal scoring (no external API)")
+        print("  transit              - Subway station proximity (requires data/stops.txt)")
+        print("  flood_risk           - FEMA flood zone flags (PLUTO via SODA API)")
+        print("  crime                - NYPD complaint density")
+        print("  noise                - 311 quality-of-life complaints")
+        print("  building_violations  - DOB building violations per unit")
+        print("  parks                - Proximity to parks/green space")
+        print("  schools              - Public school quality")
         return
 
     conn = get_connection(args.db)

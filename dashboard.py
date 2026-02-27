@@ -33,6 +33,9 @@ SCORE_COLUMNS = [
     "flood_risk_score",
     "crime_score",
     "noise_score",
+    "building_violations_score",
+    "parks_score",
+    "schools_score",
 ]
 
 COMPONENT_COLUMNS = {
@@ -41,6 +44,9 @@ COMPONENT_COLUMNS = {
     "flood_risk_score": ["flood_firm07", "flood_pfirm15"],
     "crime_score": ["crime_felony_count", "crime_misdemeanor_count", "crime_violation_count", "crime_weighted_total"],
     "noise_score": ["noise_complaint_count", "noise_rodent_count", "noise_heat_count"],
+    "building_violations_score": ["building_violation_count", "building_unitsres", "building_violations_per_unit"],
+    "parks_score": ["parks_distance_m", "parks_name"],
+    "schools_score": ["school_name", "school_rating"],
 }
 
 # Pretty labels
@@ -50,6 +56,9 @@ SCORE_LABELS = {
     "flood_risk_score": "Flood Risk",
     "crime_score": "Crime",
     "noise_score": "Noise",
+    "building_violations_score": "Building Violations",
+    "parks_score": "Parks/Green Space",
+    "schools_score": "School Quality",
 }
 
 

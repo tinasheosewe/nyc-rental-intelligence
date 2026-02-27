@@ -24,6 +24,7 @@ DATASETS = {
     "dob_violations": "3h2n-5cm9", # DOB violations
     "dob_permits": "ic3t-wcy2",    # DOB job filings/permits
     "parks": "enfh-gkve",          # NYC Parks properties
+    "schools": "97mf-9njv",        # DOE HS Directory
 }
 
 
