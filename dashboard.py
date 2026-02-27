@@ -36,6 +36,7 @@ SCORE_COLUMNS = [
     "building_violations_score",
     "parks_score",
     "schools_score",
+    "rent_stabilized_score",
 ]
 
 COMPONENT_COLUMNS = {
@@ -47,6 +48,7 @@ COMPONENT_COLUMNS = {
     "building_violations_score": ["building_violation_count", "building_unitsres", "building_violations_per_unit"],
     "parks_score": ["parks_distance_m", "parks_name"],
     "schools_score": ["school_name", "school_rating"],
+    "rent_stabilized_score": ["rent_stabilized", "building_year"],
 }
 
 # Pretty labels
@@ -59,6 +61,7 @@ SCORE_LABELS = {
     "building_violations_score": "Building Violations",
     "parks_score": "Parks/Green Space",
     "schools_score": "School Quality",
+    "rent_stabilized_score": "Rent Stabilized",
 }
 
 

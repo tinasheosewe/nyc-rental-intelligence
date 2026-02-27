@@ -31,6 +31,7 @@ from apthunt.data.transit_data import TransitData
 from apthunt.scoring.building_violations import BuildingViolationsScorer
 from apthunt.scoring.parks import ParksScorer
 from apthunt.scoring.schools import SchoolsScorer
+from apthunt.scoring.rent_stabilized import RentStabilizedScorer
 
 
 # Path to bundled GTFS stops.txt (download from MTA and place here)
@@ -60,6 +61,7 @@ def build_scorers(
         "building_violations": lambda: BuildingViolationsScorer(soda, cache),
         "parks": lambda: ParksScorer(soda, cache),
         "schools": lambda: SchoolsScorer(soda, cache),
+        "rent_stabilized": lambda: RentStabilizedScorer(soda, cache),
     }
 
     if only:

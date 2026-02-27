@@ -5,12 +5,9 @@ Uses the DOE High School Directory (97mf-9njv) via bounding-box query.
 Quality composite = average of attendance_rate and pct_stu_safe
 (both 0–1 floats).  Best school in 1.5 km wins.
 
-Scoring (quality × 100):
-    ≥ 90 → 100
-    ≥ 80 →  80
-    ≥ 70 →  60
-    ≥ 60 →  40
-    < 60 →  20
+Scoring: percentile-rank across all listings in the current universe.
+Higher quality composite → higher score.
+Listing at the median gets 50, best gets ~100, worst gets ~0.
 """
 
 from __future__ import annotations
@@ -68,27 +65,21 @@ class SchoolsScorer(Scorer):
             block_stats[gh] = stats
             self._cache.put(gh, "schools", stats)
 
-        results: list[ScorerResult] = []
+        # Collect ratings for percentile ranking
+        ratings: list[tuple[dict, float, str]] = []
         for lst in listings:
             stats = block_stats[lst["geohash"]]
-            rating = stats["school_rating"]
-            name = stats["school_name"]
+            ratings.append((lst, stats["school_rating"], stats["school_name"]))
 
-            if rating >= 90:
-                sc = 100.0
-            elif rating >= 80:
-                sc = 80.0
-            elif rating >= 70:
-                sc = 60.0
-            elif rating >= 60:
-                sc = 40.0
-            else:
-                sc = 20.0
+        # Percentile-rank: higher quality → higher score
+        scores = _percentile_scores([r for _, r, _ in ratings])
 
+        results: list[ScorerResult] = []
+        for i, (lst, rating, name) in enumerate(ratings):
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=sc,
+                    score=scores[i],
                     components={
                         "school_name": name,
                         "school_rating": rating,
@@ -142,3 +133,30 @@ class SchoolsScorer(Scorer):
                 best_name = s.get("school_name", "")
 
         return best_rating, best_name
+
+
+def _percentile_scores(values: list[float]) -> list[float]:
+    """Convert raw values to 0–100 percentile scores (higher value → higher score)."""
+    n = len(values)
+    if n == 0:
+        return []
+    if n == 1:
+        return [50.0]
+
+    indexed = sorted(enumerate(values), key=lambda t: t[1])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j < n - 1 and indexed[j + 1][1] == indexed[i][1]:
+            j += 1
+        avg_rank = (i + j) / 2.0
+        for k in range(i, j + 1):
+            ranks[indexed[k][0]] = avg_rank
+        i = j + 1
+
+    scores = [0.0] * n
+    for idx in range(n):
+        pct = ranks[idx] / (n - 1) * 100.0
+        scores[idx] = round(max(0.0, min(100.0, pct)), 1)
+    return scores

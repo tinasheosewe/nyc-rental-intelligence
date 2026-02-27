@@ -5,12 +5,9 @@ Uses PLUTO (shared cache with FloodRiskScorer) to map lat/lon → BBL,
 then queries DOB Violations for that BBL.  Normalises count by
 residential units so large buildings aren't unfairly penalised.
 
-Scoring (violations per unit):
-    0        → 100
-    ≤ 0.05   →  80
-    ≤ 0.1    →  60
-    ≤ 0.2    →  40
-    > 0.2    →  20
+Scoring: percentile-rank across all listings in the current universe.
+Fewer violations per unit → higher score.
+Listing at the median gets 50, best gets ~100, worst gets ~0.
 """
 
 from __future__ import annotations
@@ -119,32 +116,30 @@ class BuildingViolationsScorer(Scorer):
             block_stats[gh] = stats
             self._cache.put(gh, "building_violations", stats)
 
-        # Build results
-        results: list[ScorerResult] = []
+        # Collect per-unit values for percentile ranking
+        per_units: list[tuple[dict, float]] = []
         for lst in listings:
             stats = block_stats[lst["geohash"]]
             count = stats["building_violation_count"]
             unitsres = stats.get("building_unitsres", 1)
             per_unit = count / max(1, unitsres)
+            per_units.append((lst, per_unit))
 
-            if per_unit == 0:
-                sc = 100.0
-            elif per_unit <= 0.05:
-                sc = 80.0
-            elif per_unit <= 0.1:
-                sc = 60.0
-            elif per_unit <= 0.2:
-                sc = 40.0
-            else:
-                sc = 20.0
+        # Percentile-rank: fewer violations → higher score
+        scores = _percentile_scores(
+            [pu for _, pu in per_units], reverse=True,
+        )
 
+        results: list[ScorerResult] = []
+        for i, (lst, per_unit) in enumerate(per_units):
+            stats = block_stats[lst["geohash"]]
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=sc,
+                    score=scores[i],
                     components={
-                        "building_violation_count": count,
-                        "building_unitsres": unitsres,
+                        "building_violation_count": stats["building_violation_count"],
+                        "building_unitsres": stats.get("building_unitsres", 1),
                         "building_violations_per_unit": round(per_unit, 4),
                     },
                 )
@@ -209,3 +204,42 @@ class BuildingViolationsScorer(Scorer):
             where=where,
             select="isn_dob_bis_viol,violation_type,violation_category,issue_date",
         )
+
+
+def _percentile_scores(
+    values: list[float],
+    *,
+    reverse: bool = False,
+) -> list[float]:
+    """Convert raw values to 0–100 percentile scores.
+
+    Args:
+        values:  One value per listing.
+        reverse: If True, *lower* raw values get *higher* scores
+                 (appropriate for violations where fewer = better).
+    """
+    n = len(values)
+    if n == 0:
+        return []
+    if n == 1:
+        return [50.0]
+
+    indexed = sorted(enumerate(values), key=lambda t: t[1])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j < n - 1 and indexed[j + 1][1] == indexed[i][1]:
+            j += 1
+        avg_rank = (i + j) / 2.0
+        for k in range(i, j + 1):
+            ranks[indexed[k][0]] = avg_rank
+        i = j + 1
+
+    scores = [0.0] * n
+    for idx in range(n):
+        pct = ranks[idx] / (n - 1) * 100.0
+        if reverse:
+            pct = 100.0 - pct
+        scores[idx] = round(max(0.0, min(100.0, pct)), 1)
+    return scores
