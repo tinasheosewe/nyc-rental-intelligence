@@ -20,13 +20,8 @@ import sqlite3
 from haversine import haversine, Unit
 
 from apthunt.data.block_cache import BlockCache
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-
-_PLUTO_SELECT = (
-    "bbl,address,yearbuilt,numfloors,unitsres,"
-    "firm07_flag,pfirm15_flag,latitude,longitude"
-)
 
 # NYC Rent Stabilization thresholds
 _YEAR_THRESHOLD = 1974
@@ -35,8 +30,8 @@ _UNITS_THRESHOLD = 6
 
 class RentStabilizedScorer(Scorer):
 
-    def __init__(self, soda: SodaClient, cache: BlockCache):
-        self._soda = soda
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
 
     @property
@@ -54,6 +49,8 @@ class RentStabilizedScorer(Scorer):
         conn: sqlite3.Connection,
         listings: list[dict],
     ) -> list[ScorerResult]:
+        self._store.ensure_downloaded("pluto", quiet=True)
+
         gh_map: dict[str, tuple[float, float]] = {}
         for lst in listings:
             gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
@@ -68,7 +65,9 @@ class RentStabilizedScorer(Scorer):
             pluto_rows = self._cache.get_or_fetch(
                 gh,
                 "pluto",
-                lambda lat=lat, lon=lon: self._fetch_pluto(lat, lon),
+                lambda lat=lat, lon=lon: self._store.query_bbox(
+                    "pluto", lat, lon, delta=0.0015,
+                ),
             )
 
             nearest = self._find_nearest_lot(pluto_rows, lat, lon)
@@ -101,18 +100,7 @@ class RentStabilizedScorer(Scorer):
 
     # ------------------------------------------------------------------
 
-    def _fetch_pluto(self, lat: float, lon: float) -> list[dict]:
-        delta = 0.0015
-        return self._soda.query_bbox(
-            "pluto",
-            "latitude",
-            "longitude",
-            lat - delta,
-            lat + delta,
-            lon - delta,
-            lon + delta,
-            select=_PLUTO_SELECT,
-        )
+    # PLUTO fetch removed — now uses DataStore via shared cache above
 
     @staticmethod
     def _find_nearest_lot(

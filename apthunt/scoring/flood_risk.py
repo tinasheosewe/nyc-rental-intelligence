@@ -1,7 +1,7 @@
 """
 FloodRiskScorer — scores listings by FEMA flood zone status.
 
-Uses PLUTO data (fetched via SodaClient, cached in BlockCache) to
+Uses pre-downloaded PLUTO data (``ds_pluto`` table) to
 check the firm07_flag and pfirm15_flag fields for the nearest tax lot.
 
 Score: 100 if NOT in a flood zone, 0 if flagged.
@@ -15,7 +15,7 @@ from typing import Optional
 from haversine import haversine as _hav, Unit
 
 from apthunt.data.block_cache import BlockCache
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 
 
@@ -26,13 +26,8 @@ def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 class FloodRiskScorer(Scorer):
 
-    PLUTO_SELECT = (
-        "bbl,address,yearbuilt,numfloors,unitsres,"
-        "firm07_flag,pfirm15_flag,latitude,longitude"
-    )
-
-    def __init__(self, soda: SodaClient, cache: BlockCache):
-        self._soda = soda
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
 
     @property
@@ -50,6 +45,8 @@ class FloodRiskScorer(Scorer):
         conn: sqlite3.Connection,
         listings: list[dict],
     ) -> list[ScorerResult]:
+        self._store.ensure_downloaded("pluto", quiet=True)
+
         results = []
 
         for lst in listings:
@@ -81,19 +78,8 @@ class FloodRiskScorer(Scorer):
         return results
 
     def _fetch_pluto(self, lat: float, lon: float) -> list[dict]:
-        """Fetch PLUTO lots in a ~300m bounding box around the point."""
-        # 0.0015° ≈ 150m at NYC latitude — covers the geohash cell
-        delta = 0.0015
-        return self._soda.query_bbox(
-            "pluto",
-            "latitude",
-            "longitude",
-            lat - delta,
-            lat + delta,
-            lon - delta,
-            lon + delta,
-            select=self.PLUTO_SELECT,
-        )
+        """Fetch PLUTO lots in a ~300m bounding box from local data."""
+        return self._store.query_bbox("pluto", lat, lon, delta=0.0015)
 
     @staticmethod
     def _find_nearest_flags(

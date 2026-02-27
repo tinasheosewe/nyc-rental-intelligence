@@ -1,15 +1,13 @@
 """
 CrimeScorer — scores listings by crime density in their surrounding area.
 
-Uses NYPD Complaints (Current YTD) via SODA API with within_circle()
-queries cached in BlockCache by geohash.
+Uses pre-downloaded NYPD Complaints (``ds_crime``) with Haversine
+circle queries cached in BlockCache by geohash.
 
 Scoring:
     Weight by severity: FELONY ×3, MISDEMEANOR ×1.5, VIOLATION ×1.
     Normalize weighted count against a city-wide median.
     Invert so lower crime = higher score.
-
-Status: STUB — implementation pending.
 """
 
 from __future__ import annotations
@@ -17,14 +15,14 @@ from __future__ import annotations
 import sqlite3
 
 from apthunt.data.block_cache import BlockCache
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 
 
 class CrimeScorer(Scorer):
 
-    def __init__(self, soda: SodaClient, cache: BlockCache):
-        self._soda = soda
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
 
     @property
@@ -44,6 +42,8 @@ class CrimeScorer(Scorer):
         conn: sqlite3.Connection,
         listings: list[dict],
     ) -> list[ScorerResult]:
+        self._store.ensure_downloaded("crime", quiet=True)
+
         # Parameters
         RADIUS_M = 400
         # Severity weights
@@ -58,15 +58,13 @@ class CrimeScorer(Scorer):
             if cached is not None:
                 block_stats[gh] = cached
                 continue
-            # Query SODA for this block
-            rows = self._soda.query_circle(
-                dataset="crime",
-                geo_column="geocoded_column",
+            # Query local DataStore (already filtered to last 12 months)
+            rows = self._store.query_circle(
+                "crime",
                 lat=lat,
                 lon=lon,
                 radius_m=RADIUS_M,
                 select="law_cat_cd",
-                extra_where="cmplnt_fr_dt > '2025-02-26'",  # last 12 months
             )
             # Count by severity
             fel, mis, vio = 0, 0, 0

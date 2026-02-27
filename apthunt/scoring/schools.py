@@ -1,7 +1,7 @@
 """
 SchoolsScorer — scores listings by public school quality nearby.
 
-Uses the DOE High School Directory (97mf-9njv) via bounding-box query.
+Uses pre-downloaded DOE High School Directory (stored in ``ds_schools``).
 Quality composite = average of attendance_rate and pct_stu_safe
 (both 0–1 floats).  Best school in 1.5 km wins.
 
@@ -15,21 +15,17 @@ from __future__ import annotations
 import sqlite3
 
 from apthunt.data.block_cache import BlockCache
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 
 # 0.014° ≈ 1.5 km at NYC latitude
 _BBOX_DELTA = 0.014
 
-_SCHOOL_DATASET = "97mf-9njv"
-
-_SELECT = "school_name, latitude, longitude, attendance_rate, pct_stu_safe"
-
 
 class SchoolsScorer(Scorer):
 
-    def __init__(self, soda: SodaClient, cache: BlockCache):
-        self._soda = soda
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
 
     @property
@@ -47,6 +43,8 @@ class SchoolsScorer(Scorer):
         conn: sqlite3.Connection,
         listings: list[dict],
     ) -> list[ScorerResult]:
+        self._store.ensure_downloaded("schools", quiet=True)
+
         # Deduplicate by geohash
         gh_map: dict[str, tuple[float, float]] = {}
         for lst in listings:
@@ -91,16 +89,10 @@ class SchoolsScorer(Scorer):
     # ------------------------------------------------------------------
 
     def _fetch_schools(self, lat: float, lon: float) -> list[dict]:
-        """Fetch schools in a ~1.5 km bbox via latitude/longitude columns."""
-        return self._soda.query_bbox(
-            dataset=_SCHOOL_DATASET,
-            lat_col="latitude",
-            lon_col="longitude",
-            min_lat=lat - _BBOX_DELTA,
-            max_lat=lat + _BBOX_DELTA,
-            min_lon=lon - _BBOX_DELTA,
-            max_lon=lon + _BBOX_DELTA,
-            select=_SELECT,
+        """Fetch schools in a ~1.5 km bbox from local data."""
+        return self._store.query_bbox(
+            "schools", lat, lon, delta=_BBOX_DELTA,
+            select="school_name, latitude, longitude, attendance_rate, pct_stu_safe",
         )
 
     @staticmethod

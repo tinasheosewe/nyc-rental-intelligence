@@ -1,9 +1,8 @@
 """
 ParksScorer — scores listings by distance to nearest park border.
 
-Uses NYC Parks Properties dataset (MultiPolygon geometries).
-Computes minimum distance from listing to any vertex on the nearest
-park polygon border — not the centroid.
+Uses pre-downloaded NYC Parks Properties dataset (stored locally in
+``ds_parks`` table with MultiPolygon geometries and computed centroids).
 
 Scoring (continuous, based on distance):
     0 m     → 100
@@ -13,19 +12,20 @@ Scoring (continuous, based on distance):
 
 from __future__ import annotations
 
+import json
 import sqlite3
 
 from haversine import haversine, Unit
 
 from apthunt.data.block_cache import BlockCache
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 
 
 class ParksScorer(Scorer):
 
-    def __init__(self, soda: SodaClient, cache: BlockCache):
-        self._soda = soda
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
 
     @property
@@ -43,6 +43,8 @@ class ParksScorer(Scorer):
         conn: sqlite3.Connection,
         listings: list[dict],
     ) -> list[ScorerResult]:
+        self._store.ensure_downloaded("parks", quiet=True)
+
         # Deduplicate by geohash
         gh_map: dict[str, tuple[float, float]] = {}
         for lst in listings:
@@ -55,7 +57,7 @@ class ParksScorer(Scorer):
                 block_stats[gh] = cached
                 continue
 
-            parks = self._fetch_parks(lat, lon)
+            parks = self._query_nearby_parks(lat, lon)
             dist, name = self._nearest_border(parks, lat, lon)
             stats = {"parks_distance_m": dist, "parks_name": name}
             block_stats[gh] = stats
@@ -84,16 +86,25 @@ class ParksScorer(Scorer):
 
     # ------------------------------------------------------------------
 
-    def _fetch_parks(self, lat: float, lon: float) -> list[dict]:
-        """Fetch parks within 1.5 km via within_circle on multipolygon."""
-        return self._soda.query_circle(
-            dataset="parks",
-            geo_column="multipolygon",
-            lat=lat,
-            lon=lon,
-            radius_m=1500,
+    def _query_nearby_parks(self, lat: float, lon: float) -> list[dict]:
+        """Fetch parks within ~2 km using centroid bbox pre-filter."""
+        # Use a generous delta (0.02° ≈ 2.2 km) to catch parks
+        # whose border reaches within 1.5 km even if centroid is farther
+        rows = self._store.query_bbox(
+            "parks", lat, lon, delta=0.02,
             select="name311, multipolygon",
+            lat_col="centroid_lat",
+            lon_col="centroid_lon",
         )
+        # Parse the geometry JSON back into dicts
+        for r in rows:
+            mp = r.get("multipolygon")
+            if mp and isinstance(mp, str):
+                try:
+                    r["multipolygon"] = json.loads(mp)
+                except json.JSONDecodeError:
+                    r["multipolygon"] = None
+        return rows
 
     @staticmethod
     def _nearest_border(

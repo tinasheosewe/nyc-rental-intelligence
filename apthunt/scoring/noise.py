@@ -1,18 +1,16 @@
 """
 NoiseScorer — scores listings by 311 quality-of-life complaints density.
 
-Uses 311 Service Requests via SODA API with within_circle() queries
-cached in BlockCache by geohash.
+Uses pre-downloaded 311 Service Requests (``ds_noise``) with Haversine
+circle queries cached in BlockCache by geohash.
 
 Filters to: Noise - Residential, Noise - Street/Sidewalk, Rodent,
-HEAT/HOT WATER, Unsanitary Condition.
+HEAT/HOT WATER, etc.
 
 Scoring:
     Count relevant complaints within 300m in the last 12 months.
     Normalize against city baseline.
     Invert so fewer complaints = higher score.
-
-Status: STUB — implementation pending.
 """
 
 from __future__ import annotations
@@ -20,14 +18,14 @@ from __future__ import annotations
 import sqlite3
 
 from apthunt.data.block_cache import BlockCache
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 
 
 class NoiseScorer(Scorer):
 
-    def __init__(self, soda: SodaClient, cache: BlockCache):
-        self._soda = soda
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
 
     @property
@@ -46,15 +44,14 @@ class NoiseScorer(Scorer):
         conn: sqlite3.Connection,
         listings: list[dict],
     ) -> list[ScorerResult]:
+        self._store.ensure_downloaded("noise", quiet=True)
+
         RADIUS_M = 300
         # Complaint types to count
         NOISE_TYPES = ["Noise - Residential", "Noise - Street/Sidewalk"]
         # Other quality-of-life
         RODENT = "Rodent"
         HEAT = "HEAT/HOT WATER"
-        # Date filter: last 12 months
-        from datetime import date, timedelta
-        since = (date.today() - timedelta(days=365)).isoformat()
         # Geohash to lat/lon
         geohash_to_latlon = {lst["geohash"]: (lst["lat"], lst["lon"]) for lst in listings}
         block_stats = {}
@@ -63,18 +60,13 @@ class NoiseScorer(Scorer):
             if cached is not None:
                 block_stats[gh] = cached
                 continue
-            # Query SODA for this block
-            extra_where = (
-                f"created_date > '{since}' AND (complaint_type in ('Noise - Residential','Noise - Street/Sidewalk','Rodent','HEAT/HOT WATER'))"
-            )
-            rows = self._soda.query_circle(
-                dataset="311",
-                geo_column="location",
+            # Query local DataStore (already filtered to relevant types + last 12 months)
+            rows = self._store.query_circle(
+                "noise",
                 lat=lat,
                 lon=lon,
                 radius_m=RADIUS_M,
                 select="complaint_type",
-                extra_where=extra_where,
             )
             noise = sum(1 for r in rows if r.get("complaint_type") in NOISE_TYPES)
             rodent = sum(1 for r in rows if r.get("complaint_type") == RODENT)

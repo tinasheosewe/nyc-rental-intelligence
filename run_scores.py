@@ -25,7 +25,7 @@ from apthunt.scoring.flood_risk import FloodRiskScorer
 from apthunt.scoring.crime import CrimeScorer
 from apthunt.scoring.noise import NoiseScorer
 
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.transit_data import TransitData
 from apthunt.scoring.building_violations import BuildingViolationsScorer
@@ -45,9 +45,7 @@ def build_scorers(
     only: list[str] | None = None,
 ) -> list:
     """Instantiate all scorers (or a filtered subset)."""
-    soda = SodaClient(
-        app_token=os.environ.get("SODA_APP_TOKEN"),
-    )
+    store = DataStore(conn)
     cache = BlockCache(conn)
     transit = TransitData(STOPS_PATH)
 
@@ -55,13 +53,13 @@ def build_scorers(
     all_scorers = {
         "deal": lambda: DealScorer(),
         "transit": lambda: TransitScorer(transit, cache),
-        "flood_risk": lambda: FloodRiskScorer(soda, cache),
-        "crime": lambda: CrimeScorer(soda, cache),
-        "noise": lambda: NoiseScorer(soda, cache),
-        "building_violations": lambda: BuildingViolationsScorer(soda, cache),
-        "parks": lambda: ParksScorer(soda, cache),
-        "schools": lambda: SchoolsScorer(soda, cache),
-        "rent_stabilized": lambda: RentStabilizedScorer(soda, cache),
+        "flood_risk": lambda: FloodRiskScorer(store, cache),
+        "crime": lambda: CrimeScorer(store, cache),
+        "noise": lambda: NoiseScorer(store, cache),
+        "building_violations": lambda: BuildingViolationsScorer(store, cache),
+        "parks": lambda: ParksScorer(store, cache),
+        "schools": lambda: SchoolsScorer(store, cache),
+        "rent_stabilized": lambda: RentStabilizedScorer(store, cache),
     }
 
     if only:

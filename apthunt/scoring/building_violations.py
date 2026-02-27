@@ -1,9 +1,10 @@
 """
 BuildingViolationsScorer — scores listings by active DOB building violations.
 
-Uses PLUTO (shared cache with FloodRiskScorer) to map lat/lon → BBL,
-then queries DOB Violations for that BBL.  Normalises count by
-residential units so large buildings aren't unfairly penalised.
+Uses pre-downloaded PLUTO (``ds_pluto``) to map lat/lon → BBL,
+then queries pre-downloaded DOB Violations (``ds_dob_violations``)
+for that BBL.  Normalises count by residential units so large
+buildings aren't unfairly penalised.
 
 Scoring: percentile-rank across all listings in the current universe.
 Fewer violations per unit → higher score.
@@ -17,22 +18,14 @@ import sqlite3
 from haversine import haversine, Unit
 
 from apthunt.data.block_cache import BlockCache
-from apthunt.data.soda_client import SodaClient
+from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-
-
-# PLUTO select — superset of what FloodRiskScorer uses so the shared
-# cache entry works for both scorers.
-_PLUTO_SELECT = (
-    "bbl,address,yearbuilt,numfloors,unitsres,"
-    "firm07_flag,pfirm15_flag,latitude,longitude"
-)
 
 
 class BuildingViolationsScorer(Scorer):
 
-    def __init__(self, soda: SodaClient, cache: BlockCache):
-        self._soda = soda
+    def __init__(self, store: DataStore, cache: BlockCache):
+        self._store = store
         self._cache = cache
 
     @property
@@ -55,6 +48,9 @@ class BuildingViolationsScorer(Scorer):
         conn: sqlite3.Connection,
         listings: list[dict],
     ) -> list[ScorerResult]:
+        self._store.ensure_downloaded("pluto", quiet=True)
+        self._store.ensure_downloaded("dob_violations", quiet=True)
+
         # Deduplicate by geohash so each block is fetched once
         gh_map: dict[str, tuple[float, float]] = {}
         for lst in listings:
@@ -67,11 +63,13 @@ class BuildingViolationsScorer(Scorer):
                 block_stats[gh] = cached
                 continue
 
-            # 1. Get PLUTO lots (reuse shared "pluto" cache)
+            # 1. Get PLUTO lots from local data (reuse shared "pluto" cache)
             pluto_rows = self._cache.get_or_fetch(
                 gh,
                 "pluto",
-                lambda lat=lat, lon=lon: self._fetch_pluto(lat, lon),
+                lambda lat=lat, lon=lon: self._store.query_bbox(
+                    "pluto", lat, lon, delta=0.0015,
+                ),
             )
 
             # 2. Find the nearest lot to the listing point
@@ -105,7 +103,7 @@ class BuildingViolationsScorer(Scorer):
                 self._cache.put(gh, "building_violations", stats)
                 continue
 
-            # 4. Query DOB violations (active only)
+            # 4. Query DOB violations from local data (active only)
             violations = self._fetch_violations(boro, block, lot)
             count = len(violations)
 
@@ -150,18 +148,18 @@ class BuildingViolationsScorer(Scorer):
     # Data helpers
     # ------------------------------------------------------------------
 
-    def _fetch_pluto(self, lat: float, lon: float) -> list[dict]:
-        """Fetch PLUTO lots in a ~300 m bbox (same query as FloodRiskScorer)."""
-        delta = 0.0015
-        return self._soda.query_bbox(
-            "pluto",
-            "latitude",
-            "longitude",
-            lat - delta,
-            lat + delta,
-            lon - delta,
-            lon + delta,
-            select=_PLUTO_SELECT,
+    def _fetch_violations(
+        self,
+        boro: str,
+        block: str,
+        lot: str,
+    ) -> list[dict]:
+        """Fetch unresolved DOB violations for a given BBL from local data."""
+        return self._store.query(
+            "dob_violations",
+            where_clause="boro=? AND block=? AND lot=?",
+            params=(boro, block, lot),
+            select="isn_dob_bis_viol,violation_type,violation_category,issue_date",
         )
 
     @staticmethod
@@ -184,26 +182,6 @@ class BuildingViolationsScorer(Scorer):
             if d < best_d:
                 best, best_d = row, d
         return best
-
-    def _fetch_violations(
-        self,
-        boro: str,
-        block: str,
-        lot: str,
-    ) -> list[dict]:
-        """Fetch unresolved DOB violations for a given BBL.
-
-        Excludes resolved violations (category contains 'Resolved').
-        """
-        where = (
-            f"boro='{boro}' AND block='{block}' AND lot='{lot}' "
-            f"AND violation_category NOT LIKE '%Resolved%'"
-        )
-        return self._soda.query(
-            "dob_violations",
-            where=where,
-            select="isn_dob_bis_viol,violation_type,violation_category,issue_date",
-        )
 
 
 def _percentile_scores(
