@@ -1,0 +1,4 @@
+haversine>=2.9,<3
+pygeohash>=3.2,<4
+requests>=2.31,<3
+sodapy>=2.2,<3

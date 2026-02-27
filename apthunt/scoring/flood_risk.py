@@ -9,9 +9,10 @@ Score: 100 if NOT in a flood zone, 0 if flagged.
 
 from __future__ import annotations
 
-import math
 import sqlite3
 from typing import Optional
+
+from haversine import haversine as _hav, Unit
 
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.soda_client import SodaClient
@@ -20,16 +21,7 @@ from apthunt.scoring.base import Scorer, ScorerResult
 
 def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Distance in meters between two lat/lon points."""
-    R = 6_371_000
-    phi1 = math.radians(lat1)
-    phi2 = math.radians(lat2)
-    dphi = math.radians(lat2 - lat1)
-    dlam = math.radians(lon2 - lon1)
-    a = (
-        math.sin(dphi / 2) ** 2
-        + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
-    )
-    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    return _hav((lat1, lon1), (lat2, lon2), unit=Unit.METERS)
 
 
 class FloodRiskScorer(Scorer):
