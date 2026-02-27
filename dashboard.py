@@ -64,6 +64,60 @@ SCORE_LABELS = {
     "rent_stabilized_score": "Rent Stabilized",
 }
 
+# Methodology descriptions — shown as help text on the Score Analysis tab
+SCORE_DESCRIPTIONS = {
+    "deal_score": "Z-score vs comp-set median. 50 = average deal; higher = below-market.",
+    "transit_score": "Subway stations & routes within 800 m. Linear: 12 pts/station + 3 pts/route, max 100.",
+    "flood_risk_score": "Binary: 100 = not in a FEMA flood zone, 0 = flood zone (FIRM07/PFIRM15).",
+    "crime_score": "NYPD complaints within 400 m (12 mo), severity-weighted. 50 = median; 100 = zero crime.",
+    "noise_score": "311 quality-of-life complaints within 300 m (12 mo). 50 = median; 100 = zero complaints.",
+    "building_violations_score": "Active DOB violations per unit, percentile-ranked. 50 = median; higher = fewer violations.",
+    "parks_score": "Distance to nearest park border. Linear: 100 at 0 m, 0 at ≥ 1500 m.",
+    "schools_score": "Best nearby HS quality (attendance + safety), percentile-ranked. 50 = median.",
+    "rent_stabilized_score": "Binary flag: likely rent-stabilized if built pre-1974 with 6+ units (PLUTO heuristic).",
+}
+
+# Scoring method type — controls how scores are displayed and colored
+SCORE_METHODS = {
+    "deal_score": "zscore",
+    "transit_score": "linear",
+    "flood_risk_score": "binary",
+    "crime_score": "median_norm",
+    "noise_score": "median_norm",
+    "building_violations_score": "percentile",
+    "parks_score": "linear",
+    "schools_score": "percentile",
+    "rent_stabilized_score": "binary",
+}
+
+# Human-readable component labels
+COMPONENT_LABELS = {
+    "comp_median": "Comp-set median rent",
+    "comp_set_size": "Comp-set size",
+    "comp_scope": "Comp scope",
+    "transit_station_count": "Stations within 800 m",
+    "transit_routes_served": "Unique routes",
+    "transit_nearest_m": "Nearest station (m)",
+    "flood_firm07": "FIRM 2007 flood zone",
+    "flood_pfirm15": "PFIRM 2015 flood zone",
+    "crime_felony_count": "Felonies (12 mo)",
+    "crime_misdemeanor_count": "Misdemeanors (12 mo)",
+    "crime_violation_count": "Violations (12 mo)",
+    "crime_weighted_total": "Weighted total",
+    "noise_complaint_count": "Noise complaints",
+    "noise_rodent_count": "Rodent complaints",
+    "noise_heat_count": "Heat/hot-water complaints",
+    "building_violation_count": "Active violations",
+    "building_unitsres": "Residential units",
+    "building_violations_per_unit": "Violations per unit",
+    "parks_distance_m": "Distance to park (m)",
+    "parks_name": "Nearest park",
+    "school_name": "Best nearby school",
+    "school_rating": "School quality composite",
+    "rent_stabilized": "Likely rent-stabilized",
+    "building_year": "Year built",
+}
+
 
 # ---------------------------------------------------------------------------
 # Data loading (cached so Streamlit doesn't re-query on every interaction)
@@ -159,22 +213,38 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("Score Filters")
 
 score_filters: dict[str, tuple[float, float]] = {}
+binary_filters: dict[str, str] = {}   # col -> "only_yes" | "only_no" | "all"
 scores = active_score_columns(df_raw)
 for col in scores:
     label = SCORE_LABELS.get(col, col)
-    lo, hi = float(df_raw[col].min()), float(df_raw[col].max())
-    if lo == hi:
-        continue
-    score_filters[col] = st.sidebar.slider(
-        f"{label} score",
-        min_value=lo,
-        max_value=hi,
-        value=(lo, hi),
-        step=1.0,
-    )
+    method = SCORE_METHODS.get(col, "linear")
 
-# Flood filter shortcut
-flood_only_safe = st.sidebar.checkbox("Exclude flood zones", value=False)
+    if method == "binary":
+        # Checkboxes for binary scores instead of a slider
+        choice = st.sidebar.radio(
+            label,
+            ["All", "Yes only", "No only"],
+            index=0,
+            horizontal=True,
+            key=f"bin_{col}",
+        )
+        if choice == "Yes only":
+            binary_filters[col] = "only_yes"
+        elif choice == "No only":
+            binary_filters[col] = "only_no"
+    else:
+        lo, hi = float(df_raw[col].min()), float(df_raw[col].max())
+        if lo == hi:
+            continue
+        desc = SCORE_DESCRIPTIONS.get(col, "")
+        score_filters[col] = st.sidebar.slider(
+            f"{label} score",
+            min_value=lo,
+            max_value=hi,
+            value=(lo, hi),
+            step=1.0,
+            help=desc,
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -192,8 +262,11 @@ df = df[(df["price"] >= sel_price[0]) & (df["price"] <= sel_price[1])]
 for col, (lo, hi) in score_filters.items():
     df = df[df[col].between(lo, hi) | df[col].isna()]
 
-if flood_only_safe:
-    df = df[(df["flood_risk_score"] == 100) | df["flood_risk_score"].isna()]
+for col, mode in binary_filters.items():
+    if mode == "only_yes":
+        df = df[(df[col] == 100)]
+    elif mode == "only_no":
+        df = df[(df[col] == 0) | df[col].isna()]
 
 
 # ---------------------------------------------------------------------------
@@ -276,23 +349,54 @@ with tab_scores:
         for i, col_name in enumerate(scores):
             with cols[i % len(cols)]:
                 label = SCORE_LABELS.get(col_name, col_name)
+                method = SCORE_METHODS.get(col_name, "linear")
+                desc = SCORE_DESCRIPTIONS.get(col_name, "")
                 scored = df[col_name].dropna()
                 if scored.empty:
                     st.caption(f"{label}: no data")
                     continue
-                fig = px.histogram(
-                    scored,
-                    nbins=30,
-                    title=f"{label} Score Distribution",
-                    labels={"value": label, "count": "Listings"},
-                    color_discrete_sequence=["#636EFA"],
-                )
-                fig.update_layout(
-                    showlegend=False,
-                    height=300,
-                    margin=dict(l=20, r=20, t=40, b=20),
-                )
+
+                if method == "binary":
+                    # Show a bar chart (Yes / No) for binary scores
+                    yes_count = int((scored == 100).sum())
+                    no_count = len(scored) - yes_count
+                    bin_df = pd.DataFrame({"Category": ["Yes", "No"], "Count": [yes_count, no_count]})
+                    fig = px.bar(
+                        bin_df, x="Category", y="Count",
+                        title=f"{label}",
+                        color="Category",
+                        color_discrete_map={"Yes": "#2ecc71", "No": "#e74c3c"},
+                    )
+                    fig.update_layout(
+                        showlegend=False,
+                        height=300,
+                        margin=dict(l=20, r=20, t=40, b=20),
+                    )
+                else:
+                    # Histogram for continuous scores
+                    method_tag = {
+                        "percentile": "Percentile",
+                        "zscore": "Z-Score",
+                        "median_norm": "Median-Normalized",
+                        "linear": "Distance-Based",
+                    }.get(method, "")
+                    title = f"{label} ({method_tag})" if method_tag else label
+                    fig = px.histogram(
+                        scored,
+                        nbins=30,
+                        title=title,
+                        labels={"value": label, "count": "Listings"},
+                        color_discrete_sequence=["#636EFA"],
+                    )
+                    fig.update_layout(
+                        showlegend=False,
+                        height=300,
+                        margin=dict(l=20, r=20, t=40, b=20),
+                    )
+
                 st.plotly_chart(fig)
+                if desc:
+                    st.caption(desc)
 
         # Score correlation scatter (if 2+ scores available)
         real_scores = [s for s in scores if df[s].notna().nunique() > 1]
@@ -451,23 +555,35 @@ with tab_table:
             lambda u: u if pd.notna(u) else ""
         )
 
+    # Build column configs dynamically for all active scores
+    col_config = {
+        "url": st.column_config.LinkColumn("Listing", display_text="View →"),
+    }
+    for s in scores:
+        label = SCORE_LABELS.get(s, s)
+        method = SCORE_METHODS.get(s, "linear")
+        if method == "binary":
+            col_config[s] = st.column_config.CheckboxColumn(
+                label, help=SCORE_DESCRIPTIONS.get(s, ""),
+            )
+            # Convert 100→True, 0→False for checkbox display
+            if s in show_df.columns:
+                show_df[s] = show_df[s].apply(
+                    lambda x: True if x == 100 else (False if pd.notna(x) else None)
+                )
+        else:
+            col_config[s] = st.column_config.ProgressColumn(
+                label, min_value=0, max_value=100,
+                format="%.0f" if method in ("linear", "median_norm") else "%.1f",
+                help=SCORE_DESCRIPTIONS.get(s, ""),
+            )
+
     st.dataframe(
         show_df,
         width="stretch",
         hide_index=True,
         height=700,
-        column_config={
-            "url": st.column_config.LinkColumn("Listing", display_text="View →"),
-            "deal_score": st.column_config.ProgressColumn(
-                "Deal", min_value=0, max_value=100, format="%.1f"
-            ),
-            "transit_score": st.column_config.ProgressColumn(
-                "Transit", min_value=0, max_value=100, format="%.0f"
-            ),
-            "flood_risk_score": st.column_config.ProgressColumn(
-                "Flood Safety", min_value=0, max_value=100, format="%.0f"
-            ),
-        },
+        column_config=col_config,
     )
 
     st.caption(f"Showing {len(show_df):,} listings")
@@ -526,24 +642,50 @@ with tab_detail:
                 val = row.get(s)
                 if pd.notna(val):
                     label = SCORE_LABELS.get(s, s)
-                    # Color: green ≥60, yellow 30-60, red <30
-                    if val >= 60:
-                        color = "🟢"
-                    elif val >= 30:
-                        color = "🟡"
+                    method = SCORE_METHODS.get(s, "linear")
+
+                    if method == "binary":
+                        # Binary scores: show ✅/❌ with Yes/No
+                        if val == 100:
+                            st.markdown(f"✅ **{label}**: Yes")
+                        else:
+                            st.markdown(f"❌ **{label}**: No")
+                    elif method == "percentile":
+                        # Percentile scores: 50 = median
+                        if val >= 65:
+                            color = "🟢"
+                        elif val >= 35:
+                            color = "🟡"
+                        else:
+                            color = "🔴"
+                        pctile = int(round(val))
+                        st.markdown(f"{color} **{label}**: {pctile}th percentile")
                     else:
-                        color = "🔴"
-                    st.markdown(f"{color} **{label}**: {val:.1f} / 100")
+                        # Continuous scores (z-score, linear, median-norm)
+                        if val >= 60:
+                            color = "🟢"
+                        elif val >= 30:
+                            color = "🟡"
+                        else:
+                            color = "🔴"
+                        st.markdown(f"{color} **{label}**: {val:.1f} / 100")
 
             # Components
             st.markdown("---")
             st.markdown("#### Score Components")
             for s in scores:
                 comps = COMPONENT_COLUMNS.get(s, [])
-                for c in comps:
-                    val = row.get(c)
-                    if pd.notna(val) and val != "":
-                        st.caption(f"{c}: {val}")
+                visible = [(c, row.get(c)) for c in comps if pd.notna(row.get(c)) and row.get(c) != ""]
+                if not visible:
+                    continue
+                s_label = SCORE_LABELS.get(s, s)
+                st.caption(f"**{s_label}**")
+                for c, val in visible:
+                    pretty = COMPONENT_LABELS.get(c, c.replace("_", " ").title())
+                    # Format numbers nicely
+                    if isinstance(val, float) and val == int(val):
+                        val = int(val)
+                    st.caption(f"  {pretty}: {val}")
 
 
 # ---------------------------------------------------------------------------
