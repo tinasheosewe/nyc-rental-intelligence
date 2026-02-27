@@ -1,4 +1,6 @@
 haversine>=2.9,<3
+plotly>=6.5,<7
 pygeohash>=3.2,<4
 requests>=2.31,<3
 sodapy>=2.2,<3
+streamlit>=1.50,<2
