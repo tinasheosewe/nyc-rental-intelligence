@@ -31,13 +31,16 @@ SCORE_COLUMNS = [
     "deal_score",
     "transit_score",
     "flood_risk_score",
-    # future: "crime_score", "noise_score", …
+    "crime_score",
+    "noise_score",
 ]
 
 COMPONENT_COLUMNS = {
     "deal_score": ["comp_median", "comp_set_size", "comp_scope"],
     "transit_score": ["transit_station_count", "transit_routes_served", "transit_nearest_m"],
     "flood_risk_score": ["flood_firm07", "flood_pfirm15"],
+    "crime_score": ["crime_felony_count", "crime_misdemeanor_count", "crime_violation_count", "crime_weighted_total"],
+    "noise_score": ["noise_complaint_count", "noise_rodent_count", "noise_heat_count"],
 }
 
 # Pretty labels

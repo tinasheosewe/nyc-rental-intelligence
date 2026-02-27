@@ -22,6 +22,8 @@ from apthunt.scoring.engine import ScoringEngine
 from apthunt.scoring.deal import DealScorer
 from apthunt.scoring.transit import TransitScorer
 from apthunt.scoring.flood_risk import FloodRiskScorer
+from apthunt.scoring.crime import CrimeScorer
+from apthunt.scoring.noise import NoiseScorer
 from apthunt.data.soda_client import SodaClient
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.transit_data import TransitData
@@ -48,6 +50,8 @@ def build_scorers(
         "deal": lambda: DealScorer(),
         "transit": lambda: TransitScorer(transit, cache),
         "flood_risk": lambda: FloodRiskScorer(soda, cache),
+        "crime": lambda: CrimeScorer(soda, cache),
+        "noise": lambda: NoiseScorer(soda, cache),
     }
 
     if only:

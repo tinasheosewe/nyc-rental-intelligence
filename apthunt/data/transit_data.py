@@ -48,7 +48,69 @@ class TransitData:
     def __init__(self, stops_path: Optional[str] = None):
         self._stations: list[SubwayStation] = []
         if stops_path and os.path.exists(stops_path):
-            self.load_from_file(stops_path)
+            # Try to find GTFS directory for routes/trips/stop_times
+            base = os.path.dirname(stops_path)
+            routes_path = os.path.join(base, "routes.txt")
+            trips_path = os.path.join(base, "trips.txt")
+            stop_times_path = os.path.join(base, "stop_times.txt")
+            if all(os.path.exists(p) for p in [routes_path, trips_path, stop_times_path]):
+                self.load_with_routes(stops_path, routes_path, trips_path, stop_times_path)
+            else:
+                self.load_from_file(stops_path)
+
+    def load_with_routes(self, stops_path, routes_path, trips_path, stop_times_path):
+        """Load stations and attach routes using full GTFS, aggregating child stop routes to parent stations."""
+        # 1. Parse stops.txt (parent and child stops)
+        parent_stations: dict[str, SubwayStation] = {}
+        child_to_parent: dict[str, str] = {}
+        with open(stops_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                stop_id = row.get("stop_id", "").strip()
+                if not stop_id:
+                    continue
+                loc_type = row.get("location_type", "").strip()
+                parent = row.get("parent_station", "").strip()
+                if loc_type == "1" or (loc_type != "0" and not parent):
+                    try:
+                        lat = float(row["stop_lat"])
+                        lon = float(row["stop_lon"])
+                    except (KeyError, ValueError):
+                        continue
+                    name = row.get("stop_name", stop_id).strip()
+                    parent_stations[stop_id] = SubwayStation(
+                        stop_id=stop_id,
+                        name=name,
+                        lat=lat,
+                        lon=lon,
+                    )
+                elif parent:
+                    child_to_parent[stop_id] = parent
+        # 2. Map trip_id → route_id
+        trip_to_route = {}
+        with open(trips_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                trip_id = row.get("trip_id", "").strip()
+                route_id = row.get("route_id", "").strip()
+                if trip_id and route_id:
+                    trip_to_route[trip_id] = route_id
+        # 3. Map parent stop_id → set of route_ids (aggregate from children)
+        stop_to_routes = {sid: set() for sid in parent_stations}
+        with open(stop_times_path, newline="", encoding="utf-8-sig") as f:
+            reader = csv.DictReader(f)
+            for row in reader:
+                stop_id = row.get("stop_id", "").strip()
+                trip_id = row.get("trip_id", "").strip()
+                if trip_id in trip_to_route:
+                    # Map child stop to parent if needed
+                    parent = child_to_parent.get(stop_id, stop_id)
+                    if parent in stop_to_routes:
+                        stop_to_routes[parent].add(trip_to_route[trip_id])
+        # 4. Attach routes to each parent station
+        for sid, station in parent_stations.items():
+            station.routes = sorted(stop_to_routes[sid])
+        self._stations = list(parent_stations.values())
 
     @property
     def station_count(self) -> int:

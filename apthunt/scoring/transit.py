@@ -20,8 +20,8 @@ from apthunt.data.transit_data import TransitData, _haversine
 from apthunt.scoring.base import Scorer, ScorerResult
 
 
-class TransitScorer(Scorer):
 
+class TransitScorer(Scorer):
     def __init__(self, transit_data: TransitData, cache: BlockCache):
         self._transit = transit_data
         self._cache = cache
@@ -43,38 +43,22 @@ class TransitScorer(Scorer):
         listings: list[dict],
     ) -> list[ScorerResult]:
         results = []
-
         for lst in listings:
             gh = lst["geohash"]
             cached = self._cache.get(gh, "transit")
-
             if cached is not None:
                 station_count = cached["station_count"]
                 routes = cached["routes_served"]
                 nearest = cached["nearest_m"]
             else:
-                stations = self._transit.stations_within(
-                    lst["lat"], lst["lon"], 800
-                )
+                lat, lon = lst["lat"], lst["lon"]
+                stations = self._transit.stations_within(lat, lon, 800)
                 station_count = len(stations)
-                routes = len(
-                    set(r for s in stations for r in s.routes)
-                )
-
-                # Nearest station distance
+                routes = len(set(r for s in stations for r in s.routes))
                 if stations:
-                    nearest = int(
-                        min(
-                            _haversine(
-                                lst["lat"], lst["lon"], s.lat, s.lon
-                            )
-                            for s in stations
-                        )
-                    )
+                    nearest = int(min(_haversine(lat, lon, s.lat, s.lon) for s in stations))
                 else:
-                    _, d = self._transit.nearest(lst["lat"], lst["lon"])
-                    nearest = int(d) if d != float("inf") else 9999
-
+                    nearest = 9999
                 self._cache.put(
                     gh,
                     "transit",
@@ -84,11 +68,8 @@ class TransitScorer(Scorer):
                         "nearest_m": nearest,
                     },
                 )
-
-            # Score: 0-100 based on station count and route diversity
             raw = station_count * 12 + routes * 3
             score = round(max(0.0, min(100.0, float(raw))), 1)
-
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
@@ -100,5 +81,4 @@ class TransitScorer(Scorer):
                     },
                 )
             )
-
         return results
