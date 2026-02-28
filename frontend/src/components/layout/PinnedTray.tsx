@@ -38,6 +38,7 @@ export default function PinnedTray() {
                 src={listing.photos[0]}
                 alt={listing.address}
                 className="w-full h-full object-cover"
+                loading="lazy"
               />
             ) : (
               <div className="w-full h-full bg-zinc-800 flex items-center justify-center text-zinc-600 text-xs">

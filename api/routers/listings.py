@@ -30,15 +30,23 @@ router = APIRouter(tags=["listings"])
 
 # ── Helpers ─────────────────────────────────────────────────────
 
+_PHOTO_PREFIX = "https://photos.example.com/"
+
+
 def _parse_photos(raw: Optional[str]) -> list[str]:
-    """Parse photos JSON string into a list of URLs."""
+    """Parse photos JSON and rewrite source photo URLs to local API paths."""
     if not raw:
         return []
     try:
         parsed = json.loads(raw)
-        if isinstance(parsed, list):
-            return parsed
-        return []
+        if not isinstance(parsed, list):
+            return []
+        return [
+            f"/api/photos/{url.removeprefix(_PHOTO_PREFIX)}"
+            if isinstance(url, str) and url.startswith(_PHOTO_PREFIX)
+            else url
+            for url in parsed
+        ]
     except (json.JSONDecodeError, TypeError):
         return []
 

@@ -93,6 +93,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               src={listing.photos[0]}
               alt={listing.address}
               className="w-full h-full object-cover"
+              loading="lazy"
             />
           ) : (
             <div className="w-full h-full flex items-center justify-center text-zinc-600">

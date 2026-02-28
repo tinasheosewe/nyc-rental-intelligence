@@ -11,6 +11,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from api.routers import listings
+from api import photos
 
 
 def create_app() -> FastAPI:
@@ -30,6 +31,7 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(listings.router, prefix="/api")
+    app.include_router(photos.router, prefix="/api")
 
     return app
 

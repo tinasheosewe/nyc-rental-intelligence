@@ -3,6 +3,9 @@ apthunt.db
 apthunt.db-wal
 apthunt.db-shm
 
+# Cached photos
+photos/
+
 # Python
 __pycache__/
 *.pyc
