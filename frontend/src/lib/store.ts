@@ -1,0 +1,227 @@
+/**
+ * Global application store (Zustand).
+ *
+ * Manages:
+ *   - Active queue tab (explore / watchlist / shortlist)
+ *   - Explore view mode (feed / scan)
+ *   - Explore feed index (current card position)
+ *   - Listings data (fetched from API)
+ *   - Watchlist & Shortlist queues (user-curated)
+ *   - Sort dimension
+ *   - Filters
+ *   - Compare selection
+ *   - Map overlay toggle
+ *   - Priority ranking
+ */
+
+import { create } from "zustand";
+import type {
+  Listing,
+  QueueTab,
+  ViewMode,
+  FilterState,
+  ScoreDimension,
+} from "./types";
+import { DEFAULT_FILTERS, SCORE_DIMENSIONS } from "./types";
+import { fetchListings } from "./api";
+
+// ── State shape ────────────────────────────────────────────────
+
+interface AppState {
+  // Navigation
+  activeTab: QueueTab;
+  setActiveTab: (tab: QueueTab) => void;
+
+  // Explore
+  viewMode: ViewMode;
+  setViewMode: (mode: ViewMode) => void;
+  feedIndex: number;
+  setFeedIndex: (idx: number) => void;
+
+  // Data
+  listings: Listing[];
+  totalListings: number;
+  isLoading: boolean;
+  loadListings: () => Promise<void>;
+
+  // Queues
+  watchlist: Listing[];
+  shortlist: Listing[];
+  skipped: Set<string>;
+  addToWatchlist: (listing: Listing) => void;
+  addToShortlist: (listing: Listing) => void;
+  removeFromWatchlist: (id: string) => void;
+  removeFromShortlist: (id: string) => void;
+  moveToShortlist: (id: string) => void;
+  moveToWatchlist: (id: string) => void;
+  skipListing: (id: string) => void;
+  isInWatchlist: (id: string) => boolean;
+  isInShortlist: (id: string) => boolean;
+
+  // Sorting
+  sortBy: string;
+  setSortBy: (sort: string) => void;
+
+  // Filters
+  filters: FilterState;
+  setFilters: (filters: FilterState) => void;
+  resetFilters: () => void;
+  filterSheetOpen: boolean;
+  setFilterSheetOpen: (open: boolean) => void;
+
+  // Compare
+  compareIds: Set<string>;
+  toggleCompareId: (id: string) => void;
+  clearCompare: () => void;
+  compareOpen: boolean;
+  setCompareOpen: (open: boolean) => void;
+
+  // Map
+  mapOpen: boolean;
+  setMapOpen: (open: boolean) => void;
+
+  // Preferences
+  priorities: ScoreDimension[];
+  setPriorities: (p: ScoreDimension[]) => void;
+  settingsOpen: boolean;
+  setSettingsOpen: (open: boolean) => void;
+}
+
+// ── Store ──────────────────────────────────────────────────────
+
+export const useStore = create<AppState>((set, get) => ({
+  // Navigation
+  activeTab: "explore",
+  setActiveTab: (tab) => set({ activeTab: tab }),
+
+  // Explore
+  viewMode: "feed",
+  setViewMode: (mode) => set({ viewMode: mode }),
+  feedIndex: 0,
+  setFeedIndex: (idx) => set({ feedIndex: idx }),
+
+  // Data
+  listings: [],
+  totalListings: 0,
+  isLoading: false,
+  loadListings: async () => {
+    set({ isLoading: true });
+    try {
+      const { filters, sortBy } = get();
+      const res = await fetchListings(filters, sortBy, 1, 200);
+      set({
+        listings: res.listings,
+        totalListings: res.total,
+        isLoading: false,
+        feedIndex: 0,
+      });
+    } catch (err) {
+      console.error("Failed to load listings:", err);
+      set({ isLoading: false });
+    }
+  },
+
+  // Queues
+  watchlist: [],
+  shortlist: [],
+  skipped: new Set(),
+
+  addToWatchlist: (listing) =>
+    set((s) => {
+      if (s.watchlist.some((l) => l.id === listing.id)) return s;
+      return { watchlist: [...s.watchlist, listing] };
+    }),
+
+  addToShortlist: (listing) =>
+    set((s) => {
+      if (s.shortlist.some((l) => l.id === listing.id)) return s;
+      return {
+        shortlist: [...s.shortlist, listing],
+        // Also remove from watchlist if present
+        watchlist: s.watchlist.filter((l) => l.id !== listing.id),
+      };
+    }),
+
+  removeFromWatchlist: (id) =>
+    set((s) => ({
+      watchlist: s.watchlist.filter((l) => l.id !== id),
+    })),
+
+  removeFromShortlist: (id) =>
+    set((s) => ({
+      shortlist: s.shortlist.filter((l) => l.id !== id),
+    })),
+
+  moveToShortlist: (id) =>
+    set((s) => {
+      const listing = s.watchlist.find((l) => l.id === id);
+      if (!listing) return s;
+      return {
+        watchlist: s.watchlist.filter((l) => l.id !== id),
+        shortlist: [...s.shortlist, listing],
+      };
+    }),
+
+  moveToWatchlist: (id) =>
+    set((s) => {
+      const listing = s.shortlist.find((l) => l.id === id);
+      if (!listing) return s;
+      return {
+        shortlist: s.shortlist.filter((l) => l.id !== id),
+        watchlist: [...s.watchlist, listing],
+      };
+    }),
+
+  skipListing: (id) =>
+    set((s) => {
+      const next = new Set(s.skipped);
+      next.add(id);
+      return { skipped: next };
+    }),
+
+  isInWatchlist: (id) => get().watchlist.some((l) => l.id === id),
+  isInShortlist: (id) => get().shortlist.some((l) => l.id === id),
+
+  // Sorting
+  sortBy: "composite",
+  setSortBy: (sort) => {
+    set({ sortBy: sort });
+    get().loadListings();
+  },
+
+  // Filters
+  filters: DEFAULT_FILTERS,
+  setFilters: (filters) => {
+    set({ filters });
+    get().loadListings();
+  },
+  resetFilters: () => {
+    set({ filters: DEFAULT_FILTERS });
+    get().loadListings();
+  },
+  filterSheetOpen: false,
+  setFilterSheetOpen: (open) => set({ filterSheetOpen: open }),
+
+  // Compare
+  compareIds: new Set(),
+  toggleCompareId: (id) =>
+    set((s) => {
+      const next = new Set(s.compareIds);
+      if (next.has(id)) next.delete(id);
+      else if (next.size < 5) next.add(id);
+      return { compareIds: next };
+    }),
+  clearCompare: () => set({ compareIds: new Set() }),
+  compareOpen: false,
+  setCompareOpen: (open) => set({ compareOpen: open }),
+
+  // Map
+  mapOpen: false,
+  setMapOpen: (open) => set({ mapOpen: open }),
+
+  // Preferences
+  priorities: [...SCORE_DIMENSIONS],
+  setPriorities: (p) => set({ priorities: p }),
+  settingsOpen: false,
+  setSettingsOpen: (open) => set({ settingsOpen: open }),
+}));
