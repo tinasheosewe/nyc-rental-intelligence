@@ -10,7 +10,7 @@
 
 import { useStore } from "@/lib/store";
 import type { Listing, ScoreDimension } from "@/lib/types";
-import { DIMENSION_LABELS } from "@/lib/types";
+import { DIMENSION_LABELS, DIMENSION_BREAKOUT } from "@/lib/types";
 import {
   formatPrice,
   formatBeds,
@@ -212,7 +212,14 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             </h3>
             <div className="space-y-2">
               {allDimensions.map(({ key, label, score, trend }) => (
-                <ScoreBar key={key} label={label} score={score} trend={trend} />
+                <ScoreBar
+                  key={key}
+                  label={label}
+                  score={score}
+                  trend={trend}
+                  breakout={DIMENSION_BREAKOUT[key]}
+                  componentValues={listing.score_components?.[key]}
+                />
               ))}
             </div>
           </div>

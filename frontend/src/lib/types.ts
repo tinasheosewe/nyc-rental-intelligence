@@ -96,6 +96,7 @@ export interface Listing {
   no_fee: boolean;
 
   scores: Scores;
+  score_components: Record<string, Record<string, string | number | null>>;
   trends: Trends;
   flags: Flag[];
   building: BuildingInfo;
@@ -132,4 +133,70 @@ export const DEFAULT_FILTERS: FilterState = {
   neighborhoods: [],
   rentStabilized: null,
   minScore: null,
+};
+
+// ── Dimension breakout config ──────────────────────────────────
+
+export interface BreakoutItem {
+  key: string;          // DB column name (e.g. "pest_hpd_count")
+  label: string;        // Human label
+  unit?: string;        // Optional suffix (e.g. "m", "per unit")
+}
+
+/** Which dimensions have sub-component breakouts, keyed by ScoreDimension. */
+export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>> = {
+  pest: [
+    { key: "pest_hpd_count", label: "HPD pest complaints (building)" },
+    { key: "pest_rodent_count", label: "311 rodent complaints (area)" },
+    { key: "pest_total", label: "Total pest reports" },
+  ],
+  amenity: [
+    { key: "amenity_grocery", label: "Grocery / convenience" },
+    { key: "amenity_pharmacy", label: "Pharmacies" },
+    { key: "amenity_gym", label: "Gyms / fitness" },
+    { key: "amenity_laundry", label: "Laundromats" },
+    { key: "amenity_dining", label: "Restaurants & cafés" },
+    { key: "amenity_total", label: "Weighted total" },
+  ],
+  shelter: [
+    { key: "shelter_count", label: "Shelters within 800 m" },
+    { key: "shelter_nearest_m", label: "Nearest shelter", unit: "m" },
+    { key: "shelter_nearest_name", label: "Nearest shelter" },
+    { key: "project_count", label: "NYCHA buildings within 800 m" },
+    { key: "project_nearest_m", label: "Nearest project", unit: "m" },
+    { key: "project_nearest_name", label: "Nearest NYCHA development" },
+  ],
+  crime: [
+    { key: "crime_felony_count", label: "Felonies (12 mo)" },
+    { key: "crime_misdemeanor_count", label: "Misdemeanors (12 mo)" },
+    { key: "crime_violation_count", label: "Violations (12 mo)" },
+    { key: "crime_weighted_total", label: "Weighted total" },
+  ],
+  noise: [
+    { key: "noise_complaint_count", label: "Noise complaints" },
+    { key: "noise_rodent_count", label: "Rodent complaints" },
+    { key: "noise_heat_count", label: "Heat / hot water" },
+  ],
+  building_violations: [
+    { key: "building_violation_count", label: "Active violations" },
+    { key: "building_unitsres", label: "Residential units" },
+    { key: "building_violations_per_unit", label: "Violations per unit" },
+  ],
+  transit: [
+    { key: "transit_station_count", label: "Stations within 800 m" },
+    { key: "transit_routes_served", label: "Unique routes" },
+    { key: "transit_nearest_m", label: "Nearest station", unit: "m" },
+  ],
+  parks: [
+    { key: "parks_distance_m", label: "Distance to park", unit: "m" },
+    { key: "parks_name", label: "Best scoring park" },
+    { key: "parks_acres", label: "Park size", unit: "acres" },
+  ],
+  management: [
+    { key: "mgmt_owner", label: "Owner / management" },
+    { key: "mgmt_owner_buildings", label: "Portfolio (buildings)" },
+    { key: "mgmt_owner_units", label: "Portfolio (units)" },
+    { key: "mgmt_complaints", label: "HPD complaints (12 mo)" },
+    { key: "mgmt_complaints_per_unit", label: "Complaints per unit" },
+  ],
 };

@@ -59,6 +59,79 @@ def _row_to_scores(row: dict) -> dict[str, float]:
     }
 
 
+# Column map: dimension → list of (db_column, display_label) pairs
+_COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
+    "pest": [
+        ("pest_hpd_count", "HPD pest complaints (building)"),
+        ("pest_rodent_count", "311 rodent complaints (area)"),
+        ("pest_total", "Total pest reports"),
+    ],
+    "amenity": [
+        ("amenity_grocery", "Grocery / convenience"),
+        ("amenity_pharmacy", "Pharmacies"),
+        ("amenity_gym", "Gyms / fitness"),
+        ("amenity_laundry", "Laundromats"),
+        ("amenity_dining", "Restaurants & cafés"),
+        ("amenity_total", "Weighted total"),
+    ],
+    "shelter": [
+        ("shelter_count", "Shelters within 800 m"),
+        ("shelter_nearest_m", "Nearest shelter (m)"),
+        ("shelter_nearest_name", "Nearest shelter"),
+        ("project_count", "NYCHA buildings within 800 m"),
+        ("project_nearest_m", "Nearest project (m)"),
+        ("project_nearest_name", "Nearest NYCHA development"),
+    ],
+    "crime": [
+        ("crime_felony_count", "Felonies (12 mo)"),
+        ("crime_misdemeanor_count", "Misdemeanors (12 mo)"),
+        ("crime_violation_count", "Violations (12 mo)"),
+        ("crime_weighted_total", "Weighted total"),
+    ],
+    "noise": [
+        ("noise_complaint_count", "Noise complaints"),
+        ("noise_rodent_count", "Rodent complaints"),
+        ("noise_heat_count", "Heat/hot-water complaints"),
+    ],
+    "building_violations": [
+        ("building_violation_count", "Active violations"),
+        ("building_unitsres", "Residential units"),
+        ("building_violations_per_unit", "Violations per unit"),
+    ],
+    "transit": [
+        ("transit_station_count", "Stations within 800 m"),
+        ("transit_routes_served", "Unique routes"),
+        ("transit_nearest_m", "Nearest station (m)"),
+    ],
+    "parks": [
+        ("parks_distance_m", "Distance to best park (m)"),
+        ("parks_name", "Best scoring park"),
+        ("parks_acres", "Park size (acres)"),
+    ],
+    "management": [
+        ("mgmt_owner", "Owner / management co."),
+        ("mgmt_owner_buildings", "Owner portfolio (buildings)"),
+        ("mgmt_owner_units", "Owner portfolio (units)"),
+        ("mgmt_complaints", "HPD complaints (12 mo)"),
+        ("mgmt_complaints_per_unit", "Complaints per unit"),
+    ],
+}
+
+
+def _row_to_components(row: dict) -> dict[str, dict[str, object]]:
+    """Extract per-dimension component data from a DB row."""
+    out: dict[str, dict[str, object]] = {}
+    for dim, cols in _COMPONENT_MAP.items():
+        entries: dict[str, object] = {}
+        for db_col, label in cols:
+            val = row.get(db_col)
+            if val is not None:
+                entries[db_col] = val
+        if entries:
+            out[dim] = entries
+    return out
+
+
 def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
     """Convert a raw DB row dict into a Listing response model."""
     score_vals = _row_to_scores(row)
@@ -99,6 +172,8 @@ def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
         hpd_complaints_12mo=row.get("mgmt_complaints") or 0,
     )
 
+    components = _row_to_components(row)
+
     return Listing(
         id=row["id"],
         address=row.get("address") or "Unknown",
@@ -115,6 +190,7 @@ def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
         url=row.get("url"),
         no_fee=bool(row.get("no_fee")),
         scores=scores,
+        score_components=components,
         trends=trends,
         flags=flags,
         building=building,

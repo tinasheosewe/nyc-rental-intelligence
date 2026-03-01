@@ -7,7 +7,7 @@ Frontend TypeScript types mirror these models.
 
 from __future__ import annotations
 
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -77,6 +77,7 @@ class Listing(BaseModel):
     no_fee: bool = False
 
     scores: Scores = Scores()
+    score_components: dict[str, dict[str, Any]] = {}
     trends: Trends = Trends()
     flags: list[Flag] = []
     building: BuildingInfo = BuildingInfo()
