@@ -19,6 +19,7 @@ DEFAULT_PRIORITIES: list[str] = [
     "parks",
     "building_violations",
     "management",
+    "shelter",
     "schools",
     "flood_risk",
 ]
@@ -35,6 +36,7 @@ SCORE_KEYS: list[str] = [
     "schools",
     "management",
     "amenity",
+    "shelter",
 ]
 
 

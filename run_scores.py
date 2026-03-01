@@ -34,6 +34,7 @@ from apthunt.scoring.schools import SchoolsScorer
 from apthunt.scoring.rent_stabilized import RentStabilizedScorer
 from apthunt.scoring.management import ManagementScorer
 from apthunt.scoring.amenity import AmenityScorer
+from apthunt.scoring.shelter import ShelterScorer
 
 
 # Path to bundled GTFS stops.txt (download from MTA and place here)
@@ -64,6 +65,7 @@ def build_scorers(
         "rent_stabilized": lambda: RentStabilizedScorer(store, cache),
         "management": lambda: ManagementScorer(store, cache),
         "amenity": lambda: AmenityScorer(store, cache),
+        "shelter": lambda: ShelterScorer(store, cache),
     }
 
     if only:
@@ -116,6 +118,7 @@ def main():
         print("  schools              - Public school quality")
         print("  management           - Owner/management company reputation (HPD complaints)")
         print("  amenity              - Nearby amenities (grocery, pharmacy, gym, etc.)")
+        print("  shelter              - Proximity to homeless shelters/services")
         return
 
     conn = get_connection(args.db)

@@ -114,6 +114,18 @@ def _no_fee(row: dict) -> Optional[Flag]:
     return None
 
 
+def _shelter(row: dict) -> Optional[Flag]:
+    count = row.get("shelter_count") or 0
+    nearest = row.get("shelter_nearest_m") or 9999
+    name = row.get("shelter_nearest_name") or ""
+    if count >= 3 and nearest <= 200:
+        return Flag(type="red", text=f"{count} homeless facilities within 800m (nearest: {nearest}m)")
+    if count >= 1 and nearest <= 150:
+        label = name[:40] if name else "Homeless facility"
+        return Flag(type="yellow", text=f"{label} {nearest}m away")
+    return None
+
+
 # ── Public API ──────────────────────────────────────────────────
 
 _RULES = [
@@ -127,6 +139,7 @@ _RULES = [
     _parks,
     _deal,
     _no_fee,
+    _shelter,
 ]
 
 

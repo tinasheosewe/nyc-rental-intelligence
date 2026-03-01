@@ -18,6 +18,7 @@ export const SCORE_DIMENSIONS = [
   "schools",
   "management",
   "amenity",
+  "shelter",
 ] as const;
 
 export type ScoreDimension = (typeof SCORE_DIMENSIONS)[number];
@@ -33,6 +34,7 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   schools: "Schools",
   management: "Management",
   amenity: "Amenities",
+  shelter: "Shelters",
 };
 
 // ── Data models ────────────────────────────────────────────────
@@ -49,6 +51,7 @@ export interface Scores {
   schools: number;
   management: number;
   amenity: number;
+  shelter: number;
   rent_stabilized: boolean;
 }
 

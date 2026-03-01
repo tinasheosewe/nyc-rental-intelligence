@@ -39,6 +39,7 @@ SCORE_COLUMNS = [
     "rent_stabilized_score",
     "management_score",
     "amenity_score",
+    "shelter_score",
 ]
 
 COMPONENT_COLUMNS = {
@@ -53,6 +54,7 @@ COMPONENT_COLUMNS = {
     "rent_stabilized_score": ["rent_stabilized", "building_year"],
     "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_complaints_per_unit"],
     "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
+    "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total"],
 }
 
 # Pretty labels
@@ -68,6 +70,7 @@ SCORE_LABELS = {
     "rent_stabilized_score": "Rent Stabilized",
     "management_score": "Management",
     "amenity_score": "Amenities",
+    "shelter_score": "Shelters Nearby",
 }
 
 # Methodology descriptions — shown as help text on the Score Analysis tab
@@ -83,6 +86,7 @@ SCORE_DESCRIPTIONS = {
     "rent_stabilized_score": "Binary flag: likely rent-stabilized if built pre-1974 with 6+ units (PLUTO heuristic).",
     "management_score": "Owner/management company HPD complaint rate across portfolio, percentile-ranked.",
     "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
+    "shelter_score": "Homeless shelters/services within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
 }
 
 # Scoring method type — controls how scores are displayed and colored
@@ -98,6 +102,7 @@ SCORE_METHODS = {
     "rent_stabilized_score": "binary",
     "management_score": "percentile",
     "amenity_score": "percentile",
+    "shelter_score": "median_norm",
 }
 
 # Human-readable component labels
@@ -142,6 +147,10 @@ COMPONENT_LABELS = {
     "amenity_laundry": "Laundromats",
     "amenity_dining": "Restaurants & caf\u00e9s",
     "amenity_total": "Weighted amenity total",
+    "shelter_count": "Shelters within 800 m",
+    "shelter_nearest_m": "Nearest shelter (m)",
+    "shelter_nearest_name": "Nearest shelter",
+    "shelter_weighted_total": "Distance-weighted total",
 }
 
 

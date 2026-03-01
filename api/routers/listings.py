@@ -76,6 +76,7 @@ def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
         schools=score_vals.get("schools", 0),
         management=score_vals.get("management", 0),
         amenity=score_vals.get("amenity", 0),
+        shelter=score_vals.get("shelter", 0),
         rent_stabilized=bool(row.get("rent_stabilized")),
     )
 
@@ -134,6 +135,7 @@ _SORT_MAP: dict[str, str] = {
     "schools": "schools_score",
     "management": "management_score",
     "amenity": "amenity_score",
+    "shelter": "shelter_score",
 }
 
 

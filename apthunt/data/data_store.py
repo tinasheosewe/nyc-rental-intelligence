@@ -147,6 +147,16 @@ DATASETS: dict[str, DatasetDef] = {
         geo_columns=["lat", "lon"],
         source="overpass",
     ),
+
+    "shelters": DatasetDef(
+        name="shelters",
+        soda_id="ji82-xba5",      # NYC Facilities Database
+        select="facname,factype,facsubgrp,address,boro,latitude,longitude",
+        refresh_days=180,         # biannual — facilities change slowly
+        where="facsubgrp = 'NON-RESIDENTIAL HOUSING AND HOMELESS SERVICES'"
+               " AND latitude IS NOT NULL",
+        geo_columns=["latitude", "longitude"],
+    ),
 }
 
 
