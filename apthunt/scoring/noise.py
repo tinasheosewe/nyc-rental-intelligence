@@ -19,14 +19,16 @@ Scoring:
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, timedelta
 
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-
-# 6-month midpoint for trend analysis
-_MIDPOINT = (date.today() - timedelta(days=182)).isoformat()
+from apthunt.scoring.utils import (
+    TREND_MIDPOINT,
+    compute_trend,
+    dedupe_by_geohash,
+    median_inverse_scores,
+)
 
 
 class NoiseScorer(Scorer):
@@ -62,7 +64,7 @@ class NoiseScorer(Scorer):
         RODENT = "Rodent"
         HEAT = "HEAT/HOT WATER"
         # Geohash to lat/lon
-        geohash_to_latlon = {lst["geohash"]: (lst["lat"], lst["lon"]) for lst in listings}
+        geohash_to_latlon = dedupe_by_geohash(listings)
         block_stats = {}
         for gh, (lat, lon) in geohash_to_latlon.items():
             cached = self._cache.get(gh, "311_v2")
@@ -91,7 +93,7 @@ class NoiseScorer(Scorer):
                     continue
                 # Bucket by date for trend
                 dt = (r.get("created_date") or "")[:10]
-                if dt >= _MIDPOINT:
+                if dt >= TREND_MIDPOINT:
                     recent_count += 1
                 else:
                     older_count += 1
@@ -99,19 +101,7 @@ class NoiseScorer(Scorer):
             total = noise + rodent + heat
 
             # Trend ratio: recent / older.  < 1.0 = improving
-            if older_count > 0:
-                trend_ratio = round(recent_count / older_count, 3)
-            elif recent_count > 0:
-                trend_ratio = 2.0
-            else:
-                trend_ratio = 1.0
-
-            if trend_ratio < 0.85:
-                direction = "improving"
-            elif trend_ratio > 1.15:
-                direction = "worsening"
-            else:
-                direction = "stable"
+            trend_ratio, direction = compute_trend(recent_count, older_count)
 
             block_stats[gh] = {
                 "noise_complaint_count": noise,
@@ -123,26 +113,15 @@ class NoiseScorer(Scorer):
             }
             self._cache.put(gh, "311_v2", block_stats[gh])
 
-        all_total = [v["noise_total"] for v in block_stats.values()]
-        if not all_total:
-            median = 0.0
-        else:
-            sorted_vals = sorted(all_total)
-            n = len(sorted_vals)
-            median = (sorted_vals[n//2] if n % 2 == 1 else (sorted_vals[n//2-1] + sorted_vals[n//2]) / 2)
-            if median == 0:
-                median = 1.0
+        baseline = [v["noise_total"] for v in block_stats.values()]
+        per_listing = [block_stats[lst["geohash"]]["noise_total"] for lst in listings]
+        scores = median_inverse_scores(per_listing, baseline=baseline)
 
         # Score: 50 = median, 100 = 0 complaints, 0 = 2× median or worse
         results = []
-        for lst in listings:
+        for lst, score in zip(listings, scores):
             gh = lst["geohash"]
             stats = block_stats[gh]
-            t = stats["noise_total"]
-            if t <= median:
-                score = 100.0 - 50.0 * (t / median) if median > 0 else 100.0
-            else:
-                score = max(0.0, 50.0 - 50.0 * ((t - median) / median))
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],

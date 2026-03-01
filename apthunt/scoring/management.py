@@ -28,12 +28,15 @@ from __future__ import annotations
 
 import sqlite3
 
-from haversine import haversine, Unit
-
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import percentile_scores
+from apthunt.scoring.utils import (
+    dedupe_by_geohash,
+    find_nearest_row,
+    normalize_bbl,
+    percentile_scores,
+)
 
 
 class ManagementScorer(Scorer):
@@ -66,9 +69,7 @@ class ManagementScorer(Scorer):
         self._store.ensure_downloaded("hpd_complaints", quiet=True)
 
         # Deduplicate by geohash
-        gh_map: dict[str, tuple[float, float]] = {}
-        for lst in listings:
-            gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
+        gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
@@ -85,7 +86,7 @@ class ManagementScorer(Scorer):
                     "pluto", lat, lon, delta=0.0015,
                 ),
             )
-            nearest = self._find_nearest_lot(pluto_rows, lat, lon)
+            nearest = find_nearest_row(pluto_rows, lat, lon)
 
             if nearest is None or not nearest.get("ownername"):
                 stats = {
@@ -152,10 +153,7 @@ class ManagementScorer(Scorer):
             bbl = row.get("bbl")
             if bbl:
                 # Normalize: PLUTO stores "1234567890.00000000", HPD uses "1234567890"
-                try:
-                    bbl_set.add(str(int(float(bbl))))
-                except (ValueError, TypeError):
-                    bbl_set.add(str(bbl))
+                    bbl_set.add(normalize_bbl(bbl))
             try:
                 total_units += int(float(row.get("unitsres") or 0))
             except (ValueError, TypeError):
@@ -188,22 +186,4 @@ class ManagementScorer(Scorer):
         self._owner_cache[owner] = stats
         return stats
 
-    @staticmethod
-    def _find_nearest_lot(
-        pluto_rows: list[dict],
-        lat: float,
-        lon: float,
-    ) -> dict | None:
-        if not pluto_rows:
-            return None
-        best, best_d = None, float("inf")
-        for row in pluto_rows:
-            try:
-                rlat = float(row["latitude"])
-                rlon = float(row["longitude"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            d = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
-            if d < best_d:
-                best, best_d = row, d
-        return best
+

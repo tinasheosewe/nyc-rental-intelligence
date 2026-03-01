@@ -27,7 +27,7 @@ import sqlite3
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import percentile_scores
+from apthunt.scoring.utils import dedupe_by_geohash, percentile_scores
 
 log = logging.getLogger(__name__)
 
@@ -70,9 +70,7 @@ class AmenityScorer(Scorer):
         listings: list[dict],
     ) -> list[ScorerResult]:
         RADIUS_M = 500
-        geohash_to_latlon = {
-            lst["geohash"]: (lst["lat"], lst["lon"]) for lst in listings
-        }
+        geohash_to_latlon = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in geohash_to_latlon.items():

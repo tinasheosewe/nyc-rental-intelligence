@@ -29,12 +29,16 @@ from __future__ import annotations
 
 import sqlite3
 
-from haversine import haversine, Unit
-
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import percentile_scores
+from apthunt.scoring.utils import (
+    dedupe_by_geohash,
+    find_nearest_row,
+    normalize_bbl,
+    percentile_scores,
+    pluto_units,
+)
 
 
 RADIUS_M = 100
@@ -73,9 +77,7 @@ class PestScorer(Scorer):
         self._store.ensure_downloaded("noise", quiet=True)
 
         # Deduplicate by geohash (one lookup per block)
-        gh_map: dict[str, tuple[float, float]] = {}
-        for lst in listings:
-            gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
+        gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
 
@@ -89,7 +91,7 @@ class PestScorer(Scorer):
             pluto_rows = self._store.query_bbox(
                 "pluto", lat, lon, delta=0.0015,
             )
-            nearest = self._find_nearest_lot(pluto_rows, lat, lon)
+            nearest = find_nearest_row(pluto_rows, lat, lon)
 
             # --- Building-level: HPD pest complaints via BBL ---------------
             hpd_count = self._hpd_pest_count(nearest)
@@ -98,12 +100,7 @@ class PestScorer(Scorer):
             rodent_count = self._rodent_count(lat, lon)
 
             # --- Units from PLUTO (floor at 1) -----------------------------
-            units = 1
-            if nearest:
-                try:
-                    units = max(1, int(float(nearest.get("unitsres") or 1)))
-                except (ValueError, TypeError):
-                    units = 1
+            units = pluto_units(nearest)
 
             total = hpd_count + rodent_count
             per_unit = round(total / units, 4)
@@ -154,10 +151,7 @@ class PestScorer(Scorer):
         if not raw_bbl:
             return 0
 
-        try:
-            bbl = str(int(float(raw_bbl)))
-        except (ValueError, TypeError):
-            bbl = str(raw_bbl)
+        bbl = normalize_bbl(raw_bbl)
 
         rows = self._store.query(
             "hpd_complaints",
@@ -182,22 +176,4 @@ class PestScorer(Scorer):
         )
         return sum(1 for r in rows if r.get("complaint_type") == "Rodent")
 
-    @staticmethod
-    def _find_nearest_lot(
-        pluto_rows: list[dict],
-        lat: float,
-        lon: float,
-    ) -> dict | None:
-        if not pluto_rows:
-            return None
-        best, best_d = None, float("inf")
-        for row in pluto_rows:
-            try:
-                rlat = float(row["latitude"])
-                rlon = float(row["longitude"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            d = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
-            if d < best_d:
-                best, best_d = row, d
-        return best
+

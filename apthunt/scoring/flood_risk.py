@@ -12,16 +12,10 @@ from __future__ import annotations
 import sqlite3
 from typing import Optional
 
-from haversine import haversine as _hav, Unit
-
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-
-
-def _haversine(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    """Distance in meters between two lat/lon points."""
-    return _hav((lat1, lon1), (lat2, lon2), unit=Unit.METERS)
+from apthunt.scoring.utils import find_nearest_row
 
 
 class FloodRiskScorer(Scorer):
@@ -59,7 +53,9 @@ class FloodRiskScorer(Scorer):
                 lambda lat=lat, lon=lon: self._fetch_pluto(lat, lon),
             )
 
-            firm07, pfirm15 = self._find_nearest_flags(pluto, lat, lon)
+            nearest = find_nearest_row(pluto, lat, lon)
+            firm07 = (nearest.get("firm07_flag", "") or "") if nearest else ""
+            pfirm15 = (nearest.get("pfirm15_flag", "") or "") if nearest else ""
 
             in_flood_zone = bool(firm07) or bool(pfirm15)
             score = 0.0 if in_flood_zone else 100.0
@@ -81,31 +77,4 @@ class FloodRiskScorer(Scorer):
         """Fetch PLUTO lots in a ~300m bounding box from local data."""
         return self._store.query_bbox("pluto", lat, lon, delta=0.0015)
 
-    @staticmethod
-    def _find_nearest_flags(
-        pluto_rows: list[dict],
-        lat: float,
-        lon: float,
-    ) -> tuple[str, str]:
-        """Find the nearest PLUTO lot and return its flood flags."""
-        if not pluto_rows:
-            return ("", "")
 
-        best_dist = float("inf")
-        best_firm07 = ""
-        best_pfirm15 = ""
-
-        for row in pluto_rows:
-            try:
-                rlat = float(row.get("latitude", 0))
-                rlon = float(row.get("longitude", 0))
-            except (ValueError, TypeError):
-                continue
-
-            d = _haversine(lat, lon, rlat, rlon)
-            if d < best_dist:
-                best_dist = d
-                best_firm07 = row.get("firm07_flag", "") or ""
-                best_pfirm15 = row.get("pfirm15_flag", "") or ""
-
-        return (best_firm07, best_pfirm15)

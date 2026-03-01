@@ -17,11 +17,10 @@ from __future__ import annotations
 
 import sqlite3
 
-from haversine import haversine, Unit
-
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import dedupe_by_geohash, find_nearest_row, pluto_units
 
 # NYC Rent Stabilization thresholds
 _YEAR_THRESHOLD = 1974
@@ -51,9 +50,7 @@ class RentStabilizedScorer(Scorer):
     ) -> list[ScorerResult]:
         self._store.ensure_downloaded("pluto", quiet=True)
 
-        gh_map: dict[str, tuple[float, float]] = {}
-        for lst in listings:
-            gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
+        gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
@@ -70,12 +67,12 @@ class RentStabilizedScorer(Scorer):
                 ),
             )
 
-            nearest = self._find_nearest_lot(pluto_rows, lat, lon)
+            nearest = find_nearest_row(pluto_rows, lat, lon)
             if nearest is None:
                 stats = {"rent_stabilized": 0, "building_year": 0}
             else:
                 year = int(float(nearest.get("yearbuilt") or 0))
-                units = int(float(nearest.get("unitsres") or 0))
+                units = pluto_units(nearest, min_val=0)
                 stabilized = 1 if (year > 0 and year < _YEAR_THRESHOLD and units >= _UNITS_THRESHOLD) else 0
                 stats = {"rent_stabilized": stabilized, "building_year": year}
 
@@ -102,22 +99,4 @@ class RentStabilizedScorer(Scorer):
 
     # PLUTO fetch removed — now uses DataStore via shared cache above
 
-    @staticmethod
-    def _find_nearest_lot(
-        pluto_rows: list[dict],
-        lat: float,
-        lon: float,
-    ) -> dict | None:
-        if not pluto_rows:
-            return None
-        best, best_d = None, float("inf")
-        for row in pluto_rows:
-            try:
-                rlat = float(row["latitude"])
-                rlon = float(row["longitude"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            d = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
-            if d < best_d:
-                best, best_d = row, d
-        return best
+

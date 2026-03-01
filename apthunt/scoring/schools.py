@@ -17,7 +17,7 @@ import sqlite3
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import percentile_scores
+from apthunt.scoring.utils import dedupe_by_geohash, percentile_scores
 
 # 0.014° ≈ 1.5 km at NYC latitude
 _BBOX_DELTA = 0.014
@@ -47,9 +47,7 @@ class SchoolsScorer(Scorer):
         self._store.ensure_downloaded("schools", quiet=True)
 
         # Deduplicate by geohash
-        gh_map: dict[str, tuple[float, float]] = {}
-        for lst in listings:
-            gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
+        gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():

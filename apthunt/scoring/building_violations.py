@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import sqlite3
 
-from haversine import haversine, Unit
-
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import percentile_scores
+from apthunt.scoring.utils import (
+    dedupe_by_geohash,
+    find_nearest_row,
+    parse_bbl,
+    percentile_scores,
+    pluto_units,
+)
 
 
 class BuildingViolationsScorer(Scorer):
@@ -53,9 +57,7 @@ class BuildingViolationsScorer(Scorer):
         self._store.ensure_downloaded("dob_violations", quiet=True)
 
         # Deduplicate by geohash so each block is fetched once
-        gh_map: dict[str, tuple[float, float]] = {}
-        for lst in listings:
-            gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
+        gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
@@ -74,7 +76,7 @@ class BuildingViolationsScorer(Scorer):
             )
 
             # 2. Find the nearest lot to the listing point
-            nearest = self._find_nearest_lot(pluto_rows, lat, lon)
+            nearest = find_nearest_row(pluto_rows, lat, lon)
             if nearest is None:
                 stats = {
                     "building_violation_count": 0,
@@ -85,16 +87,11 @@ class BuildingViolationsScorer(Scorer):
                 continue
 
             bbl_raw = nearest.get("bbl", "")
-            unitsres = max(1, int(float(nearest.get("unitsres") or 0)))
+            unitsres = pluto_units(nearest)
 
             # 3. Parse BBL → boro / block / lot for DOB query
-            #    PLUTO BBL is 10 digits: boro(1) + block(5) + lot(4)
-            #    DOB stores lot as 5 digits, so zero-pad.
             try:
-                bbl_str = str(int(float(bbl_raw))).zfill(10)
-                boro = bbl_str[0]
-                block = bbl_str[1:6]
-                lot = bbl_str[6:10].zfill(5)
+                boro, block, lot = parse_bbl(bbl_raw)
             except (ValueError, IndexError):
                 stats = {
                     "building_violation_count": 0,
@@ -164,23 +161,4 @@ class BuildingViolationsScorer(Scorer):
             select="isn_dob_bis_viol,violation_type,violation_category,issue_date",
         )
 
-    @staticmethod
-    def _find_nearest_lot(
-        pluto_rows: list[dict],
-        lat: float,
-        lon: float,
-    ) -> dict | None:
-        """Return the PLUTO row closest to (lat, lon)."""
-        if not pluto_rows:
-            return None
-        best, best_d = None, float("inf")
-        for row in pluto_rows:
-            try:
-                rlat = float(row["latitude"])
-                rlon = float(row["longitude"])
-            except (KeyError, TypeError, ValueError):
-                continue
-            d = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
-            if d < best_d:
-                best, best_d = row, d
-        return best
+

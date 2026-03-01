@@ -16,14 +16,16 @@ Scoring:
 from __future__ import annotations
 
 import sqlite3
-from datetime import date, timedelta
 
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-
-# 6-month midpoint for trend analysis
-_MIDPOINT = (date.today() - timedelta(days=182)).isoformat()
+from apthunt.scoring.utils import (
+    TREND_MIDPOINT,
+    compute_trend,
+    dedupe_by_geohash,
+    median_inverse_scores,
+)
 
 
 class CrimeScorer(Scorer):
@@ -58,7 +60,7 @@ class CrimeScorer(Scorer):
         # Severity weights
         WEIGHTS = {"FELONY": 3.0, "MISDEMEANOR": 1.5, "VIOLATION": 1.0}
         # Get all unique geohashes for this batch
-        geohash_to_latlon = {lst["geohash"]: (lst["lat"], lst["lon"]) for lst in listings}
+        geohash_to_latlon = dedupe_by_geohash(listings)
         # Fetch/calc for each geohash
         block_stats = {}
         for gh, (lat, lon) in geohash_to_latlon.items():
@@ -91,7 +93,7 @@ class CrimeScorer(Scorer):
                     continue
                 # Bucket by date for trend
                 dt = (r.get("cmplnt_fr_dt") or "")[:10]
-                if dt >= _MIDPOINT:
+                if dt >= TREND_MIDPOINT:
                     recent_w += w
                 else:
                     older_w += w
@@ -99,19 +101,7 @@ class CrimeScorer(Scorer):
             weighted = fel * WEIGHTS["FELONY"] + mis * WEIGHTS["MISDEMEANOR"] + vio * WEIGHTS["VIOLATION"]
 
             # Trend ratio: recent / older.  < 1.0 = improving
-            if older_w > 0:
-                trend_ratio = round(recent_w / older_w, 3)
-            elif recent_w > 0:
-                trend_ratio = 2.0  # crime appeared where there was none
-            else:
-                trend_ratio = 1.0  # no data either half
-
-            if trend_ratio < 0.85:
-                direction = "improving"
-            elif trend_ratio > 1.15:
-                direction = "worsening"
-            else:
-                direction = "stable"
+            trend_ratio, direction = compute_trend(recent_w, older_w)
 
             block_stats[gh] = {
                 "crime_felony_count": fel,
@@ -124,27 +114,15 @@ class CrimeScorer(Scorer):
             self._cache.put(gh, "crime_v2", block_stats[gh])
 
         # Compute citywide median for normalization (use all cached blocks)
-        all_weighted = [v["crime_weighted_total"] for v in block_stats.values()]
-        if not all_weighted:
-            median = 0.0
-        else:
-            sorted_vals = sorted(all_weighted)
-            n = len(sorted_vals)
-            median = (sorted_vals[n//2] if n % 2 == 1 else (sorted_vals[n//2-1] + sorted_vals[n//2]) / 2)
-            if median == 0:
-                median = 1.0  # avoid div0
+        baseline = [v["crime_weighted_total"] for v in block_stats.values()]
+        per_listing = [block_stats[lst["geohash"]]["crime_weighted_total"] for lst in listings]
+        scores = median_inverse_scores(per_listing, baseline=baseline)
 
         # Score: 50 = median, 100 = 0 crime, 0 = 2× median or worse
         results = []
-        for lst in listings:
+        for lst, score in zip(listings, scores):
             gh = lst["geohash"]
             stats = block_stats[gh]
-            w = stats["crime_weighted_total"]
-            # Invert: lower crime = higher score
-            if w <= median:
-                score = 100.0 - 50.0 * (w / median) if median > 0 else 100.0
-            else:
-                score = max(0.0, 50.0 - 50.0 * ((w - median) / median))
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],

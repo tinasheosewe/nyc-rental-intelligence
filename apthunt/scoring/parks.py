@@ -39,6 +39,7 @@ from haversine import haversine, Unit
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import dedupe_by_geohash
 
 # ── Size tiers ──────────────────────────────────────────────────────
 #                   (min_acres, quality, reach_m)
@@ -93,9 +94,7 @@ class ParksScorer(Scorer):
         self._store.ensure_downloaded("parks", quiet=True)
 
         # Deduplicate by geohash
-        gh_map: dict[str, tuple[float, float]] = {}
-        for lst in listings:
-            gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
+        gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():

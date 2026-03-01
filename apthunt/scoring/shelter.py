@@ -33,6 +33,7 @@ from haversine import haversine, Unit
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import dedupe_by_geohash, median_inverse_scores
 
 _RADIUS_M = 800
 
@@ -67,9 +68,7 @@ class ShelterScorer(Scorer):
         self._store.ensure_downloaded("projects", quiet=True)
 
         # Deduplicate by geohash
-        gh_map: dict[str, tuple[float, float]] = {}
-        for lst in listings:
-            gh_map.setdefault(lst["geohash"], (lst["lat"], lst["lon"]))
+        gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
@@ -148,26 +147,14 @@ class ShelterScorer(Scorer):
             self._cache.put(gh, "shelter", stats)
 
         # ── Normalize against batch median (inverted: fewer = better) ──
-        all_totals = [v["shelter_weighted_total"] for v in block_stats.values()]
-        if not all_totals:
-            median = 0.0
-        else:
-            s = sorted(all_totals)
-            n = len(s)
-            median = s[n // 2] if n % 2 == 1 else (s[n // 2 - 1] + s[n // 2]) / 2
-            if median == 0:
-                median = 1.0  # avoid div0
+        baseline = [v["shelter_weighted_total"] for v in block_stats.values()]
+        per_listing = [block_stats[lst["geohash"]]["shelter_weighted_total"]
+                       for lst in listings]
+        scores = median_inverse_scores(per_listing, baseline=baseline)
 
         results: list[ScorerResult] = []
-        for lst in listings:
+        for lst, sc in zip(listings, scores):
             stats = block_stats[lst["geohash"]]
-            w = stats["shelter_weighted_total"]
-
-            # Invert: fewer facilities nearby = higher score
-            if w <= median:
-                sc = 100.0 - 50.0 * (w / median) if median > 0 else 100.0
-            else:
-                sc = max(0.0, 50.0 - 50.0 * ((w - median) / median))
 
             results.append(
                 ScorerResult(
