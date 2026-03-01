@@ -118,16 +118,18 @@ class PestScorer(Scorer):
             self._cache.put(gh, "pest_v2", stats)
 
         # Percentile-rank by pest_per_unit (lower = better)
+        # Zero-pest listings are clamped to 100 — no complaints = perfect.
         raw = [block_stats[lst["geohash"]]["pest_per_unit"] for lst in listings]
         pct_scores = _percentile_scores(raw, reverse=True)
 
         results: list[ScorerResult] = []
         for lst, pct in zip(listings, pct_scores):
             stats = block_stats[lst["geohash"]]
+            score = 100.0 if stats["pest_per_unit"] == 0 else pct
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=pct,
+                    score=score,
                     components={
                         "pest_hpd_count": stats["pest_hpd_count"],
                         "pest_rodent_count": stats["pest_rodent_count"],
@@ -206,7 +208,10 @@ def _percentile_scores(
     *,
     reverse: bool = False,
 ) -> list[float]:
-    """Convert raw values to 0–100 percentile scores.
+    """Convert raw values to 0–100 percentile scores with proper tie handling.
+
+    Tied values receive the **same** percentile (average of their ranks).
+    With ``reverse=True`` and all-zero inputs, every entry scores 100.
 
     Args:
         values:  One value per listing.
@@ -219,9 +224,23 @@ def _percentile_scores(
     if n == 1:
         return [50.0]
 
+    # Sort by value, tracking original indices
     indexed = sorted(enumerate(values), key=lambda t: t[1])
+
+    # Assign average rank to tied groups
     scores = [0.0] * n
-    for rank, (idx, _) in enumerate(indexed):
-        pct = rank / (n - 1) * 100.0
-        scores[idx] = (100.0 - pct) if reverse else pct
+    i = 0
+    while i < n:
+        # Find the run of identical values
+        j = i
+        while j < n and indexed[j][1] == indexed[i][1]:
+            j += 1
+        # Average rank for the group (ranks are 0-based)
+        avg_rank = (i + j - 1) / 2.0
+        avg_pct = avg_rank / (n - 1) * 100.0
+        for k in range(i, j):
+            idx = indexed[k][0]
+            scores[idx] = (100.0 - avg_pct) if reverse else avg_pct
+        i = j
+
     return scores

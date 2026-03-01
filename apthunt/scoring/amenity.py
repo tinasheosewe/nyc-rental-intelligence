@@ -140,7 +140,10 @@ def _percentile_scores(
     *,
     reverse: bool = False,
 ) -> list[float]:
-    """Convert raw values to 0–100 percentile scores."""
+    """Convert raw values to 0–100 percentile scores with proper tie handling.
+
+    Tied values receive the **same** percentile (average of their ranks).
+    """
     n = len(values)
     if n == 0:
         return []
@@ -149,7 +152,16 @@ def _percentile_scores(
 
     indexed = sorted(enumerate(values), key=lambda t: t[1])
     scores = [0.0] * n
-    for rank, (idx, _) in enumerate(indexed):
-        pct = rank / (n - 1) * 100.0
-        scores[idx] = (100.0 - pct) if reverse else pct
+    i = 0
+    while i < n:
+        j = i
+        while j < n and indexed[j][1] == indexed[i][1]:
+            j += 1
+        avg_rank = (i + j - 1) / 2.0
+        avg_pct = avg_rank / (n - 1) * 100.0
+        for k in range(i, j):
+            idx = indexed[k][0]
+            scores[idx] = (100.0 - avg_pct) if reverse else avg_pct
+        i = j
+
     return scores
