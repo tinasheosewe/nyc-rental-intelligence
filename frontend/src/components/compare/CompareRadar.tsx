@@ -2,14 +2,14 @@
  * CompareRadar — Radar/spider chart tab of Compare mode.
  *
  * Overlays 2-3 listings as colored polygons on a radar chart
- * using Recharts. Degrades gracefully above 3 listings.
+ * using Recharts. Axes = score groups (not individual dimensions).
  */
 
 "use client";
 
-import type { Listing, ScoreDimension } from "@/lib/types";
-import { DIMENSION_LABELS } from "@/lib/types";
-import { getScore } from "@/lib/utils";
+import type { Listing, ScoreGroupKey } from "@/lib/types";
+import { GROUP_LABELS } from "@/lib/types";
+import { getGroupScore } from "@/lib/utils";
 import {
   Radar,
   RadarChart,
@@ -23,21 +23,19 @@ import {
 
 interface CompareRadarProps {
   listings: Listing[];
-  dimensions: ScoreDimension[];
+  groups: ScoreGroupKey[];
 }
 
 const COLORS = ["#22c55e", "#3b82f6", "#eab308", "#ef4444", "#a855f7"];
 
-export default function CompareRadar({ listings, dimensions }: CompareRadarProps) {
+export default function CompareRadar({ listings, groups }: CompareRadarProps) {
   // Reshape data for Recharts radar
-  const data = dimensions.map((dim) => {
+  const data = groups.map((gk) => {
     const point: Record<string, string | number> = {
-      dimension: DIMENSION_LABELS[dim],
+      dimension: GROUP_LABELS[gk],
     };
-    listings.forEach((l, i) => {
-      point[l.id] = Math.round(
-        getScore(l.scores as unknown as Record<string, number | boolean>, dim),
-      );
+    listings.forEach((l) => {
+      point[l.id] = Math.round(getGroupScore(l.scores, gk));
     });
     return point;
   });

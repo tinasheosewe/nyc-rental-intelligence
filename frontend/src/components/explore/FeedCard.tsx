@@ -1,29 +1,39 @@
 /**
  * FeedCard — Full-viewport single listing card for Explore Feed mode.
  *
- * Shows hero photo, address, price, composite score, top-3 priority
- * pills above the fold. Score breakdown, flags, and building details
- * below the fold on scroll.
+ * Shows hero photo, address, price, composite score, and 5 group pills
+ * above the fold. Collapsible grouped score breakdown, flags, and
+ * building details below the fold on scroll.
  */
 
 "use client";
 
+import { useState } from "react";
 import { useStore } from "@/lib/store";
-import type { Listing, ScoreDimension } from "@/lib/types";
-import { DIMENSION_LABELS, DIMENSION_BREAKOUT } from "@/lib/types";
+import type { Listing, ScoreDimension, ScoreGroupKey } from "@/lib/types";
+import {
+  DIMENSION_LABELS,
+  DIMENSION_BREAKOUT,
+  SCORE_GROUPS,
+  GROUP_BY_KEY,
+  GROUP_LABELS,
+  SCORE_GROUP_KEYS,
+} from "@/lib/types";
 import {
   formatPrice,
   formatBeds,
   formatBaths,
   formatDaysOnMarket,
   scoreColor,
+  scoreBgMuted,
   getScore,
+  getGroupScore,
 } from "@/lib/utils";
 import ScoreBadge from "@/components/ui/ScoreBadge";
-import ScorePill from "@/components/ui/ScorePill";
 import ScoreBar from "@/components/ui/ScoreBar";
 import FlagList from "@/components/ui/FlagList";
 import { motion, AnimatePresence } from "framer-motion";
+import clsx from "clsx";
 
 interface FeedCardProps {
   listing: Listing;
@@ -43,24 +53,32 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
   const inWatchlist = useStore((s) => s.watchlist.some((l) => l.id === listing.id));
   const inShortlist = useStore((s) => s.shortlist.some((l) => l.id === listing.id));
 
-  const top3 = priorities.slice(0, 3) as ScoreDimension[];
+  // Track which groups are expanded in the breakdown
+  const [expandedGroups, setExpandedGroups] = useState<Set<ScoreGroupKey>>(new Set());
 
-  // Score dimensions with trend info
-  const allDimensions = priorities.map((dim) => ({
-    key: dim,
-    label: DIMENSION_LABELS[dim],
-    score: getScore(listing.scores as unknown as Record<string, number | boolean>, dim),
-    trend:
-      dim === "crime"
-        ? listing.trends.crime_direction
-        : dim === "noise"
-          ? listing.trends.noise_direction
-          : undefined,
-  }));
+  const toggleGroup = (key: ScoreGroupKey) => {
+    setExpandedGroups((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Sort label for secondary badge
+  const sortLabel =
+    sortBy !== "composite" && sortBy !== "price"
+      ? GROUP_LABELS[sortBy as ScoreGroupKey] ?? sortBy
+      : null;
+  const sortScore =
+    sortBy !== "composite" && sortBy !== "price"
+      ? SCORE_GROUP_KEYS.includes(sortBy as ScoreGroupKey)
+        ? getGroupScore(listing.scores, sortBy as ScoreGroupKey)
+        : 0
+      : 0;
 
   const handleSkip = () => {
     skipListing(listing.id);
-    // Advance to next non-skipped listing
     const available = listings.filter((l) => !skipped.has(l.id) && l.id !== listing.id);
     if (available.length > 0) {
       const nextIdx = listings.indexOf(available[0]);
@@ -70,13 +88,15 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
 
   const handleSave = () => {
     addToWatchlist(listing);
-    // Advance
     if (feedIndex < listings.length - 1) {
       setFeedIndex(feedIndex + 1);
     }
   };
 
   const hasPhoto = listing.photos.length > 0;
+
+  // Groups ordered by user priorities
+  const orderedGroups = priorities.map((gk) => GROUP_BY_KEY[gk]).filter(Boolean);
 
   return (
     <AnimatePresence mode="wait">
@@ -105,7 +125,6 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               </svg>
             </div>
           )}
-          {/* No-fee badge */}
           {listing.no_fee && (
             <span className="absolute top-3 left-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded">
               NO FEE
@@ -140,37 +159,34 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             </div>
             <div className="flex flex-col items-end gap-1">
               <ScoreBadge score={listing.scores.composite} size="lg" label="Score" />
-              {sortBy !== "composite" && (
+              {sortLabel && (
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
-                  {DIMENSION_LABELS[sortBy as ScoreDimension]}{" "}
-                  <span className={scoreColor(
-                    getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
-                  )}>
-                    {Math.round(
-                      getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
-                    )}
+                  {sortLabel}{" "}
+                  <span className={scoreColor(sortScore)}>
+                    {Math.round(sortScore)}
                   </span>
                 </span>
               )}
             </div>
           </div>
 
-          {/* Top-3 priority pills */}
+          {/* Group score pills */}
           <div className="flex items-center gap-2 flex-wrap">
-            {top3.map((dim) => (
-              <ScorePill
-                key={dim}
-                label={DIMENSION_LABELS[dim]}
-                score={getScore(listing.scores as unknown as Record<string, number | boolean>, dim)}
-                trend={
-                  dim === "crime"
-                    ? listing.trends.crime_direction
-                    : dim === "noise"
-                      ? listing.trends.noise_direction
-                      : undefined
-                }
-              />
-            ))}
+            {orderedGroups.map((group) => {
+              const gs = getGroupScore(listing.scores, group.key);
+              return (
+                <span
+                  key={group.key}
+                  className={clsx(
+                    "inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium",
+                    scoreBgMuted(gs),
+                    scoreColor(gs),
+                  )}
+                >
+                  {group.icon} {group.label} {Math.round(gs)}
+                </span>
+              );
+            })}
             {listing.scores.rent_stabilized && (
               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400">
                 Rent Stabilized
@@ -211,23 +227,64 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {/* Divider */}
           <div className="border-t border-zinc-800" />
 
-          {/* Score breakdown */}
-          <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+          {/* Grouped score breakdown */}
+          <div className="space-y-1">
+            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
               Score Breakdown
             </h3>
-            <div className="space-y-2">
-              {allDimensions.map(({ key, label, score, trend }) => (
-                <ScoreBar
-                  key={key}
-                  label={label}
-                  score={score}
-                  trend={trend}
-                  breakout={DIMENSION_BREAKOUT[key]}
-                  componentValues={listing.score_components?.[key]}
-                />
-              ))}
-            </div>
+            {orderedGroups.map((group) => {
+              const gs = getGroupScore(listing.scores, group.key);
+              const isExpanded = expandedGroups.has(group.key);
+
+              return (
+                <div key={group.key} className="rounded-lg border border-zinc-800/50 overflow-hidden">
+                  {/* Group header — always visible */}
+                  <button
+                    onClick={() => toggleGroup(group.key)}
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800/50 transition-colors"
+                  >
+                    <span className="text-base">{group.icon}</span>
+                    <span className="flex-1 text-left text-sm font-medium text-zinc-300">
+                      {group.label}
+                    </span>
+                    <span className={clsx("text-sm font-bold font-mono", scoreColor(gs))}>
+                      {Math.round(gs)}
+                    </span>
+                    <span className="text-xs text-zinc-600 w-4 text-center select-none">
+                      {isExpanded ? "▾" : "▸"}
+                    </span>
+                  </button>
+
+                  {/* Expanded: individual dimension bars */}
+                  {isExpanded && (
+                    <div className="px-3 pb-3 pt-1 space-y-2 border-t border-zinc-800/50">
+                      {group.dimensions.map((dim) => {
+                        const score = getScore(
+                          listing.scores as unknown as Record<string, number | boolean>,
+                          dim,
+                        );
+                        const trend =
+                          dim === "crime"
+                            ? listing.trends.crime_direction
+                            : dim === "noise"
+                              ? listing.trends.noise_direction
+                              : undefined;
+                        return (
+                          <ScoreBar
+                            key={dim}
+                            label={DIMENSION_LABELS[dim]}
+                            score={score}
+                            trend={trend}
+                            breakout={DIMENSION_BREAKOUT[dim]}
+                            componentValues={listing.score_components?.[dim]}
+                          />
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
 
           {/* Divider */}

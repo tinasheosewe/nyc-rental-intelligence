@@ -1,34 +1,32 @@
 /**
  * CompareTable — Table tab of Compare mode.
  *
- * Columns = listings, rows = selected score dimensions.
+ * Columns = listings, rows = selected score groups.
  * Shows score bars, values, and medal icons for top 3.
  */
 
 "use client";
 
-import type { Listing, ScoreDimension } from "@/lib/types";
-import { DIMENSION_LABELS } from "@/lib/types";
-import { scoreBg, scoreColor, medalIcon, formatPrice, formatBeds, getScore } from "@/lib/utils";
+import type { Listing, ScoreGroupKey } from "@/lib/types";
+import { GROUP_BY_KEY } from "@/lib/types";
+import { scoreBg, scoreColor, medalIcon, formatPrice, formatBeds, getGroupScore } from "@/lib/utils";
 import clsx from "clsx";
 
 interface CompareTableProps {
   listings: Listing[];
-  dimensions: ScoreDimension[];
+  groups: ScoreGroupKey[];
 }
 
-export default function CompareTable({ listings, dimensions }: CompareTableProps) {
-  // Compute ranks per dimension
+export default function CompareTable({ listings, groups }: CompareTableProps) {
+  // Compute ranks per group
   const ranks: Record<string, Record<string, number>> = {};
-  for (const dim of dimensions) {
+  for (const gk of groups) {
     const sorted = [...listings].sort(
-      (a, b) =>
-        getScore(b.scores as unknown as Record<string, number | boolean>, dim) -
-        getScore(a.scores as unknown as Record<string, number | boolean>, dim),
+      (a, b) => getGroupScore(b.scores, gk) - getGroupScore(a.scores, gk),
     );
-    ranks[dim] = {};
+    ranks[gk] = {};
     sorted.forEach((l, i) => {
-      ranks[dim][l.id] = i + 1;
+      ranks[gk][l.id] = i + 1;
     });
   }
 
@@ -71,36 +69,36 @@ export default function CompareTable({ listings, dimensions }: CompareTableProps
           </tr>
         </thead>
         <tbody>
-          {dimensions.map((dim) => (
-            <tr key={dim} className="border-b border-zinc-800/50">
-              <td className="text-xs text-zinc-400 py-2.5 px-2">
-                {DIMENSION_LABELS[dim]}
-              </td>
-              {listings.map((l) => {
-                const score = getScore(
-                  l.scores as unknown as Record<string, number | boolean>,
-                  dim,
-                );
-                const rank = ranks[dim][l.id];
-                return (
-                  <td key={l.id} className="text-center py-2.5 px-2">
-                    <div className="flex items-center justify-center gap-2">
-                      <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                        <div
-                          className={clsx("h-full rounded-full", scoreBg(score))}
-                          style={{ width: `${score}%` }}
-                        />
+          {groups.map((gk) => {
+            const g = GROUP_BY_KEY[gk];
+            return (
+              <tr key={gk} className="border-b border-zinc-800/50">
+                <td className="text-xs text-zinc-400 py-2.5 px-2">
+                  {g.icon} {g.label}
+                </td>
+                {listings.map((l) => {
+                  const score = getGroupScore(l.scores, gk);
+                  const rank = ranks[gk][l.id];
+                  return (
+                    <td key={l.id} className="text-center py-2.5 px-2">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <div
+                            className={clsx("h-full rounded-full", scoreBg(score))}
+                            style={{ width: `${score}%` }}
+                          />
+                        </div>
+                        <span className={clsx("text-xs font-mono", scoreColor(score))}>
+                          {Math.round(score)}
+                        </span>
+                        <span className="text-xs">{medalIcon(rank)}</span>
                       </div>
-                      <span className={clsx("text-xs font-mono", scoreColor(score))}>
-                        {Math.round(score)}
-                      </span>
-                      <span className="text-xs">{medalIcon(rank)}</span>
-                    </div>
-                  </td>
-                );
-              })}
-            </tr>
-          ))}
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
           {/* Composite row */}
           <tr className="border-t-2 border-zinc-700">
             <td className="text-xs font-semibold text-zinc-300 py-3 px-2 uppercase">

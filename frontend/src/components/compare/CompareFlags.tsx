@@ -2,21 +2,21 @@
  * CompareFlags — Flags tab of Compare mode.
  *
  * Each listing gets a card showing strengths and concerns,
- * contextualized relative to the comparison set.
+ * contextualized relative to the comparison set (by score group).
  */
 
 "use client";
 
-import type { Listing, ScoreDimension } from "@/lib/types";
-import { DIMENSION_LABELS, SCORE_DIMENSIONS } from "@/lib/types";
-import { formatPrice, formatBeds, scoreColor, getScore } from "@/lib/utils";
+import type { Listing, ScoreGroupKey } from "@/lib/types";
+import { GROUP_BY_KEY } from "@/lib/types";
+import { formatPrice, formatBeds, scoreColor, getGroupScore } from "@/lib/utils";
 import FlagList from "@/components/ui/FlagList";
 import ScoreBadge from "@/components/ui/ScoreBadge";
 import clsx from "clsx";
 
 interface CompareFlagsProps {
   listings: Listing[];
-  dimensions: ScoreDimension[];
+  groups: ScoreGroupKey[];
 }
 
 interface RelativeFlag {
@@ -25,24 +25,22 @@ interface RelativeFlag {
 }
 
 /**
- * Generate relative flags comparing a listing against peers.
+ * Generate relative flags comparing a listing against peers by group.
  */
 function generateRelativeFlags(
   listing: Listing,
   all: Listing[],
-  dims: ScoreDimension[],
+  groups: ScoreGroupKey[],
 ): RelativeFlag[] {
   const flags: RelativeFlag[] = [];
 
-  for (const dim of dims) {
-    const myScore = getScore(listing.scores as unknown as Record<string, number | boolean>, dim);
-    const allScores = all.map((l) =>
-      getScore(l.scores as unknown as Record<string, number | boolean>, dim),
-    );
+  for (const gk of groups) {
+    const myScore = getGroupScore(listing.scores, gk);
+    const allScores = all.map((l) => getGroupScore(l.scores, gk));
     const avg = allScores.reduce((a, b) => a + b, 0) / allScores.length;
     const max = Math.max(...allScores);
     const min = Math.min(...allScores);
-    const label = DIMENSION_LABELS[dim];
+    const label = GROUP_BY_KEY[gk].label;
 
     if (myScore === max && myScore > avg + 5) {
       flags.push({
@@ -76,22 +74,19 @@ function generateRelativeFlags(
 function generateSummary(
   listing: Listing,
   all: Listing[],
-  dims: ScoreDimension[],
+  groups: ScoreGroupKey[],
 ): string {
   const avgComposite = all.reduce((a, l) => a + l.scores.composite, 0) / all.length;
-  const diff = listing.scores.composite - avgComposite;
 
   const strengths: string[] = [];
   const weaknesses: string[] = [];
 
-  for (const dim of dims) {
-    const myScore = getScore(listing.scores as unknown as Record<string, number | boolean>, dim);
-    const avg = all.reduce(
-      (a, l) => a + getScore(l.scores as unknown as Record<string, number | boolean>, dim),
-      0,
-    ) / all.length;
+  for (const gk of groups) {
+    const myScore = getGroupScore(listing.scores, gk);
+    const avg =
+      all.reduce((a, l) => a + getGroupScore(l.scores, gk), 0) / all.length;
     const delta = Math.round(myScore - avg);
-    const label = DIMENSION_LABELS[dim].toLowerCase();
+    const label = GROUP_BY_KEY[gk].label.toLowerCase();
 
     if (delta > 5) strengths.push(`${label} (+${delta})`);
     else if (delta < -5) weaknesses.push(`${label} (${delta})`);
@@ -101,18 +96,18 @@ function generateSummary(
   if (strengths.length > 0) parts.push(`Strongest in ${strengths.join(", ")}`);
   if (weaknesses.length > 0) parts.push(`weaker in ${weaknesses.join(", ")}`);
 
-  return parts.join("; ") || "Scores close to group average across all dimensions";
+  return parts.join("; ") || "Scores close to group average across all categories";
 }
 
-export default function CompareFlags({ listings, dimensions }: CompareFlagsProps) {
+export default function CompareFlags({ listings, groups }: CompareFlagsProps) {
   const sorted = [...listings].sort((a, b) => b.scores.composite - a.scores.composite);
   const winnerId = sorted[0]?.id;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {sorted.map((listing) => {
-        const flags = generateRelativeFlags(listing, listings, dimensions);
-        const summary = generateSummary(listing, listings, dimensions);
+        const flags = generateRelativeFlags(listing, listings, groups);
+        const summary = generateSummary(listing, listings, groups);
         const isWinner = listing.id === winnerId;
 
         return (

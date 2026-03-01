@@ -1,7 +1,7 @@
 /**
  * CompareModal — Full-screen compare overlay.
  *
- * Step 1: Metric picker (select 4-6 dimensions).
+ * Step 1: Metric picker (select score groups to compare).
  * Step 2: Three-tab comparison view (Table / Flags / Radar).
  */
 
@@ -10,8 +10,8 @@
 import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useStore } from "@/lib/store";
-import type { ScoreDimension, CompareTab } from "@/lib/types";
-import { SCORE_DIMENSIONS, DIMENSION_LABELS } from "@/lib/types";
+import type { ScoreGroupKey, CompareTab } from "@/lib/types";
+import { SCORE_GROUPS, GROUP_BY_KEY } from "@/lib/types";
 import CompareTable from "./CompareTable";
 import CompareFlags from "./CompareFlags";
 import clsx from "clsx";
@@ -35,15 +35,15 @@ export default function CompareModal() {
   const priorities = useStore((s) => s.priorities);
 
   const [step, setStep] = useState<"pick" | "compare">("pick");
-  const [selectedDims, setSelectedDims] = useState<Set<ScoreDimension>>(
-    new Set(priorities.slice(0, 4) as ScoreDimension[]),
+  const [selectedGroups, setSelectedGroups] = useState<Set<ScoreGroupKey>>(
+    new Set(priorities.slice(0, 4) as ScoreGroupKey[]),
   );
   const [activeTab, setActiveTab] = useState<CompareTab>("table");
 
   // Reset selections when modal opens or priorities change
   useEffect(() => {
     if (compareOpen) {
-      setSelectedDims(new Set(priorities.slice(0, 4) as ScoreDimension[]));
+      setSelectedGroups(new Set(priorities.slice(0, 4) as ScoreGroupKey[]));
       setStep("pick");
     }
   }, [compareOpen, priorities]);
@@ -58,14 +58,14 @@ export default function CompareModal() {
     [allQueued, compareIds],
   );
 
-  const toggleDim = (dim: ScoreDimension) => {
-    const next = new Set(selectedDims);
-    if (next.has(dim)) {
-      if (next.size > 2) next.delete(dim);
-    } else if (next.size < 6) {
-      next.add(dim);
+  const toggleGroup = (gk: ScoreGroupKey) => {
+    const next = new Set(selectedGroups);
+    if (next.has(gk)) {
+      if (next.size > 2) next.delete(gk);
+    } else if (next.size < 5) {
+      next.add(gk);
     }
-    setSelectedDims(next);
+    setSelectedGroups(next);
   };
 
   const handleClose = () => {
@@ -75,7 +75,7 @@ export default function CompareModal() {
   };
 
   const show = compareOpen && listings.length >= 2;
-  const dims = Array.from(selectedDims);
+  const groups = Array.from(selectedGroups);
 
   return (
     <AnimatePresence>
@@ -107,36 +107,37 @@ export default function CompareModal() {
             <div className="max-w-md w-full space-y-6">
               <div className="text-center">
                 <h3 className="text-lg font-semibold text-white">
-                  Choose Metrics to Compare
+                  Choose Categories to Compare
                 </h3>
                 <p className="text-sm text-zinc-500 mt-1">
-                  Select 2–6 score dimensions ({selectedDims.size} selected)
+                  Select 2–5 score groups ({selectedGroups.size} selected)
                 </p>
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                {SCORE_DIMENSIONS.map((dim) => (
+                {SCORE_GROUPS.map((group) => (
                   <button
-                    key={dim}
-                    onClick={() => toggleDim(dim)}
+                    key={group.key}
+                    onClick={() => toggleGroup(group.key)}
                     className={clsx(
-                      "px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
-                      selectedDims.has(dim)
+                      "flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
+                      selectedGroups.has(group.key)
                         ? "bg-white text-zinc-900"
                         : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200",
                     )}
                   >
-                    {DIMENSION_LABELS[dim]}
+                    <span>{group.icon}</span>
+                    <span>{group.label}</span>
                   </button>
                 ))}
               </div>
 
               <button
                 onClick={() => setStep("compare")}
-                disabled={selectedDims.size < 2}
+                disabled={selectedGroups.size < 2}
                 className={clsx(
                   "w-full py-3 rounded-xl font-medium text-sm transition-all",
-                  selectedDims.size >= 2
+                  selectedGroups.size >= 2
                     ? "bg-white text-zinc-900 hover:bg-zinc-200"
                     : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
                 )}
@@ -176,13 +177,13 @@ export default function CompareModal() {
             {/* Content */}
             <div className="flex-1 overflow-y-auto px-4 py-4">
               {activeTab === "table" && (
-                <CompareTable listings={listings} dimensions={dims} />
+                <CompareTable listings={listings} groups={groups} />
               )}
               {activeTab === "flags" && (
-                <CompareFlags listings={listings} dimensions={dims} />
+                <CompareFlags listings={listings} groups={groups} />
               )}
               {activeTab === "radar" && (
-                <CompareRadar listings={listings} dimensions={dims} />
+                <CompareRadar listings={listings} groups={groups} />
               )}
             </div>
           </div>

@@ -39,6 +39,84 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   greenery: "Greenery",
 };
 
+// ── Score groups ───────────────────────────────────────────────
+
+export const SCORE_GROUP_KEYS = [
+  "value",
+  "access",
+  "neighborhood",
+  "safety",
+  "building",
+] as const;
+
+export type ScoreGroupKey = (typeof SCORE_GROUP_KEYS)[number];
+
+export interface ScoreGroup {
+  key: ScoreGroupKey;
+  label: string;
+  icon: string;
+  dimensions: ScoreDimension[];
+  description: string;
+}
+
+export const SCORE_GROUPS: ScoreGroup[] = [
+  {
+    key: "value",
+    label: "Value",
+    icon: "💰",
+    dimensions: ["deal"],
+    description: "Deal quality",
+  },
+  {
+    key: "access",
+    label: "Access",
+    icon: "🚇",
+    dimensions: ["transit"],
+    description: "Transit access",
+  },
+  {
+    key: "neighborhood",
+    label: "Neighborhood",
+    icon: "🌳",
+    dimensions: ["amenity", "parks", "greenery", "schools"],
+    description: "Amenities, Parks, Greenery, Schools",
+  },
+  {
+    key: "safety",
+    label: "Safety",
+    icon: "🛡️",
+    dimensions: ["crime", "noise", "shelter"],
+    description: "Crime, Noise, Shelters",
+  },
+  {
+    key: "building",
+    label: "Building",
+    icon: "🏢",
+    dimensions: ["building_violations", "management", "pest"],
+    description: "Violations, Management, Pests",
+  },
+];
+
+export const GROUP_LABELS: Record<ScoreGroupKey, string> = {
+  value: "Value",
+  access: "Access",
+  neighborhood: "Neighborhood",
+  safety: "Safety",
+  building: "Building",
+};
+
+export const DEFAULT_GROUP_PRIORITIES: ScoreGroupKey[] = [
+  "value",
+  "safety",
+  "building",
+  "neighborhood",
+  "access",
+];
+
+/** Lookup from group key → ScoreGroup config. */
+export const GROUP_BY_KEY: Record<ScoreGroupKey, ScoreGroup> =
+  Object.fromEntries(SCORE_GROUPS.map((g) => [g.key, g])) as Record<ScoreGroupKey, ScoreGroup>;
+
 // ── Data models ────────────────────────────────────────────────
 
 export interface Scores {

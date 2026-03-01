@@ -7,8 +7,8 @@
 
 "use client";
 
-import type { Listing, ScoreDimension } from "@/lib/types";
-import { DIMENSION_LABELS } from "@/lib/types";
+import type { Listing, ScoreDimension, ScoreGroupKey } from "@/lib/types";
+import { DIMENSION_LABELS, GROUP_LABELS, SCORE_GROUP_KEYS } from "@/lib/types";
 import { useStore } from "@/lib/store";
 import {
   formatPrice,
@@ -18,6 +18,7 @@ import {
   scoreColor,
   scoreRing,
   getScore,
+  getGroupScore,
 } from "@/lib/utils";
 import clsx from "clsx";
 
@@ -38,10 +39,18 @@ export default function ScanCard({
 }: ScanCardProps) {
   const hasPhoto = listing.photos.length > 0;
   const sortBy = useStore((s) => s.sortBy);
-  const isSortedByDimension = sortBy !== "composite";
-  const sortScore = isSortedByDimension
-    ? getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
-    : listing.scores.composite;
+  const isGroupSort = SCORE_GROUP_KEYS.includes(sortBy as ScoreGroupKey);
+  const isSortedByDimension = sortBy !== "composite" && !isGroupSort;
+  const sortScore = isGroupSort
+    ? getGroupScore(listing.scores, sortBy as ScoreGroupKey)
+    : isSortedByDimension
+      ? getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
+      : listing.scores.composite;
+  const sortLabel = isGroupSort
+    ? GROUP_LABELS[sortBy as ScoreGroupKey]
+    : isSortedByDimension
+      ? DIMENSION_LABELS[sortBy as ScoreDimension]
+      : null;
 
   return (
     <div
@@ -103,9 +112,9 @@ export default function ScanCard({
             {formatPrice(listing.price)}
           </span>
           <div className="flex items-center gap-1.5">
-            {isSortedByDimension && (
+            {sortLabel && (
               <span className="text-[10px] text-zinc-500 font-medium">
-                {DIMENSION_LABELS[sortBy as ScoreDimension]}
+                {sortLabel}
               </span>
             )}
             <div

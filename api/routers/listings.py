@@ -235,6 +235,7 @@ def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
 _SORT_MAP: dict[str, str] = {
     "composite": "",  # computed — handled specially
     "price": "price",
+    # Individual dimensions
     "deal": "deal_score",
     "transit": "transit_score",
     "crime": "crime_score",
@@ -247,6 +248,12 @@ _SORT_MAP: dict[str, str] = {
     "shelter": "shelter_score",
     "pest": "pest_score",
     "greenery": "greenery_score",
+    # Group-level sorts (average of member dimensions)
+    "value": "deal_score",
+    "access": "transit_score",
+    "neighborhood": "(COALESCE(amenity_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0) + COALESCE(schools_score,0)) / 4.0",
+    "safety": "(COALESCE(crime_score,0) + COALESCE(noise_score,0) + COALESCE(shelter_score,0)) / 3.0",
+    "building": "(COALESCE(building_violations_score,0) + COALESCE(management_score,0) + COALESCE(pest_score,0)) / 3.0",
 }
 
 

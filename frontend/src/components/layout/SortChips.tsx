@@ -1,20 +1,21 @@
 /**
- * SortChips — Horizontal scrollable sort dimension pills.
+ * SortChips — Horizontal scrollable sort pills.
  *
  * Below the top bar. Tap to re-sort the active queue.
+ * Shows Composite + 5 score groups.
  */
 
 "use client";
 
 import { useStore } from "@/lib/store";
-import { SCORE_DIMENSIONS, DIMENSION_LABELS } from "@/lib/types";
+import { SCORE_GROUPS } from "@/lib/types";
 import clsx from "clsx";
 
 const SORT_OPTIONS = [
   { key: "composite", label: "Composite" },
-  ...SCORE_DIMENSIONS.map((d) => ({
-    key: d,
-    label: DIMENSION_LABELS[d],
+  ...SCORE_GROUPS.map((g) => ({
+    key: g.key,
+    label: `${g.icon} ${g.label}`,
   })),
 ];
 

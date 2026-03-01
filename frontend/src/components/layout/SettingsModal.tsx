@@ -1,28 +1,28 @@
 /**
  * SettingsModal — Preferences panel.
  *
- * Contains the drag-to-reorder priority ranking for score dimensions.
- * Top 3 get heaviest weight in composite calculation.
+ * Contains the drag-to-reorder priority ranking for score groups.
+ * Top 2 get heaviest weight in composite calculation.
  */
 
 "use client";
 
 import { useState, useCallback } from "react";
 import { useStore } from "@/lib/store";
-import type { ScoreDimension } from "@/lib/types";
-import { DIMENSION_LABELS } from "@/lib/types";
+import type { ScoreGroupKey } from "@/lib/types";
+import { GROUP_BY_KEY } from "@/lib/types";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 
 function weightIndicator(index: number): string {
-  if (index < 3) return "●●●";
-  if (index < 7) return "●●";
+  if (index < 2) return "●●●";
+  if (index < 3) return "●●";
   return "●";
 }
 
 function weightColor(index: number): string {
-  if (index < 3) return "text-green-400";
-  if (index < 7) return "text-yellow-400";
+  if (index < 2) return "text-green-400";
+  if (index < 3) return "text-yellow-400";
   return "text-zinc-600";
 }
 
@@ -32,9 +32,8 @@ export default function SettingsModal() {
   const priorities = useStore((s) => s.priorities);
   const setPriorities = useStore((s) => s.setPriorities);
 
-  const [draft, setDraft] = useState<ScoreDimension[]>(priorities);
+  const [draft, setDraft] = useState<ScoreGroupKey[]>(priorities);
 
-  // Simple drag reorder via buttons (up/down)
   const moveUp = useCallback(
     (idx: number) => {
       if (idx === 0) return;
@@ -102,65 +101,78 @@ export default function SettingsModal() {
                     Priority Ranking
                   </h3>
                   <p className="text-xs text-zinc-500 mt-0.5">
-                    Drag to reorder. Top 3 get 3× weight in composite score.
+                    Reorder categories. Top 2 get 3× weight in composite score.
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  {draft.map((dim, idx) => (
-                    <div
-                      key={dim}
-                      className={clsx(
-                        "flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-all",
-                        idx < 3
-                          ? "border-green-500/30 bg-green-500/5"
-                          : "border-zinc-800 bg-zinc-800/50",
-                      )}
-                    >
-                      {/* Rank number */}
-                      <span className="text-xs text-zinc-600 w-4 text-right font-mono">
-                        {idx + 1}
-                      </span>
+                  {draft.map((gk, idx) => {
+                    const group = GROUP_BY_KEY[gk];
+                    return (
+                      <div
+                        key={gk}
+                        className={clsx(
+                          "flex items-center gap-3 px-3 py-3 rounded-lg border transition-all",
+                          idx < 2
+                            ? "border-green-500/30 bg-green-500/5"
+                            : idx < 3
+                              ? "border-yellow-500/20 bg-yellow-500/5"
+                              : "border-zinc-800 bg-zinc-800/50",
+                        )}
+                      >
+                        {/* Rank number */}
+                        <span className="text-xs text-zinc-600 w-4 text-right font-mono">
+                          {idx + 1}
+                        </span>
 
-                      {/* Label */}
-                      <span className="flex-1 text-sm text-zinc-300">
-                        {DIMENSION_LABELS[dim]}
-                      </span>
+                        {/* Icon */}
+                        <span className="text-base">{group.icon}</span>
 
-                      {/* Weight indicator */}
-                      <span className={clsx("text-xs font-mono", weightColor(idx))}>
-                        {weightIndicator(idx)}
-                      </span>
+                        {/* Label + description */}
+                        <div className="flex-1 min-w-0">
+                          <span className="text-sm text-zinc-300 font-medium">
+                            {group.label}
+                          </span>
+                          <p className="text-xs text-zinc-600 truncate">
+                            {group.description}
+                          </p>
+                        </div>
 
-                      {/* Move buttons */}
-                      <div className="flex flex-col gap-0.5">
-                        <button
-                          onClick={() => moveUp(idx)}
-                          disabled={idx === 0}
-                          className={clsx(
-                            "text-xs leading-none px-1",
-                            idx === 0
-                              ? "text-zinc-700 cursor-not-allowed"
-                              : "text-zinc-400 hover:text-white",
-                          )}
-                        >
-                          ▲
-                        </button>
-                        <button
-                          onClick={() => moveDown(idx)}
-                          disabled={idx === draft.length - 1}
-                          className={clsx(
-                            "text-xs leading-none px-1",
-                            idx === draft.length - 1
-                              ? "text-zinc-700 cursor-not-allowed"
-                              : "text-zinc-400 hover:text-white",
-                          )}
-                        >
-                          ▼
-                        </button>
+                        {/* Weight indicator */}
+                        <span className={clsx("text-xs font-mono", weightColor(idx))}>
+                          {weightIndicator(idx)}
+                        </span>
+
+                        {/* Move buttons */}
+                        <div className="flex flex-col gap-0.5">
+                          <button
+                            onClick={() => moveUp(idx)}
+                            disabled={idx === 0}
+                            className={clsx(
+                              "text-xs leading-none px-1",
+                              idx === 0
+                                ? "text-zinc-700 cursor-not-allowed"
+                                : "text-zinc-400 hover:text-white",
+                            )}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            onClick={() => moveDown(idx)}
+                            disabled={idx === draft.length - 1}
+                            className={clsx(
+                              "text-xs leading-none px-1",
+                              idx === draft.length - 1
+                                ? "text-zinc-700 cursor-not-allowed"
+                                : "text-zinc-400 hover:text-white",
+                            )}
+                          >
+                            ▼
+                          </button>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 

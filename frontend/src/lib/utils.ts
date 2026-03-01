@@ -2,7 +2,8 @@
  * Utility functions used across components.
  */
 
-import type { ScoreDimension } from "./types";
+import type { ScoreDimension, ScoreGroupKey, Scores } from "./types";
+import { GROUP_BY_KEY } from "./types";
 
 // ── Score color coding ─────────────────────────────────────────
 
@@ -113,4 +114,12 @@ export function getScore(
 ): number {
   const val = scores[dim];
   return typeof val === "number" ? val : 0;
+}
+
+/** Compute the average score for a group from a Scores object. */
+export function getGroupScore(scores: Scores, groupKey: ScoreGroupKey): number {
+  const group = GROUP_BY_KEY[groupKey];
+  if (!group) return 0;
+  const vals = group.dimensions.map((d) => (scores as unknown as Record<string, number>)[d] ?? 0);
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
 }

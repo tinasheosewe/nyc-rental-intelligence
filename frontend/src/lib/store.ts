@@ -20,9 +20,9 @@ import type {
   QueueTab,
   ViewMode,
   FilterState,
-  ScoreDimension,
+  ScoreGroupKey,
 } from "./types";
-import { DEFAULT_FILTERS, SCORE_DIMENSIONS } from "./types";
+import { DEFAULT_FILTERS, DEFAULT_GROUP_PRIORITIES } from "./types";
 import { fetchListings } from "./api";
 
 // ── State shape ────────────────────────────────────────────────
@@ -85,8 +85,8 @@ interface AppState {
   setMapOpen: (open: boolean) => void;
 
   // Preferences
-  priorities: ScoreDimension[];
-  setPriorities: (p: ScoreDimension[]) => void;
+  priorities: ScoreGroupKey[];
+  setPriorities: (p: ScoreGroupKey[]) => void;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
 }
@@ -255,7 +255,7 @@ export const useStore = create<AppState>((set, get) => ({
   setMapOpen: (open) => set({ mapOpen: open }),
 
   // Preferences
-  priorities: [...SCORE_DIMENSIONS],
+  priorities: [...DEFAULT_GROUP_PRIORITIES],
   setPriorities: (p) => set({ priorities: p }),
   settingsOpen: false,
   setSettingsOpen: (open) => set({ settingsOpen: open }),
