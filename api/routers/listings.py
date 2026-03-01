@@ -113,6 +113,7 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("mgmt_owner_buildings", "Owner portfolio (buildings)"),
         ("mgmt_owner_units", "Owner portfolio (units)"),
         ("mgmt_complaints", "HPD complaints (12 mo)"),
+        ("mgmt_heat_complaints", "Heat/hot-water complaints (311)"),
         ("mgmt_complaints_per_unit", "Complaints per unit"),
     ],
 }

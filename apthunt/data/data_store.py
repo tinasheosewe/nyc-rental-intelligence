@@ -105,6 +105,8 @@ DATASETS: dict[str, DatasetDef] = {
         geo_columns=["latitude", "longitude"],
     ),
 
+    # NB: dataset also serves PestScorer (Rodent) and ManagementScorer
+    # (HEAT/HOT WATER).  Name kept as "noise" for backward compat.
     "noise": DatasetDef(
         name="noise",
         soda_id="erm2-nwe9",

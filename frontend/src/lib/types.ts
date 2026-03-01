@@ -197,6 +197,7 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
     { key: "mgmt_owner_buildings", label: "Portfolio (buildings)" },
     { key: "mgmt_owner_units", label: "Portfolio (units)" },
     { key: "mgmt_complaints", label: "HPD complaints (12 mo)" },
+    { key: "mgmt_heat_complaints", label: "Heat / hot water (311)" },
     { key: "mgmt_complaints_per_unit", label: "Complaints per unit" },
   ],
 };
