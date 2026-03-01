@@ -33,6 +33,10 @@ def create_app() -> FastAPI:
     app.include_router(listings.router, prefix="/api")
     app.include_router(photos.router, prefix="/api")
 
+    @app.get("/api/health")
+    def health():
+        return {"status": "ok"}
+
     return app
 
 

@@ -55,10 +55,30 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
-echo ""
-echo "✔ Backend  → http://localhost:8000"
+# ── Health-check: wait for backend to respond ──────────────────
+echo "▸ Waiting for backend …"
+for i in $(seq 1 20); do
+  if curl -sf http://127.0.0.1:8000/api/health > /dev/null 2>&1; then
+    echo "✔ Backend  → http://localhost:8000  (up)"
+    break
+  fi
+  # If the process already died, fail fast
+  if ! kill -0 $BACKEND_PID 2>/dev/null; then
+    echo "✖ Backend process died. Check logs above."
+    exit 1
+  fi
+  sleep 1
+done
+
+# If we exhausted retries
+if ! curl -sf http://127.0.0.1:8000/api/health > /dev/null 2>&1; then
+  echo "✖ Backend failed to respond after 20 s. Check logs above."
+  exit 1
+fi
+
 echo "✔ Frontend → http://localhost:3000"
-echo "  Press Ctrl-C to stop both."
+echo "  Press Ctrl-C to stop both servers."
 echo ""
 
+# Block until Ctrl-C (or either process exits).
 wait
