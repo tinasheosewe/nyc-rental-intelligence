@@ -153,6 +153,31 @@ def _pest(row: dict) -> Optional[Flag]:
     return None
 
 
+def _hpd_class_c(row: dict) -> Optional[Flag]:
+    c = row.get("building_hpd_class_c") or 0
+    if c >= 3:
+        return Flag(type="red", text=f"{c} hazardous (Class C) HPD violations")
+    if c >= 1:
+        return Flag(type="yellow", text=f"{c} hazardous (Class C) HPD violation(s)")
+    return None
+
+
+def _litigations(row: dict) -> Optional[Flag]:
+    n = row.get("mgmt_litigations") or 0
+    if n >= 1:
+        return Flag(type="red", text=f"Building has {n} open HPD litigation(s)")
+    return None
+
+
+def _evictions(row: dict) -> Optional[Flag]:
+    n = row.get("mgmt_evictions") or 0
+    if n >= 5:
+        return Flag(type="red", text=f"{n} eviction filings within 500 m")
+    if n >= 2:
+        return Flag(type="yellow", text=f"{n} eviction filings nearby")
+    return None
+
+
 # ── Public API ──────────────────────────────────────────────────
 
 _RULES = [
@@ -161,7 +186,10 @@ _RULES = [
     _rent_stabilized,
     _transit,
     _violations,
+    _hpd_class_c,
     _management,
+    _litigations,
+    _evictions,
     _flood_risk,
     _parks,
     _deal,

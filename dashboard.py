@@ -41,6 +41,7 @@ SCORE_COLUMNS = [
     "amenity_score",
     "shelter_score",
     "pest_score",
+    "greenery_score",
 ]
 
 COMPONENT_COLUMNS = {
@@ -49,14 +50,15 @@ COMPONENT_COLUMNS = {
     "flood_risk_score": ["flood_firm07", "flood_pfirm15"],
     "crime_score": ["crime_felony_count", "crime_misdemeanor_count", "crime_violation_count", "crime_weighted_total", "crime_trend_ratio", "crime_trend_direction"],
     "noise_score": ["noise_complaint_count", "noise_trend_ratio", "noise_trend_direction"],
-    "building_violations_score": ["building_violation_count", "building_unitsres", "building_violations_per_unit"],
+    "building_violations_score": ["building_violation_count", "building_hpd_class_a", "building_hpd_class_b", "building_hpd_class_c", "building_active_permits", "building_unitsres", "building_violations_per_unit"],
     "parks_score": ["parks_distance_m", "parks_name", "parks_acres"],
     "schools_score": ["school_name", "school_rating"],
     "rent_stabilized_score": ["rent_stabilized", "building_year"],
-    "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_heat_complaints", "mgmt_complaints_per_unit"],
+    "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_hpd_heat", "mgmt_hpd_plumbing", "mgmt_hpd_paint", "mgmt_hpd_safety", "mgmt_heat_complaints", "mgmt_litigations", "mgmt_evictions", "mgmt_complaints_per_unit"],
     "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
     "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total", "project_count", "project_nearest_m", "project_nearest_name"],
     "pest_score": ["pest_hpd_count", "pest_rodent_count", "pest_total", "pest_units", "pest_per_unit"],
+    "greenery_score": ["greenery_tree_count", "greenery_canopy_score", "greenery_garden_count", "greenery_park_count"],
 }
 
 # Pretty labels
@@ -74,6 +76,7 @@ SCORE_LABELS = {
     "amenity_score": "Amenities",
     "shelter_score": "Shelters & Projects",
     "pest_score": "Pests",
+    "greenery_score": "Greenery",
 }
 
 # Methodology descriptions — shown as help text on the Score Analysis tab
@@ -91,6 +94,7 @@ SCORE_DESCRIPTIONS = {
     "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
     "shelter_score": "Homeless shelters/services and NYCHA public housing projects within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
     "pest_score": "HPD pest complaints (building-level by BBL) + 311 rodent complaints (area-level within 100 m), normalised per residential unit, percentile-ranked. Fewer pests per unit = higher score.",
+    "greenery_score": "Street tree density (200 m, diameter-weighted canopy) + community gardens (500 m) + park count (500 m), percentile-ranked. More green = higher score.",
 }
 
 # Scoring method type — controls how scores are displayed and colored
@@ -108,6 +112,7 @@ SCORE_METHODS = {
     "amenity_score": "percentile",
     "shelter_score": "median_norm",
     "pest_score": "percentile",
+    "greenery_score": "percentile",
 }
 
 # Human-readable component labels
@@ -129,9 +134,13 @@ COMPONENT_LABELS = {
     "noise_complaint_count": "Noise complaints",
     "noise_trend_ratio": "Noise trend ratio",
     "noise_trend_direction": "Noise trend",
-    "building_violation_count": "Active building violations",
+    "building_violation_count": "Active DOB violations",
+    "building_hpd_class_a": "HPD Class A violations",
+    "building_hpd_class_b": "HPD Class B violations",
+    "building_hpd_class_c": "HPD Class C violations (hazardous)",
+    "building_active_permits": "Active DOB permits",
     "building_unitsres": "Residential units",
-    "building_violations_per_unit": "Building violations per unit",
+    "building_violations_per_unit": "Weighted violations per unit",
     "parks_distance_m": "Distance to best park (m)",
     "parks_name": "Best scoring park",
     "parks_acres": "Park size (acres)",
@@ -143,7 +152,13 @@ COMPONENT_LABELS = {
     "mgmt_owner_buildings": "Owner portfolio (buildings)",
     "mgmt_owner_units": "Owner portfolio (units)",
     "mgmt_complaints": "HPD complaints (12 mo)",
-    "mgmt_heat_complaints": "Heat/hot-water complaints (311)",
+    "mgmt_hpd_heat": "Heat / hot water complaints",
+    "mgmt_hpd_plumbing": "Plumbing complaints",
+    "mgmt_hpd_paint": "Paint / plaster complaints",
+    "mgmt_hpd_safety": "Safety complaints",
+    "mgmt_heat_complaints": "311 heat complaints (area)",
+    "mgmt_litigations": "HPD litigations (open)",
+    "mgmt_evictions": "Eviction filings (500 m)",
     "mgmt_complaints_per_unit": "Complaints per unit",
     "amenity_grocery": "Grocery / convenience",
     "amenity_pharmacy": "Pharmacies",
@@ -163,6 +178,10 @@ COMPONENT_LABELS = {
     "pest_total": "Total pest reports",
     "pest_units": "Residential units",
     "pest_per_unit": "Pests per unit",
+    "greenery_tree_count": "Street trees within 200 m",
+    "greenery_canopy_score": "Canopy score (diameter-weighted)",
+    "greenery_garden_count": "Community gardens within 500 m",
+    "greenery_park_count": "Parks within 500 m",
 }
 
 

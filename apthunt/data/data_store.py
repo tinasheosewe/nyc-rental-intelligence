@@ -168,6 +168,76 @@ DATASETS: dict[str, DatasetDef] = {
         where="latitude IS NOT NULL",
         geo_columns=["latitude", "longitude"],
     ),
+
+    # ── New enrichment datasets ──────────────────────────────────
+
+    "hpd_violations": DatasetDef(
+        name="hpd_violations",
+        soda_id="wvxf-dwi5",     # HPD Violations — inspector-confirmed issues
+        select="violationid,boroid,block,lot,class,"
+               "inspectiondate,currentstatus,violationstatus,"
+               "novdescription,latitude,longitude",
+        refresh_days=7,           # weekly — active violations change often
+        where="violationstatus = 'Open' AND inspectiondate > '{TWO_YEARS_AGO}'",
+        geo_columns=["latitude", "longitude"],
+    ),
+
+    "hpd_litigations": DatasetDef(
+        name="hpd_litigations",
+        soda_id="59kj-x8nc",     # HPD Litigations — HPD suing landlords
+        select="litigationid,boroid,block,lot,"
+               "casetype,casestatus,caseopendate,"
+               "respondent,latitude,longitude",
+        refresh_days=30,          # monthly
+        where="casestatus IN ('PENDING','APPLICATION PENDING')",
+        geo_columns=["latitude", "longitude"],
+    ),
+
+    "evictions": DatasetDef(
+        name="evictions",
+        soda_id="6z8x-wfk4",     # NYC Marshals — executed evictions
+        select="court_index_number,eviction_address,"
+               "executed_date,residential_commercial_ind,"
+               "borough,latitude,longitude,bbl",
+        refresh_days=30,          # monthly
+        where="residential_commercial_ind = 'Residential'"
+               " AND executed_date > '{TWELVE_MONTHS_AGO}'"
+               " AND latitude IS NOT NULL",
+        geo_columns=["latitude", "longitude"],
+        index_columns=["bbl"],
+    ),
+
+    "dob_permits": DatasetDef(
+        name="dob_permits",
+        soda_id="ic3t-wcy2",     # DOB Job Applications — active permits
+        select="job__,borough,block,lot,job_type,"
+               "job_status_descrp,gis_latitude,gis_longitude",
+        refresh_days=30,          # monthly
+        where="job_status_descrp IN ('PERMIT ISSUED - ENTIRE JOB/WORK',"
+               "'PERMIT ISSUED - PARTIAL JOB/WORK',"
+               "'APPROVED','PARTIALLY APPROVED')"
+               " AND gis_latitude IS NOT NULL",
+        geo_columns=["gis_latitude", "gis_longitude"],
+    ),
+
+    "street_trees": DatasetDef(
+        name="street_trees",
+        soda_id="uvpi-gqnh",     # 2015 Street Tree Census
+        select="tree_id,status,health,spc_common,"
+               "tree_dbh,latitude,longitude",
+        refresh_days=365,         # annual — census data is static
+        where="status = 'Alive' AND latitude IS NOT NULL",
+        geo_columns=["latitude", "longitude"],
+    ),
+
+    "community_gardens": DatasetDef(
+        name="community_gardens",
+        soda_id="ajxm-kzmj",     # GreenThumb Community Gardens
+        select="garden_name,address,latitude,longitude,size",
+        refresh_days=180,         # biannual — gardens change slowly
+        where="latitude IS NOT NULL",
+        geo_columns=["latitude", "longitude"],
+    ),
 }
 
 
@@ -253,6 +323,11 @@ class DataStore:
                     "%Y-%m-%dT00:00:00"
                 )
                 where = where.replace("{TWELVE_MONTHS_AGO}", cutoff)
+            if "{TWO_YEARS_AGO}" in where:
+                cutoff2 = (datetime.now() - timedelta(days=730)).strftime(
+                    "%Y-%m-%dT00:00:00"
+                )
+                where = where.replace("{TWO_YEARS_AGO}", cutoff2)
 
             total = self._paginated_download(
                 ddef.soda_id,
@@ -463,7 +538,7 @@ class DataStore:
         quiet: bool,
     ) -> int:
         """Download via paginated SODA queries into a staging table."""
-        client = Socrata(DOMAIN, self._app_token, timeout=120)
+        client = Socrata(DOMAIN, self._app_token, timeout=300)
 
         # Drop staging table if it exists from a previous failed run
         self._conn.execute(f"DROP TABLE IF EXISTS [{table}]")
@@ -472,7 +547,7 @@ class DataStore:
         total = 0
         offset = 0
         table_created = False
-        max_retries = 3
+        max_retries = 5
 
         try:
             while True:

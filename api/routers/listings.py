@@ -94,9 +94,13 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("noise_complaint_count", "Noise complaints"),
     ],
     "building_violations": [
-        ("building_violation_count", "Active violations"),
+        ("building_violation_count", "Active DOB violations"),
+        ("building_hpd_class_a", "HPD Class A violations"),
+        ("building_hpd_class_b", "HPD Class B violations"),
+        ("building_hpd_class_c", "HPD Class C violations (hazardous)"),
+        ("building_active_permits", "Active DOB permits"),
         ("building_unitsres", "Residential units"),
-        ("building_violations_per_unit", "Violations per unit"),
+        ("building_violations_per_unit", "Weighted violations per unit"),
     ],
     "transit": [
         ("transit_station_count", "Stations within 800 m"),
@@ -113,8 +117,20 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("mgmt_owner_buildings", "Owner portfolio (buildings)"),
         ("mgmt_owner_units", "Owner portfolio (units)"),
         ("mgmt_complaints", "HPD complaints (12 mo)"),
-        ("mgmt_heat_complaints", "Heat/hot-water complaints (311)"),
+        ("mgmt_hpd_heat", "Heat / hot water complaints"),
+        ("mgmt_hpd_plumbing", "Plumbing complaints"),
+        ("mgmt_hpd_paint", "Paint / plaster complaints"),
+        ("mgmt_hpd_safety", "Safety complaints"),
+        ("mgmt_heat_complaints", "311 heat complaints (area)"),
+        ("mgmt_litigations", "HPD litigations (open)"),
+        ("mgmt_evictions", "Eviction filings (500 m)"),
         ("mgmt_complaints_per_unit", "Complaints per unit"),
+    ],
+    "greenery": [
+        ("greenery_tree_count", "Street trees within 200 m"),
+        ("greenery_canopy_score", "Canopy score (diameter-weighted)"),
+        ("greenery_garden_count", "Community gardens within 500 m"),
+        ("greenery_park_count", "Parks within 500 m"),
     ],
 }
 
@@ -152,6 +168,7 @@ def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
         amenity=score_vals.get("amenity", 0),
         shelter=score_vals.get("shelter", 0),
         pest=score_vals.get("pest", 0),
+        greenery=score_vals.get("greenery", 0),
         rent_stabilized=bool(row.get("rent_stabilized")),
     )
 
@@ -215,6 +232,7 @@ _SORT_MAP: dict[str, str] = {
     "amenity": "amenity_score",
     "shelter": "shelter_score",
     "pest": "pest_score",
+    "greenery": "greenery_score",
 }
 
 

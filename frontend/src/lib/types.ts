@@ -20,6 +20,7 @@ export const SCORE_DIMENSIONS = [
   "amenity",
   "shelter",
   "pest",
+  "greenery",
 ] as const;
 
 export type ScoreDimension = (typeof SCORE_DIMENSIONS)[number];
@@ -37,6 +38,7 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   amenity: "Amenities",
   shelter: "Shelters & Projects",
   pest: "Pests",
+  greenery: "Greenery",
 };
 
 // ── Data models ────────────────────────────────────────────────
@@ -55,6 +57,7 @@ export interface Scores {
   amenity: number;
   shelter: number;
   pest: number;
+  greenery: number;
   rent_stabilized: boolean;
 }
 
@@ -178,9 +181,13 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
     { key: "noise_complaint_count", label: "Noise complaints" },
   ],
   building_violations: [
-    { key: "building_violation_count", label: "Active violations" },
+    { key: "building_violation_count", label: "Active DOB violations" },
+    { key: "building_hpd_class_a", label: "HPD Class A violations" },
+    { key: "building_hpd_class_b", label: "HPD Class B violations" },
+    { key: "building_hpd_class_c", label: "HPD Class C (hazardous)" },
+    { key: "building_active_permits", label: "Active DOB permits" },
     { key: "building_unitsres", label: "Residential units" },
-    { key: "building_violations_per_unit", label: "Violations per unit" },
+    { key: "building_violations_per_unit", label: "Weighted violations per unit" },
   ],
   transit: [
     { key: "transit_station_count", label: "Stations within 800 m" },
@@ -197,7 +204,19 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
     { key: "mgmt_owner_buildings", label: "Portfolio (buildings)" },
     { key: "mgmt_owner_units", label: "Portfolio (units)" },
     { key: "mgmt_complaints", label: "HPD complaints (12 mo)" },
-    { key: "mgmt_heat_complaints", label: "Heat / hot water (311)" },
+    { key: "mgmt_hpd_heat", label: "Heat / hot water" },
+    { key: "mgmt_hpd_plumbing", label: "Plumbing" },
+    { key: "mgmt_hpd_paint", label: "Paint / plaster" },
+    { key: "mgmt_hpd_safety", label: "Safety" },
+    { key: "mgmt_heat_complaints", label: "311 heat (area)" },
+    { key: "mgmt_litigations", label: "HPD litigations (open)" },
+    { key: "mgmt_evictions", label: "Eviction filings (500 m)" },
     { key: "mgmt_complaints_per_unit", label: "Complaints per unit" },
+  ],
+  greenery: [
+    { key: "greenery_tree_count", label: "Street trees (200 m)" },
+    { key: "greenery_canopy_score", label: "Canopy score" },
+    { key: "greenery_garden_count", label: "Community gardens (500 m)" },
+    { key: "greenery_park_count", label: "Parks (500 m)" },
   ],
 };

@@ -1,14 +1,26 @@
 """
-BuildingViolationsScorer — scores listings by active DOB building violations.
+BuildingViolationsScorer — scores listings by active building violations.
 
-Uses pre-downloaded PLUTO (``ds_pluto``) to map lat/lon → BBL,
-then queries pre-downloaded DOB Violations (``ds_dob_violations``)
-for that BBL.  Normalises count by residential units so large
-buildings aren't unfairly penalised.
+Combines two violation sources:
 
-Scoring: percentile-rank across all listings in the current universe.
-Fewer violations per unit → higher score.
-Listing at the median gets 50, best gets ~100, worst gets ~0.
+1. **DOB Violations** (``ds_dob_violations``) — Department of Buildings
+   violations for code/construction issues.  Looked up by BBL.
+
+2. **HPD Violations** (``ds_hpd_violations``) — Housing Preservation &
+   Development violations for habitability issues.  Inspector-confirmed,
+   classified by severity:
+     Class A = non-hazardous (90 days to fix)
+     Class B = hazardous (30 days to fix)
+     Class C = **immediately hazardous** (24 hours — lead, no heat, gas …)
+
+3. **DOB Active Permits** (``ds_dob_permits``) — active construction
+   permits on the building or nearby.  Surfaced as a breakout component
+   (not scored — informational only).
+
+Scoring:
+    Weighted violation rate per unit:
+        weighted = DOB + HPD-A×1 + HPD-B×2 + HPD-C×5
+    Percentile-ranked.  Fewer violations per unit → higher score.
 """
 
 from __future__ import annotations
@@ -40,13 +52,13 @@ class BuildingViolationsScorer(Scorer):
     def columns(self) -> dict[str, str]:
         return {
             "building_violation_count": "INTEGER",
+            "building_hpd_class_a": "INTEGER",
+            "building_hpd_class_b": "INTEGER",
+            "building_hpd_class_c": "INTEGER",
             "building_unitsres": "INTEGER",
             "building_violations_per_unit": "REAL",
+            "building_active_permits": "INTEGER",
         }
-
-    # ------------------------------------------------------------------
-    # Main scoring loop
-    # ------------------------------------------------------------------
 
     def score(
         self,
@@ -55,18 +67,18 @@ class BuildingViolationsScorer(Scorer):
     ) -> list[ScorerResult]:
         self._store.ensure_downloaded("pluto", quiet=True)
         self._store.ensure_downloaded("dob_violations", quiet=True)
+        self._store.ensure_downloaded("hpd_violations", quiet=True)
+        self._store.ensure_downloaded("dob_permits", quiet=True)
 
-        # Deduplicate by geohash so each block is fetched once
         gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "building_violations")
+            cached = self._cache.get(gh, "bv_v2")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
 
-            # 1. Get PLUTO lots from local data (reuse shared "pluto" cache)
             pluto_rows = self._cache.get_or_fetch(
                 gh,
                 "pluto",
@@ -74,70 +86,88 @@ class BuildingViolationsScorer(Scorer):
                     "pluto", lat, lon, delta=0.0015,
                 ),
             )
-
-            # 2. Find the nearest lot to the listing point
             nearest = find_nearest_row(pluto_rows, lat, lon)
+
             if nearest is None:
                 stats = {
                     "building_violation_count": 0,
+                    "building_hpd_class_a": 0,
+                    "building_hpd_class_b": 0,
+                    "building_hpd_class_c": 0,
                     "building_unitsres": 1,
+                    "building_active_permits": 0,
                 }
                 block_stats[gh] = stats
-                self._cache.put(gh, "building_violations", stats)
+                self._cache.put(gh, "bv_v2", stats)
                 continue
 
             bbl_raw = nearest.get("bbl", "")
             unitsres = pluto_units(nearest)
 
-            # 3. Parse BBL → boro / block / lot for DOB query
             try:
                 boro, block, lot = parse_bbl(bbl_raw)
             except (ValueError, IndexError):
                 stats = {
                     "building_violation_count": 0,
+                    "building_hpd_class_a": 0,
+                    "building_hpd_class_b": 0,
+                    "building_hpd_class_c": 0,
                     "building_unitsres": unitsres,
+                    "building_active_permits": 0,
                 }
                 block_stats[gh] = stats
-                self._cache.put(gh, "building_violations", stats)
+                self._cache.put(gh, "bv_v2", stats)
                 continue
 
-            # 4. Query DOB violations from local data (active only)
-            violations = self._fetch_violations(boro, block, lot)
-            count = len(violations)
+            # DOB violations
+            dob_count = len(self._fetch_dob_violations(boro, block, lot))
+
+            # HPD violations by class
+            hpd_a, hpd_b, hpd_c = self._fetch_hpd_violations(boro, block, lot)
+
+            # DOB active permits
+            permits = self._fetch_permits(boro, block, lot)
 
             stats = {
-                "building_violation_count": count,
+                "building_violation_count": dob_count,
+                "building_hpd_class_a": hpd_a,
+                "building_hpd_class_b": hpd_b,
+                "building_hpd_class_c": hpd_c,
                 "building_unitsres": unitsres,
+                "building_active_permits": permits,
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "building_violations", stats)
+            self._cache.put(gh, "bv_v2", stats)
 
-        # Collect per-unit values for percentile ranking
-        per_units: list[tuple[dict, float]] = []
+        # Weighted violation rate per unit for scoring
+        per_units: list[float] = []
         for lst in listings:
-            stats = block_stats[lst["geohash"]]
-            count = stats["building_violation_count"]
-            unitsres = stats.get("building_unitsres", 1)
-            per_unit = count / max(1, unitsres)
-            per_units.append((lst, per_unit))
+            s = block_stats[lst["geohash"]]
+            weighted = (
+                s["building_violation_count"]
+                + s["building_hpd_class_a"]
+                + s["building_hpd_class_b"] * 2
+                + s["building_hpd_class_c"] * 5
+            )
+            per_units.append(weighted / max(1, s["building_unitsres"]))
 
-        # Percentile-rank: fewer violations → higher score
-        # zero_is_perfect: no violations → score 100.
-        scores = percentile_scores(
-            [pu for _, pu in per_units], reverse=True, zero_is_perfect=True,
-        )
+        scores = percentile_scores(per_units, reverse=True, zero_is_perfect=True)
 
         results: list[ScorerResult] = []
-        for i, (lst, per_unit) in enumerate(per_units):
-            stats = block_stats[lst["geohash"]]
+        for i, lst in enumerate(listings):
+            s = block_stats[lst["geohash"]]
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
                     score=scores[i],
                     components={
-                        "building_violation_count": stats["building_violation_count"],
-                        "building_unitsres": stats.get("building_unitsres", 1),
-                        "building_violations_per_unit": round(per_unit, 4),
+                        "building_violation_count": s["building_violation_count"],
+                        "building_hpd_class_a": s["building_hpd_class_a"],
+                        "building_hpd_class_b": s["building_hpd_class_b"],
+                        "building_hpd_class_c": s["building_hpd_class_c"],
+                        "building_unitsres": s["building_unitsres"],
+                        "building_violations_per_unit": round(per_units[i], 4),
+                        "building_active_permits": s["building_active_permits"],
                     },
                 )
             )
@@ -147,18 +177,53 @@ class BuildingViolationsScorer(Scorer):
     # Data helpers
     # ------------------------------------------------------------------
 
-    def _fetch_violations(
-        self,
-        boro: str,
-        block: str,
-        lot: str,
-    ) -> list[dict]:
-        """Fetch unresolved DOB violations for a given BBL from local data."""
+    def _fetch_dob_violations(self, boro: str, block: str, lot: str) -> list[dict]:
         return self._store.query(
             "dob_violations",
             where_clause="boro=? AND block=? AND lot=?",
             params=(boro, block, lot),
-            select="isn_dob_bis_viol,violation_type,violation_category,issue_date",
+            select="isn_dob_bis_viol",
         )
+
+    def _fetch_hpd_violations(
+        self, boro: str, block: str, lot: str,
+    ) -> tuple[int, int, int]:
+        """Return (class_a, class_b, class_c) counts for open HPD violations."""
+        # HPD violations store block/lot WITHOUT leading zeros,
+        # but parse_bbl returns zero-padded values — strip them.
+        rows = self._store.query(
+            "hpd_violations",
+            where_clause="boroid=? AND block=? AND lot=?",
+            params=(boro, str(int(block)), str(int(lot))),
+            select="class",
+        )
+        a = b = c = 0
+        for r in rows:
+            cls = (r.get("class") or "").upper()
+            if cls == "A":
+                a += 1
+            elif cls == "B":
+                b += 1
+            elif cls == "C":
+                c += 1
+        return a, b, c
+
+    def _fetch_permits(self, boro: str, block: str, lot: str) -> int:
+        """Count active DOB permits for this BBL."""
+        # DOB permits store borough as name, we have numeric boro code
+        _BORO_MAP = {
+            "1": "MANHATTAN", "2": "BRONX", "3": "BROOKLYN",
+            "4": "QUEENS", "5": "STATEN ISLAND",
+        }
+        boro_name = _BORO_MAP.get(boro, "")
+        if not boro_name:
+            return 0
+        rows = self._store.query(
+            "dob_permits",
+            where_clause="borough=? AND block=? AND lot=?",
+            params=(boro_name, block, lot),
+            select="COUNT(*) as cnt",
+        )
+        return int(rows[0]["cnt"]) if rows else 0
 
 
