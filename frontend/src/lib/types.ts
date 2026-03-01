@@ -29,7 +29,7 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   flood_risk: "Flood Risk",
   crime: "Crime",
   noise: "Noise",
-  building_violations: "DOB Violations",
+  building_violations: "Building Violations",
   parks: "Parks",
   schools: "Schools",
   management: "Management",

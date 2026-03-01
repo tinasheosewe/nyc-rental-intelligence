@@ -257,7 +257,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                   <dd className="text-zinc-300">{listing.building.total_units}</dd>
                 </>
               )}
-              <dt className="text-zinc-500">DOB Violations</dt>
+              <dt className="text-zinc-500">Building Violations</dt>
               <dd className="text-zinc-300">{listing.building.open_violations} open</dd>
               <dt className="text-zinc-500">HPD Complaints</dt>
               <dd className="text-zinc-300">{listing.building.hpd_complaints_12mo} (12mo)</dd>
