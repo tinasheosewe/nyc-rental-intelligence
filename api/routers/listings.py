@@ -63,8 +63,10 @@ def _row_to_scores(row: dict) -> dict[str, float]:
 _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
     "pest": [
         ("pest_hpd_count", "HPD pest complaints (building)"),
-        ("pest_rodent_count", "311 rodent complaints (area)"),
+        ("pest_rodent_count", "311 rodent complaints (100 m)"),
         ("pest_total", "Total pest reports"),
+        ("pest_units", "Residential units"),
+        ("pest_per_unit", "Pests per unit"),
     ],
     "amenity": [
         ("amenity_grocery", "Grocery / convenience"),

@@ -9,16 +9,20 @@ Combines two independent data sources:
    (via PLUTO, same approach as ManagementScorer).
 
 2. **Area-level** — 311 Service Requests with ``complaint_type='Rodent'``
-   within 300 m (same radius as NoiseScorer; data already in ``ds_noise``).
+   within 100 m (tight radius — pests are hyper-local).
 
 Scoring:
-    Percentile-rank across all listings by ``pest_total``
-    (HPD pests + 311 rodents).  Lower totals → higher score.
+    Combined complaints are normalised **per residential unit**
+    (via PLUTO ``unitsres``), then percentile-ranked.
+    A 100-unit building with 5 complaints rates far better than
+    a single home with 5.
 
 Output columns:
-    pest_hpd_count     INTEGER  — HPD pest complaints for the building (12 mo)
-    pest_rodent_count  INTEGER  — 311 rodent complaints within 300 m
-    pest_total         INTEGER  — combined total
+    pest_hpd_count       INTEGER — HPD pest complaints for the building (12 mo)
+    pest_rodent_count    INTEGER — 311 rodent complaints within 100 m
+    pest_total           INTEGER — combined raw total
+    pest_units           INTEGER — residential units from PLUTO (≥1)
+    pest_per_unit        REAL    — pest_total / pest_units
 """
 
 from __future__ import annotations
@@ -32,7 +36,7 @@ from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 
 
-RADIUS_M = 300
+RADIUS_M = 100
 
 
 class PestScorer(Scorer):
@@ -50,6 +54,8 @@ class PestScorer(Scorer):
             "pest_hpd_count": "INTEGER",
             "pest_rodent_count": "INTEGER",
             "pest_total": "INTEGER",
+            "pest_units": "INTEGER",
+            "pest_per_unit": "REAL",
         }
 
     # ------------------------------------------------------------------
@@ -73,27 +79,46 @@ class PestScorer(Scorer):
         block_stats: dict[str, dict] = {}
 
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "pest")
+            cached = self._cache.get(gh, "pest_v2")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
 
-            # --- Building-level: HPD pest complaints via BBL ---------------
-            hpd_count = self._hpd_pest_count(lat, lon)
+            # --- PLUTO lookup (BBL + units) --------------------------------
+            pluto_rows = self._store.query_bbox(
+                "pluto", lat, lon, delta=0.0015,
+            )
+            nearest = self._find_nearest_lot(pluto_rows, lat, lon)
 
-            # --- Area-level: 311 rodent complaints within 300 m ------------
+            # --- Building-level: HPD pest complaints via BBL ---------------
+            hpd_count = self._hpd_pest_count(nearest)
+
+            # --- Area-level: 311 rodent complaints within 100 m ------------
             rodent_count = self._rodent_count(lat, lon)
+
+            # --- Units from PLUTO (floor at 1) -----------------------------
+            units = 1
+            if nearest:
+                try:
+                    units = max(1, int(float(nearest.get("unitsres") or 1)))
+                except (ValueError, TypeError):
+                    units = 1
+
+            total = hpd_count + rodent_count
+            per_unit = round(total / units, 4)
 
             stats = {
                 "pest_hpd_count": hpd_count,
                 "pest_rodent_count": rodent_count,
-                "pest_total": hpd_count + rodent_count,
+                "pest_total": total,
+                "pest_units": units,
+                "pest_per_unit": per_unit,
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "pest", stats)
+            self._cache.put(gh, "pest_v2", stats)
 
-        # Percentile-rank by pest_total (lower = better)
-        raw = [block_stats[lst["geohash"]]["pest_total"] for lst in listings]
+        # Percentile-rank by pest_per_unit (lower = better)
+        raw = [block_stats[lst["geohash"]]["pest_per_unit"] for lst in listings]
         pct_scores = _percentile_scores(raw, reverse=True)
 
         results: list[ScorerResult] = []
@@ -107,6 +132,8 @@ class PestScorer(Scorer):
                         "pest_hpd_count": stats["pest_hpd_count"],
                         "pest_rodent_count": stats["pest_rodent_count"],
                         "pest_total": stats["pest_total"],
+                        "pest_units": stats["pest_units"],
+                        "pest_per_unit": stats["pest_per_unit"],
                     },
                 )
             )
@@ -116,18 +143,12 @@ class PestScorer(Scorer):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _hpd_pest_count(self, lat: float, lon: float) -> int:
+    def _hpd_pest_count(self, nearest_lot: dict | None) -> int:
         """Count HPD pest complaints for the nearest PLUTO lot's BBL."""
-        # Reuse PLUTO data already cached by management scorer
-        pluto_rows = self._store.query_bbox(
-            "pluto", lat, lon, delta=0.0015,
-        )
-        nearest = self._find_nearest_lot(pluto_rows, lat, lon)
-
-        if nearest is None:
+        if nearest_lot is None:
             return 0
 
-        raw_bbl = nearest.get("bbl")
+        raw_bbl = nearest_lot.get("bbl")
         if not raw_bbl:
             return 0
 

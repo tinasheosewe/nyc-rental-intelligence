@@ -56,7 +56,7 @@ COMPONENT_COLUMNS = {
     "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_complaints_per_unit"],
     "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
     "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total", "project_count", "project_nearest_m", "project_nearest_name"],
-    "pest_score": ["pest_hpd_count", "pest_rodent_count", "pest_total"],
+    "pest_score": ["pest_hpd_count", "pest_rodent_count", "pest_total", "pest_units", "pest_per_unit"],
 }
 
 # Pretty labels
@@ -90,7 +90,7 @@ SCORE_DESCRIPTIONS = {
     "management_score": "Owner/management company HPD complaint rate across portfolio, percentile-ranked.",
     "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
     "shelter_score": "Homeless shelters/services and NYCHA public housing projects within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
-    "pest_score": "HPD pest complaints (building-level by BBL) + 311 rodent complaints (area-level within 300 m), percentile-ranked. Fewer pest reports = higher score.",
+    "pest_score": "HPD pest complaints (building-level by BBL) + 311 rodent complaints (area-level within 100 m), normalised per residential unit, percentile-ranked. Fewer pests per unit = higher score.",
 }
 
 # Scoring method type — controls how scores are displayed and colored
@@ -160,8 +160,10 @@ COMPONENT_LABELS = {
     "project_nearest_m": "Nearest project (m)",
     "project_nearest_name": "Nearest NYCHA development",
     "pest_hpd_count": "HPD pest complaints (building)",
-    "pest_rodent_count": "311 rodent complaints (area)",
+    "pest_rodent_count": "311 rodent complaints (100 m)",
     "pest_total": "Total pest reports",
+    "pest_units": "Residential units",
+    "pest_per_unit": "Pests per unit",
 }
 
 

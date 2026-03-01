@@ -147,8 +147,10 @@ export interface BreakoutItem {
 export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>> = {
   pest: [
     { key: "pest_hpd_count", label: "HPD pest complaints (building)" },
-    { key: "pest_rodent_count", label: "311 rodent complaints (area)" },
+    { key: "pest_rodent_count", label: "311 rodent complaints (100 m)" },
     { key: "pest_total", label: "Total pest reports" },
+    { key: "pest_units", label: "Residential units" },
+    { key: "pest_per_unit", label: "Pests per unit" },
   ],
   amenity: [
     { key: "amenity_grocery", label: "Grocery / convenience" },
