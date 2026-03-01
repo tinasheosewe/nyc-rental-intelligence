@@ -13,12 +13,11 @@ from pydantic import BaseModel
 
 
 class Scores(BaseModel):
-    """All 11 scoring dimensions plus rent-stabilized flag."""
+    """All 12 scoring dimensions plus rent-stabilized flag."""
 
     composite: float = 0.0
     deal: float = 0.0
     transit: float = 0.0
-    flood_risk: float = 0.0
     crime: float = 0.0
     noise: float = 0.0
     building_violations: float = 0.0

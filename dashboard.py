@@ -30,7 +30,6 @@ DB_PATH = pathlib.Path(__file__).resolve().parent / "apthunt.db"
 SCORE_COLUMNS = [
     "deal_score",
     "transit_score",
-    "flood_risk_score",
     "crime_score",
     "noise_score",
     "building_violations_score",
@@ -47,7 +46,6 @@ SCORE_COLUMNS = [
 COMPONENT_COLUMNS = {
     "deal_score": ["comp_median", "comp_set_size", "comp_scope"],
     "transit_score": ["transit_station_count", "transit_routes_served", "transit_nearest_m"],
-    "flood_risk_score": ["flood_firm07", "flood_pfirm15"],
     "crime_score": ["crime_felony_count", "crime_misdemeanor_count", "crime_violation_count", "crime_weighted_total", "crime_trend_ratio", "crime_trend_direction"],
     "noise_score": ["noise_complaint_count", "noise_trend_ratio", "noise_trend_direction"],
     "building_violations_score": ["building_violation_count", "building_hpd_class_a", "building_hpd_class_b", "building_hpd_class_c", "building_active_permits", "building_unitsres", "building_violations_per_unit"],
@@ -65,7 +63,6 @@ COMPONENT_COLUMNS = {
 SCORE_LABELS = {
     "deal_score": "Deal",
     "transit_score": "Transit",
-    "flood_risk_score": "Flood Risk",
     "crime_score": "Crime",
     "noise_score": "Noise",
     "building_violations_score": "Building Violations",
@@ -83,7 +80,6 @@ SCORE_LABELS = {
 SCORE_DESCRIPTIONS = {
     "deal_score": "Z-score vs comp-set median. 50 = average deal; higher = below-market.",
     "transit_score": "Subway stations & routes within 800 m. Linear: 12 pts/station + 3 pts/route, max 100.",
-    "flood_risk_score": "Binary: 100 = not in a FEMA flood zone, 0 = flood zone (FIRM07/PFIRM15).",
     "crime_score": "NYPD complaints within 400 m (12 mo), severity-weighted. 50 = median; 100 = zero crime. Includes trend.",
     "noise_score": "311 quality-of-life complaints within 300 m (12 mo). 50 = median; 100 = zero complaints. Includes trend.",
     "building_violations_score": "Active building violations per unit, percentile-ranked. 50 = median; higher = fewer violations.",
@@ -101,7 +97,6 @@ SCORE_DESCRIPTIONS = {
 SCORE_METHODS = {
     "deal_score": "zscore",
     "transit_score": "linear",
-    "flood_risk_score": "binary",
     "crime_score": "median_norm",
     "noise_score": "median_norm",
     "building_violations_score": "percentile",
@@ -393,7 +388,6 @@ with tab_map:
                 "price": ":$,.0f",
                 "beds": True,
                 "deal_score": ":.1f",
-                "flood_risk_score": ":.0f",
             },
             color_continuous_scale="RdYlGn" if "score" in color_by else "Viridis",
             zoom=11,

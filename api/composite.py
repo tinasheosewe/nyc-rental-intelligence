@@ -1,7 +1,7 @@
 """
 Composite score computation.
 
-Calculates a weighted average of all 11 score dimensions.
+Calculates a weighted average of all 12 score dimensions.
 Weights are configurable via priority ranking — the top 3
 user priorities get a 3x multiplier, the middle tier gets 2x,
 and the rest get 1x.
@@ -23,14 +23,12 @@ DEFAULT_PRIORITIES: list[str] = [
     "shelter",
     "pest",
     "schools",
-    "flood_risk",
 ]
 
 # Score column names in the DB → key used in Scores model
 SCORE_KEYS: list[str] = [
     "deal",
     "transit",
-    "flood_risk",
     "crime",
     "noise",
     "building_violations",

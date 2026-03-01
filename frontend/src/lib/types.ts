@@ -10,7 +10,6 @@
 export const SCORE_DIMENSIONS = [
   "deal",
   "transit",
-  "flood_risk",
   "crime",
   "noise",
   "building_violations",
@@ -28,7 +27,6 @@ export type ScoreDimension = (typeof SCORE_DIMENSIONS)[number];
 export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   deal: "Deal",
   transit: "Transit",
-  flood_risk: "Flood Risk",
   crime: "Crime",
   noise: "Noise",
   building_violations: "Building Violations",
@@ -47,7 +45,6 @@ export interface Scores {
   composite: number;
   deal: number;
   transit: number;
-  flood_risk: number;
   crime: number;
   noise: number;
   building_violations: number;
