@@ -172,7 +172,7 @@ def _litigations(row: dict) -> Optional[Flag]:
 def _evictions(row: dict) -> Optional[Flag]:
     n = row.get("mgmt_evictions") or 0
     if n >= 5:
-        return Flag(type="red", text=f"{n} eviction filings within 500 m")
+        return Flag(type="red", text=f"{n} eviction filings at this building")
     if n >= 2:
         return Flag(type="yellow", text=f"{n} eviction filings nearby")
     return None

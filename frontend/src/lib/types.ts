@@ -211,7 +211,7 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
     { key: "mgmt_hpd_safety", label: "Safety" },
     { key: "mgmt_heat_complaints", label: "311 heat (area)" },
     { key: "mgmt_litigations", label: "HPD litigations (open)" },
-    { key: "mgmt_evictions", label: "Eviction filings (500 m)" },
+    { key: "mgmt_evictions", label: "Eviction filings (building)" },
     { key: "mgmt_complaints_per_unit", label: "Complaints per unit" },
   ],
   greenery: [

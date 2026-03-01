@@ -10,7 +10,7 @@ Also integrates:
 - **311 HEAT/HOT WATER** complaints within 200 m (building-level).
 - **HPD Litigations** — active lawsuits filed by HPD against the owner
   (looked up by BBL; indicates severe negligence).
-- **Evictions** — executed residential evictions within 500 m (12 mo).
+- **Evictions** — executed residential evictions at this building (12 mo).
 
 Scoring:
     total_complaints (HPD + 311 heat) + litigation penalty (×10 each)
@@ -28,7 +28,7 @@ Output columns:
     mgmt_hpd_safety         INTEGER — HPD SAFETY complaints
     mgmt_heat_complaints    INTEGER — 311 HEAT/HOT WATER (area-level, 200 m)
     mgmt_litigations        INTEGER — active HPD litigations for this BBL
-    mgmt_evictions          INTEGER — residential evictions within 500 m (12 mo)
+    mgmt_evictions          INTEGER — residential evictions at building (12 mo)
     mgmt_complaints_per_unit REAL   — complaint rate per unit
 """
 
@@ -95,7 +95,6 @@ class ManagementScorer(Scorer):
         self._store.ensure_downloaded("evictions", quiet=True)
 
         HEAT_RADIUS_M = 200
-        EVICTION_RADIUS_M = 500
 
         gh_map = dedupe_by_geohash(listings)
 
@@ -116,7 +115,7 @@ class ManagementScorer(Scorer):
             nearest = find_nearest_row(pluto_rows, lat, lon)
 
             heat_311 = self._heat_311_count(lat, lon, HEAT_RADIUS_M)
-            evictions = self._eviction_count(lat, lon, EVICTION_RADIUS_M)
+            evictions = self._eviction_count(nearest)
             litigations = self._litigation_count(nearest)
 
             if nearest is None or not nearest.get("ownername"):
@@ -174,12 +173,21 @@ class ManagementScorer(Scorer):
         )
         return sum(1 for r in rows if r.get("complaint_type") == "HEAT/HOT WATER")
 
-    def _eviction_count(self, lat: float, lon: float, radius_m: int) -> int:
-        rows = self._store.query_circle(
-            "evictions", lat=lat, lon=lon, radius_m=radius_m,
-            select="court_index_number",
+    def _eviction_count(self, nearest_lot: dict | None) -> int:
+        """Count evictions at this building by BBL."""
+        if nearest_lot is None:
+            return 0
+        raw_bbl = nearest_lot.get("bbl")
+        if not raw_bbl:
+            return 0
+        bbl_str = normalize_bbl(raw_bbl)
+        rows = self._store.query(
+            "evictions",
+            where_clause="bbl = ?",
+            params=(bbl_str,),
+            select="COUNT(*) as cnt",
         )
-        return len(rows)
+        return int(rows[0]["cnt"]) if rows else 0
 
     def _litigation_count(self, nearest_lot: dict | None) -> int:
         if nearest_lot is None:
