@@ -102,6 +102,7 @@ class ManagementScorer(Scorer):
             self._cache.put(gh, "management", stats)
 
         # Percentile-rank by complaints_per_unit (lower = better)
+        # Zero complaints = perfect score.
         raw_values = [block_stats[lst["geohash"]]["mgmt_complaints_per_unit"]
                       for lst in listings]
         pct_scores = _percentile_scores(raw_values, reverse=True)
@@ -109,10 +110,11 @@ class ManagementScorer(Scorer):
         results: list[ScorerResult] = []
         for lst, pct in zip(listings, pct_scores):
             stats = block_stats[lst["geohash"]]
+            score = 100.0 if stats["mgmt_complaints_per_unit"] == 0 else pct
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=pct,
+                    score=score,
                     components={
                         "mgmt_owner": stats["mgmt_owner"],
                         "mgmt_owner_buildings": stats["mgmt_owner_buildings"],

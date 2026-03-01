@@ -124,6 +124,7 @@ class BuildingViolationsScorer(Scorer):
             per_units.append((lst, per_unit))
 
         # Percentile-rank: fewer violations → higher score
+        # Zero violations = perfect score.
         scores = _percentile_scores(
             [pu for _, pu in per_units], reverse=True,
         )
@@ -131,10 +132,11 @@ class BuildingViolationsScorer(Scorer):
         results: list[ScorerResult] = []
         for i, (lst, per_unit) in enumerate(per_units):
             stats = block_stats[lst["geohash"]]
+            score = 100.0 if per_unit == 0 else scores[i]
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=scores[i],
+                    score=score,
                     components={
                         "building_violation_count": stats["building_violation_count"],
                         "building_unitsres": stats.get("building_unitsres", 1),
