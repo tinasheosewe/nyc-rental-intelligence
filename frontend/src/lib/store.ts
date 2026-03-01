@@ -42,7 +42,11 @@ interface AppState {
   listings: Listing[];
   totalListings: number;
   isLoading: boolean;
+  isLoadingMore: boolean;
+  currentPage: number;
+  hasMore: boolean;
   loadListings: () => Promise<void>;
+  loadMore: () => Promise<void>;
 
   // Queues
   watchlist: Listing[];
@@ -100,24 +104,55 @@ export const useStore = create<AppState>((set, get) => ({
   feedIndex: 0,
   setFeedIndex: (idx) => set({ feedIndex: idx }),
 
-  // Data
+  // Data — paginated lazy loading
+  // Feed mode fetches 10/page, scan mode 24/page.
+  // loadListings() resets to page 1; loadMore() appends the next page.
+
   listings: [],
   totalListings: 0,
   isLoading: false,
+  isLoadingMore: false,
+  currentPage: 0,
+  hasMore: true,
+
   loadListings: async () => {
-    set({ isLoading: true });
+    set({ isLoading: true, listings: [], currentPage: 0, hasMore: true, feedIndex: 0 });
     try {
-      const { filters, sortBy } = get();
-      const res = await fetchListings(filters, sortBy, 1, 200);
+      const { filters, sortBy, viewMode } = get();
+      const pageSize = viewMode === "feed" ? 10 : 24;
+      const res = await fetchListings(filters, sortBy, 1, pageSize);
       set({
         listings: res.listings,
         totalListings: res.total,
         isLoading: false,
-        feedIndex: 0,
+        currentPage: 1,
+        hasMore: res.listings.length < res.total,
       });
     } catch (err) {
       console.error("Failed to load listings:", err);
       set({ isLoading: false });
+    }
+  },
+
+  loadMore: async () => {
+    const { isLoadingMore, hasMore, currentPage, filters, sortBy, listings, viewMode } = get();
+    if (isLoadingMore || !hasMore) return;
+    set({ isLoadingMore: true });
+    try {
+      const pageSize = viewMode === "feed" ? 10 : 24;
+      const nextPage = currentPage + 1;
+      const res = await fetchListings(filters, sortBy, nextPage, pageSize);
+      const merged = [...listings, ...res.listings];
+      set({
+        listings: merged,
+        totalListings: res.total,
+        isLoadingMore: false,
+        currentPage: nextPage,
+        hasMore: merged.length < res.total,
+      });
+    } catch (err) {
+      console.error("Failed to load more:", err);
+      set({ isLoadingMore: false });
     }
   },
 

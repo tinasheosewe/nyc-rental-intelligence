@@ -17,6 +17,10 @@ export default function FeedView() {
   const setFeedIndex = useStore((s) => s.setFeedIndex);
   const skipped = useStore((s) => s.skipped);
   const isLoading = useStore((s) => s.isLoading);
+  const loadMore = useStore((s) => s.loadMore);
+  const hasMore = useStore((s) => s.hasMore);
+  const isLoadingMore = useStore((s) => s.isLoadingMore);
+  const totalListings = useStore((s) => s.totalListings);
 
   const [direction, setDirection] = useState(0);
 
@@ -24,6 +28,13 @@ export default function FeedView() {
   const visible = listings.filter((l) => !skipped.has(l.id));
   const currentIndex = Math.min(feedIndex, visible.length - 1);
   const current = visible[currentIndex];
+
+  // Load more when within 3 cards of the end
+  useEffect(() => {
+    if (hasMore && !isLoadingMore && visible.length - currentIndex <= 3) {
+      loadMore();
+    }
+  }, [currentIndex, visible.length, hasMore, isLoadingMore, loadMore]);
 
   const goTo = useCallback(
     (delta: number) => {
@@ -105,11 +116,18 @@ export default function FeedView() {
 
       {/* Position indicator */}
       <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 text-xs text-zinc-600">
-        {currentIndex + 1} / {visible.length}
+        {currentIndex + 1} / {totalListings}
       </div>
 
       {/* Current card */}
       {current && <FeedCard listing={current} direction={direction} />}
+
+      {/* Loading more indicator */}
+      {isLoadingMore && (
+        <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-10">
+          <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+        </div>
+      )}
     </div>
   );
 }
