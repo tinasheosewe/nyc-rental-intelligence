@@ -92,8 +92,6 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
     ],
     "noise": [
         ("noise_complaint_count", "Noise complaints"),
-        ("noise_rodent_count", "Rodent complaints"),
-        ("noise_heat_count", "Heat/hot-water complaints"),
     ],
     "building_violations": [
         ("building_violation_count", "Active violations"),

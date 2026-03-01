@@ -176,8 +176,6 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
   ],
   noise: [
     { key: "noise_complaint_count", label: "Noise complaints" },
-    { key: "noise_rodent_count", label: "Rodent complaints" },
-    { key: "noise_heat_count", label: "Heat / hot water" },
   ],
   building_violations: [
     { key: "building_violation_count", label: "Active violations" },

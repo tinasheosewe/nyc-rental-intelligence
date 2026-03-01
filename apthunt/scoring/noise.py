@@ -1,16 +1,17 @@
 """
-NoiseScorer — scores listings by 311 quality-of-life complaints density.
+NoiseScorer — scores listings by 311 noise-complaint density.
 
 Uses pre-downloaded 311 Service Requests (``ds_noise``) with Haversine
 circle queries cached in BlockCache by geohash.
 
-Filters to: Noise - Residential, Noise - Street/Sidewalk, Rodent,
-HEAT/HOT WATER, etc.
+Filters to actual noise types only:
+    Noise - Residential, Noise - Street/Sidewalk, Noise - Commercial,
+    Noise - Vehicle, Noise - Park.
 
 Scoring:
-    Count relevant complaints within 300m in the last 12 months.
-    Normalize against city baseline.
-    Invert so fewer complaints = higher score.
+    Count noise complaints within 300 m in the last 12 months.
+    Normalise against city baseline (median-inverse).
+    Invert so fewer complaints → higher score.
 
     Trend: compares recent-half (last 6 months) vs older-half
     to produce a trend ratio.  < 1.0 = improving, > 1.0 = worsening.
@@ -44,8 +45,6 @@ class NoiseScorer(Scorer):
     def columns(self) -> dict[str, str]:
         return {
             "noise_complaint_count": "INTEGER",
-            "noise_rodent_count": "INTEGER",
-            "noise_heat_count": "INTEGER",
             "noise_trend_ratio": "REAL",
             "noise_trend_direction": "TEXT",
         }
@@ -61,13 +60,11 @@ class NoiseScorer(Scorer):
         # Complaint types to count
         NOISE_TYPES = {"Noise - Residential", "Noise - Street/Sidewalk",
                        "Noise - Commercial", "Noise - Vehicle", "Noise - Park"}
-        RODENT = "Rodent"
-        HEAT = "HEAT/HOT WATER"
         # Geohash to lat/lon
         geohash_to_latlon = dedupe_by_geohash(listings)
         block_stats = {}
         for gh, (lat, lon) in geohash_to_latlon.items():
-            cached = self._cache.get(gh, "311_v2")
+            cached = self._cache.get(gh, "noise_v3")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
@@ -79,18 +76,13 @@ class NoiseScorer(Scorer):
                 radius_m=RADIUS_M,
                 select="complaint_type,created_date",
             )
-            noise, rodent, heat = 0, 0, 0
+            noise = 0
             recent_count, older_count = 0, 0
             for r in rows:
                 ct = r.get("complaint_type") or ""
-                if ct in NOISE_TYPES:
-                    noise += 1
-                elif ct == RODENT:
-                    rodent += 1
-                elif ct == HEAT:
-                    heat += 1
-                else:
+                if ct not in NOISE_TYPES:
                     continue
+                noise += 1
                 # Bucket by date for trend
                 dt = (r.get("created_date") or "")[:10]
                 if dt >= TREND_MIDPOINT:
@@ -98,20 +90,16 @@ class NoiseScorer(Scorer):
                 else:
                     older_count += 1
 
-            total = noise + rodent + heat
-
             # Trend ratio: recent / older.  < 1.0 = improving
             trend_ratio, direction = compute_trend(recent_count, older_count)
 
             block_stats[gh] = {
                 "noise_complaint_count": noise,
-                "noise_rodent_count": rodent,
-                "noise_heat_count": heat,
-                "noise_total": total,
+                "noise_total": noise,
                 "noise_trend_ratio": trend_ratio,
                 "noise_trend_direction": direction,
             }
-            self._cache.put(gh, "311_v2", block_stats[gh])
+            self._cache.put(gh, "noise_v3", block_stats[gh])
 
         baseline = [v["noise_total"] for v in block_stats.values()]
         per_listing = [block_stats[lst["geohash"]]["noise_total"] for lst in listings]
@@ -128,8 +116,6 @@ class NoiseScorer(Scorer):
                     score=score,
                     components={
                         "noise_complaint_count": stats["noise_complaint_count"],
-                        "noise_rodent_count": stats["noise_rodent_count"],
-                        "noise_heat_count": stats["noise_heat_count"],
                         "noise_trend_ratio": stats["noise_trend_ratio"],
                         "noise_trend_direction": stats["noise_trend_direction"],
                     },
