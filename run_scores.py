@@ -118,7 +118,7 @@ def main():
         print("  schools              - Public school quality")
         print("  management           - Owner/management company reputation (HPD complaints)")
         print("  amenity              - Nearby amenities (grocery, pharmacy, gym, etc.)")
-        print("  shelter              - Proximity to homeless shelters/services")
+        print("  shelter              - Proximity to homeless shelters/services & NYCHA projects")
         return
 
     conn = get_connection(args.db)

@@ -157,6 +157,15 @@ DATASETS: dict[str, DatasetDef] = {
                " AND latitude IS NOT NULL",
         geo_columns=["latitude", "longitude"],
     ),
+
+    "projects": DatasetDef(
+        name="projects",
+        soda_id="3ub5-4ph8",     # NYCHA BBL Extract — public housing buildings
+        select="development,address,borough,bin,latitude,longitude",
+        refresh_days=180,         # biannual — NYCHA changes slowly
+        where="latitude IS NOT NULL",
+        geo_columns=["latitude", "longitude"],
+    ),
 }
 
 

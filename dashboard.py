@@ -54,7 +54,7 @@ COMPONENT_COLUMNS = {
     "rent_stabilized_score": ["rent_stabilized", "building_year"],
     "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_complaints_per_unit"],
     "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
-    "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total"],
+    "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total", "project_count", "project_nearest_m", "project_nearest_name"],
 }
 
 # Pretty labels
@@ -70,7 +70,7 @@ SCORE_LABELS = {
     "rent_stabilized_score": "Rent Stabilized",
     "management_score": "Management",
     "amenity_score": "Amenities",
-    "shelter_score": "Shelters Nearby",
+    "shelter_score": "Shelters & Projects",
 }
 
 # Methodology descriptions — shown as help text on the Score Analysis tab
@@ -86,7 +86,7 @@ SCORE_DESCRIPTIONS = {
     "rent_stabilized_score": "Binary flag: likely rent-stabilized if built pre-1974 with 6+ units (PLUTO heuristic).",
     "management_score": "Owner/management company HPD complaint rate across portfolio, percentile-ranked.",
     "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
-    "shelter_score": "Homeless shelters/services within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
+    "shelter_score": "Homeless shelters/services and NYCHA public housing projects within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
 }
 
 # Scoring method type — controls how scores are displayed and colored
@@ -151,6 +151,9 @@ COMPONENT_LABELS = {
     "shelter_nearest_m": "Nearest shelter (m)",
     "shelter_nearest_name": "Nearest shelter",
     "shelter_weighted_total": "Distance-weighted total",
+    "project_count": "NYCHA buildings within 800 m",
+    "project_nearest_m": "Nearest project (m)",
+    "project_nearest_name": "Nearest NYCHA development",
 }
 
 

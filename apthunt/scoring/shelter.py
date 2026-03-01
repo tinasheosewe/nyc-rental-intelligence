@@ -1,23 +1,27 @@
 """
-ShelterScorer — scores listings by proximity to homeless shelters/services.
+ShelterScorer — scores listings by proximity to homeless shelters/services
+AND NYCHA public housing projects.
 
-Uses pre-downloaded NYC Facilities Database filtered for
-``NON-RESIDENTIAL HOUSING AND HOMELESS SERVICES`` facilities
-(shelters, drop-in centers, supportive housing, etc.).
+Uses pre-downloaded datasets:
+- NYC Facilities Database filtered for ``NON-RESIDENTIAL HOUSING AND
+  HOMELESS SERVICES`` (shelters, drop-in centers, supportive housing).
+- NYCHA BBL Extract — all 2,964 public housing buildings across 219
+  developments ("the projects").
 
 Scoring model — distance-weighted facility count, median-normalized:
 
-1.  Query all shelter-type facilities within 800 m.
+1.  Query all shelters within 800 m and all NYCHA buildings within 800 m.
 2.  Weight each by proximity:  weight = 1 − (dist / 800).
-    A shelter at 0 m gets weight 1.0; at 800 m gets ~0.0.
+    A facility at 0 m gets weight 1.0; at 800 m gets ~0.0.
 3.  Sum the weights → ``proximity_weighted_total``.
 4.  Normalize against the batch median:
         score = 100 − 50 × (total / median)       when total ≤ median
         score = max(0, 50 − 50 × (excess/median)) when total > median
-    *Inverted*: fewer/farther shelters → higher score.
+    *Inverted*: fewer/farther facilities → higher score.
 
 Component columns stored: ``shelter_count``, ``shelter_nearest_m``,
-``shelter_nearest_name``, ``shelter_weighted_total``.
+``shelter_nearest_name``, ``shelter_weighted_total``,
+``project_count``, ``project_nearest_m``, ``project_nearest_name``.
 """
 
 from __future__ import annotations
@@ -49,6 +53,9 @@ class ShelterScorer(Scorer):
             "shelter_nearest_m": "INTEGER",
             "shelter_nearest_name": "TEXT",
             "shelter_weighted_total": "REAL",
+            "project_count": "INTEGER",
+            "project_nearest_m": "INTEGER",
+            "project_nearest_name": "TEXT",
         }
 
     def score(
@@ -57,6 +64,7 @@ class ShelterScorer(Scorer):
         listings: list[dict],
     ) -> list[ScorerResult]:
         self._store.ensure_downloaded("shelters", quiet=True)
+        self._store.ensure_downloaded("projects", quiet=True)
 
         # Deduplicate by geohash
         gh_map: dict[str, tuple[float, float]] = {}
@@ -70,39 +78,71 @@ class ShelterScorer(Scorer):
                 block_stats[gh] = cached
                 continue
 
-            rows = self._store.query_circle(
+            # ── Shelters ─────────────────────────────────────
+            shelter_rows = self._store.query_circle(
                 "shelters",
-                lat=lat,
-                lon=lon,
-                radius_m=_RADIUS_M,
+                lat=lat, lon=lon, radius_m=_RADIUS_M,
                 select="facname,latitude,longitude",
             )
 
-            count = 0
-            weighted_total = 0.0
-            nearest_m = 9999
-            nearest_name = ""
+            s_count = 0
+            s_weighted = 0.0
+            s_nearest_m = 9999
+            s_nearest_name = ""
 
-            for r in rows:
+            for r in shelter_rows:
                 rlat = float(r.get("latitude") or 0)
                 rlon = float(r.get("longitude") or 0)
                 if rlat == 0 or rlon == 0:
                     continue
                 dist = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
                 if dist > _RADIUS_M:
-                    continue  # post-filter (circle query may overshoot)
-                count += 1
+                    continue
+                s_count += 1
                 proximity = max(0.0, 1.0 - dist / _RADIUS_M)
-                weighted_total += proximity
-                if dist < nearest_m:
-                    nearest_m = int(dist)
-                    nearest_name = r.get("facname") or ""
+                s_weighted += proximity
+                if dist < s_nearest_m:
+                    s_nearest_m = int(dist)
+                    s_nearest_name = r.get("facname") or ""
+
+            # ── NYCHA projects ───────────────────────────────
+            project_rows = self._store.query_circle(
+                "projects",
+                lat=lat, lon=lon, radius_m=_RADIUS_M,
+                select="development,latitude,longitude",
+            )
+
+            p_count = 0
+            p_weighted = 0.0
+            p_nearest_m = 9999
+            p_nearest_name = ""
+
+            for r in project_rows:
+                rlat = float(r.get("latitude") or 0)
+                rlon = float(r.get("longitude") or 0)
+                if rlat == 0 or rlon == 0:
+                    continue
+                dist = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
+                if dist > _RADIUS_M:
+                    continue
+                p_count += 1
+                proximity = max(0.0, 1.0 - dist / _RADIUS_M)
+                p_weighted += proximity
+                if dist < p_nearest_m:
+                    p_nearest_m = int(dist)
+                    p_nearest_name = r.get("development") or ""
+
+            # ── Combined weighted total ──────────────────────
+            weighted_total = round(s_weighted + p_weighted, 3)
 
             stats = {
-                "shelter_count": count,
-                "shelter_nearest_m": nearest_m if count > 0 else 9999,
-                "shelter_nearest_name": nearest_name,
-                "shelter_weighted_total": round(weighted_total, 3),
+                "shelter_count": s_count,
+                "shelter_nearest_m": s_nearest_m if s_count > 0 else 9999,
+                "shelter_nearest_name": s_nearest_name,
+                "shelter_weighted_total": weighted_total,
+                "project_count": p_count,
+                "project_nearest_m": p_nearest_m if p_count > 0 else 9999,
+                "project_nearest_name": p_nearest_name,
             }
             block_stats[gh] = stats
             self._cache.put(gh, "shelter", stats)
@@ -138,6 +178,9 @@ class ShelterScorer(Scorer):
                         "shelter_nearest_m": stats["shelter_nearest_m"],
                         "shelter_nearest_name": stats["shelter_nearest_name"],
                         "shelter_weighted_total": stats["shelter_weighted_total"],
+                        "project_count": stats["project_count"],
+                        "project_nearest_m": stats["project_nearest_m"],
+                        "project_nearest_name": stats["project_nearest_name"],
                     },
                 )
             )

@@ -34,7 +34,7 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   schools: "Schools",
   management: "Management",
   amenity: "Amenities",
-  shelter: "Shelters",
+  shelter: "Shelters & Projects",
 };
 
 // ── Data models ────────────────────────────────────────────────
