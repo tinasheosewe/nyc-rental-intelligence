@@ -2,6 +2,8 @@
 
 import { useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { useUrlState } from "@/lib/useUrlState";
+import { useEscapeStack } from "@/lib/useEscapeStack";
 import TopBar from "@/components/layout/TopBar";
 import SortChips from "@/components/layout/SortChips";
 import FilterSheet from "@/components/layout/FilterSheet";
@@ -21,6 +23,10 @@ export default function HomePage() {
   useEffect(() => {
     loadListings();
   }, [loadListings]);
+
+  // Sync URL ↔ store and handle Escape key for overlays
+  useUrlState();
+  useEscapeStack();
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden bg-zinc-950">

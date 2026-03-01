@@ -85,6 +85,7 @@ export default function CompareModal() {
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         className="fixed inset-0 z-[60] bg-zinc-950/95 backdrop-blur-sm flex flex-col"
+        onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
       >
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">

@@ -9,6 +9,7 @@
 
 import { useRef, useEffect } from "react";
 import { useStore } from "@/lib/store";
+import { pushListingUrl } from "@/lib/useUrlState";
 import ScanCard from "@/components/ui/ScanCard";
 
 export default function ScanView() {
@@ -47,6 +48,7 @@ export default function ScanView() {
     if (idx >= 0) {
       setFeedIndex(idx);
       setViewMode("feed");
+      pushListingUrl(listingId);
     }
   };
 

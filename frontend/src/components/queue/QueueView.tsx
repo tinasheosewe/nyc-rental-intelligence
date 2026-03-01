@@ -10,6 +10,7 @@
 
 import { useState, useCallback } from "react";
 import { useStore } from "@/lib/store";
+import { pushListingUrl } from "@/lib/useUrlState";
 import type { Listing } from "@/lib/types";
 import ScanCard from "@/components/ui/ScanCard";
 import FeedCard from "@/components/explore/FeedCard";
@@ -139,7 +140,10 @@ export default function QueueView({ listings, queueType }: QueueViewProps) {
             <ScanCard
               key={listing.id}
               listing={listing}
-              onClick={() => setExpandedId(listing.id)}
+              onClick={() => {
+                setExpandedId(listing.id);
+                pushListingUrl(listing.id);
+              }}
               selectable
               selected={compareIds.has(listing.id)}
               onSelect={() => toggleCompareId(listing.id)}
