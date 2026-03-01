@@ -64,7 +64,7 @@ SCORE_LABELS = {
     "flood_risk_score": "Flood Risk",
     "crime_score": "Crime",
     "noise_score": "Noise",
-    "building_violations_score": "Building Violations",
+    "building_violations_score": "DOB Violations",
     "parks_score": "Parks/Green Space",
     "schools_score": "School Quality",
     "rent_stabilized_score": "Rent Stabilized",
