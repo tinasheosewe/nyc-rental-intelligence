@@ -138,6 +138,21 @@ def _projects(row: dict) -> Optional[Flag]:
     return None
 
 
+def _pest(row: dict) -> Optional[Flag]:
+    hpd = row.get("pest_hpd_count") or 0
+    rodent = row.get("pest_rodent_count") or 0
+    total = hpd + rodent
+    if total == 0:
+        return Flag(type="green", text="No pest or rodent complaints")
+    if hpd >= 5:
+        return Flag(type="red", text=f"{hpd} HPD pest complaints in building")
+    if total >= 10:
+        return Flag(type="red", text=f"High pest activity ({hpd} building, {rodent} area)")
+    if total >= 3:
+        return Flag(type="yellow", text=f"Some pest activity ({hpd} building, {rodent} area)")
+    return None
+
+
 # ── Public API ──────────────────────────────────────────────────
 
 _RULES = [
@@ -153,6 +168,7 @@ _RULES = [
     _no_fee,
     _shelter,
     _projects,
+    _pest,
 ]
 
 

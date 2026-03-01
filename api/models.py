@@ -27,6 +27,7 @@ class Scores(BaseModel):
     management: float = 0.0
     amenity: float = 0.0
     shelter: float = 0.0
+    pest: float = 0.0
     rent_stabilized: bool = False
 
 

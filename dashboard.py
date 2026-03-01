@@ -40,6 +40,7 @@ SCORE_COLUMNS = [
     "management_score",
     "amenity_score",
     "shelter_score",
+    "pest_score",
 ]
 
 COMPONENT_COLUMNS = {
@@ -55,6 +56,7 @@ COMPONENT_COLUMNS = {
     "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_complaints_per_unit"],
     "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
     "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total", "project_count", "project_nearest_m", "project_nearest_name"],
+    "pest_score": ["pest_hpd_count", "pest_rodent_count", "pest_total"],
 }
 
 # Pretty labels
@@ -71,6 +73,7 @@ SCORE_LABELS = {
     "management_score": "Management",
     "amenity_score": "Amenities",
     "shelter_score": "Shelters & Projects",
+    "pest_score": "Pests",
 }
 
 # Methodology descriptions — shown as help text on the Score Analysis tab
@@ -87,6 +90,7 @@ SCORE_DESCRIPTIONS = {
     "management_score": "Owner/management company HPD complaint rate across portfolio, percentile-ranked.",
     "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
     "shelter_score": "Homeless shelters/services and NYCHA public housing projects within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
+    "pest_score": "HPD pest complaints (building-level by BBL) + 311 rodent complaints (area-level within 300 m), percentile-ranked. Fewer pest reports = higher score.",
 }
 
 # Scoring method type — controls how scores are displayed and colored
@@ -103,6 +107,7 @@ SCORE_METHODS = {
     "management_score": "percentile",
     "amenity_score": "percentile",
     "shelter_score": "median_norm",
+    "pest_score": "percentile",
 }
 
 # Human-readable component labels
@@ -154,6 +159,9 @@ COMPONENT_LABELS = {
     "project_count": "NYCHA buildings within 800 m",
     "project_nearest_m": "Nearest project (m)",
     "project_nearest_name": "Nearest NYCHA development",
+    "pest_hpd_count": "HPD pest complaints (building)",
+    "pest_rodent_count": "311 rodent complaints (area)",
+    "pest_total": "Total pest reports",
 }
 
 

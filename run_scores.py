@@ -35,6 +35,7 @@ from apthunt.scoring.rent_stabilized import RentStabilizedScorer
 from apthunt.scoring.management import ManagementScorer
 from apthunt.scoring.amenity import AmenityScorer
 from apthunt.scoring.shelter import ShelterScorer
+from apthunt.scoring.pest import PestScorer
 
 
 # Path to bundled GTFS stops.txt (download from MTA and place here)
@@ -66,6 +67,7 @@ def build_scorers(
         "management": lambda: ManagementScorer(store, cache),
         "amenity": lambda: AmenityScorer(store, cache),
         "shelter": lambda: ShelterScorer(store, cache),
+        "pest": lambda: PestScorer(store, cache),
     }
 
     if only:
