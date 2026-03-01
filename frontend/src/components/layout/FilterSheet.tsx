@@ -10,6 +10,7 @@
 import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import type { FilterState } from "@/lib/types";
+import { fetchNeighborhoods } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 
@@ -29,6 +30,13 @@ export default function FilterSheet() {
 
   // Local draft state (only commits on Apply)
   const [draft, setDraft] = useState<FilterState>(filters);
+  const [allNeighborhoods, setAllNeighborhoods] = useState<string[]>([]);
+  const [nbSearch, setNbSearch] = useState("");
+
+  // Fetch neighborhoods on mount
+  useEffect(() => {
+    fetchNeighborhoods().then(setAllNeighborhoods).catch(() => {});
+  }, []);
 
   // Sync draft when filters change externally
   useEffect(() => {
@@ -135,6 +143,68 @@ export default function FilterSheet() {
                       {label}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              {/* Neighborhoods */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  Neighborhoods
+                  {draft.neighborhoods.length > 0 && (
+                    <span className="ml-1 text-zinc-400">({draft.neighborhoods.length})</span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  placeholder="Search neighborhoods…"
+                  value={nbSearch}
+                  onChange={(e) => setNbSearch(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                />
+                {/* Selected chips */}
+                {draft.neighborhoods.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {draft.neighborhoods.map((nb) => (
+                      <button
+                        key={nb}
+                        onClick={() =>
+                          setDraft((d) => ({
+                            ...d,
+                            neighborhoods: d.neighborhoods.filter((n) => n !== nb),
+                          }))
+                        }
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-200"
+                      >
+                        {nb}
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Dropdown */}
+                <div className="max-h-36 overflow-y-auto rounded-lg bg-zinc-800 border border-zinc-700">
+                  {allNeighborhoods
+                    .filter(
+                      (nb) =>
+                        nb.toLowerCase().includes(nbSearch.toLowerCase()) &&
+                        !draft.neighborhoods.includes(nb),
+                    )
+                    .map((nb) => (
+                      <button
+                        key={nb}
+                        onClick={() =>
+                          setDraft((d) => ({
+                            ...d,
+                            neighborhoods: [...d.neighborhoods, nb],
+                          }))
+                        }
+                        className="block w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+                      >
+                        {nb}
+                      </button>
+                    ))}
                 </div>
               </div>
 

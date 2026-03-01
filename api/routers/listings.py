@@ -9,6 +9,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, Query
@@ -31,6 +32,20 @@ router = APIRouter(tags=["listings"])
 # ── Helpers ─────────────────────────────────────────────────────
 
 _PHOTO_PREFIX = "https://photos.example.com/"
+
+
+def _days_on_market(first_seen: str | None) -> int | None:
+    """Compute days since first_seen_at, or None if missing."""
+    if not first_seen:
+        return None
+    try:
+        dt = datetime.fromisoformat(first_seen)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        delta = datetime.now(timezone.utc) - dt
+        return max(0, delta.days)
+    except (ValueError, TypeError):
+        return None
 
 
 def _parse_photos(raw: Optional[str]) -> list[str]:
@@ -207,6 +222,7 @@ def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
         longitude=float(row.get("lon") or 0),
         url=row.get("url"),
         no_fee=bool(row.get("no_fee")),
+        days_on_market=_days_on_market(row.get("first_seen_at")),
         scores=scores,
         score_components=components,
         trends=trends,
@@ -348,5 +364,20 @@ def get_listing(listing_id: str) -> Listing:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Listing not found")
         return _row_to_listing(dict(row))
+    finally:
+        conn.close()
+
+
+@router.get("/neighborhoods", response_model=list[str])
+def get_neighborhoods() -> list[str]:
+    """Return sorted list of distinct neighborhoods with active listings."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT DISTINCT neighborhood FROM listings "
+            "WHERE UPPER(status) = 'ACTIVE' AND neighborhood IS NOT NULL "
+            "ORDER BY neighborhood"
+        ).fetchall()
+        return [r[0] for r in rows]
     finally:
         conn.close()

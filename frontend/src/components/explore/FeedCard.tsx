@@ -15,6 +15,7 @@ import {
   formatPrice,
   formatBeds,
   formatBaths,
+  formatDaysOnMarket,
   scoreColor,
   getScore,
 } from "@/lib/utils";
@@ -130,6 +131,11 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               </p>
               <p className="text-xs text-zinc-600 mt-0.5">
                 {listing.neighborhood}, {listing.borough}
+                {listing.days_on_market != null && (
+                  <span className="ml-2 text-zinc-500">
+                    · {formatDaysOnMarket(listing.days_on_market)}
+                  </span>
+                )}
               </p>
             </div>
             <div className="flex flex-col items-end gap-1">

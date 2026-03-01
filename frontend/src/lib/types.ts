@@ -97,6 +97,7 @@ export interface Listing {
   longitude: number;
   url: string | null;
   no_fee: boolean;
+  days_on_market: number | null;
 
   scores: Scores;
   score_components: Record<string, Record<string, string | number | null>>;

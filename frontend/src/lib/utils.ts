@@ -98,6 +98,13 @@ export function neighborhoodAbbr(name: string): string {
   return NEIGHBORHOOD_ABBR[name] ?? name.slice(0, 3).toUpperCase();
 }
 
+export function formatDaysOnMarket(days: number | null): string {
+  if (days === null || days === undefined) return "";
+  if (days === 0) return "Listed today";
+  if (days === 1) return "1 day on market";
+  return `${days} days on market`;
+}
+
 // ── Dimension sort key for score access ────────────────────────
 
 export function getScore(

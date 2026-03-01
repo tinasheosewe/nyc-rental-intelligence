@@ -76,6 +76,7 @@ class Listing(BaseModel):
     longitude: float
     url: Optional[str] = None
     no_fee: bool = False
+    days_on_market: Optional[int] = None
 
     scores: Scores = Scores()
     score_components: dict[str, dict[str, Any]] = {}

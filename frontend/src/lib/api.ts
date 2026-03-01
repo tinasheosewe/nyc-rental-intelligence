@@ -67,3 +67,7 @@ export async function fetchListings(
 export async function fetchListing(id: string): Promise<Listing> {
   return apiFetch<Listing>(`/listings/${id}`);
 }
+
+export async function fetchNeighborhoods(): Promise<string[]> {
+  return apiFetch<string[]>("/neighborhoods");
+}
