@@ -7,13 +7,16 @@
 
 "use client";
 
-import type { Listing } from "@/lib/types";
+import type { Listing, ScoreDimension } from "@/lib/types";
+import { DIMENSION_LABELS } from "@/lib/types";
+import { useStore } from "@/lib/store";
 import {
   formatPrice,
   formatBeds,
   neighborhoodAbbr,
   scoreColor,
   scoreRing,
+  getScore,
 } from "@/lib/utils";
 import clsx from "clsx";
 
@@ -33,6 +36,11 @@ export default function ScanCard({
   onSelect,
 }: ScanCardProps) {
   const hasPhoto = listing.photos.length > 0;
+  const sortBy = useStore((s) => s.sortBy);
+  const isSortedByDimension = sortBy !== "composite";
+  const sortScore = isSortedByDimension
+    ? getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
+    : listing.scores.composite;
 
   return (
     <div
@@ -93,15 +101,22 @@ export default function ScanCard({
           <span className="text-sm font-semibold text-white">
             {formatPrice(listing.price)}
           </span>
-          <div
-            className={clsx(
-              "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-1",
-              scoreColor(listing.scores.composite),
-              scoreRing(listing.scores.composite),
-              "bg-zinc-900",
+          <div className="flex items-center gap-1.5">
+            {isSortedByDimension && (
+              <span className="text-[10px] text-zinc-500 font-medium">
+                {DIMENSION_LABELS[sortBy as ScoreDimension]}
+              </span>
             )}
-          >
-            {Math.round(listing.scores.composite)}
+            <div
+              className={clsx(
+                "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-1",
+                scoreColor(sortScore),
+                scoreRing(sortScore),
+                "bg-zinc-900",
+              )}
+            >
+              {Math.round(sortScore)}
+            </div>
           </div>
         </div>
         <p className="text-xs text-zinc-400">

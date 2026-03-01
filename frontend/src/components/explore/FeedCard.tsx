@@ -31,6 +31,7 @@ interface FeedCardProps {
 
 export default function FeedCard({ listing, direction }: FeedCardProps) {
   const priorities = useStore((s) => s.priorities);
+  const sortBy = useStore((s) => s.sortBy);
   const addToWatchlist = useStore((s) => s.addToWatchlist);
   const addToShortlist = useStore((s) => s.addToShortlist);
   const skipListing = useStore((s) => s.skipListing);
@@ -131,7 +132,21 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                 {listing.neighborhood}, {listing.borough}
               </p>
             </div>
-            <ScoreBadge score={listing.scores.composite} size="lg" label="Score" />
+            <div className="flex flex-col items-end gap-1">
+              <ScoreBadge score={listing.scores.composite} size="lg" label="Score" />
+              {sortBy !== "composite" && (
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+                  {DIMENSION_LABELS[sortBy as ScoreDimension]}{" "}
+                  <span className={scoreColor(
+                    getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
+                  )}>
+                    {Math.round(
+                      getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
+                    )}
+                  </span>
+                </span>
+              )}
+            </div>
           </div>
 
           {/* Top-3 priority pills */}

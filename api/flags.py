@@ -84,7 +84,17 @@ def _flood_risk(row: dict) -> Optional[Flag]:
 def _parks(row: dict) -> Optional[Flag]:
     dist = row.get("parks_distance_m")
     name = row.get("parks_name")
-    if dist is not None and dist <= 200 and name:
+    acres = row.get("parks_acres") or 0
+    if dist is None or not name:
+        return None
+    # Flagship parks (100+ acres) get a flag if within ~500m
+    if acres >= 100 and dist <= 500:
+        return Flag(type="green", text=f"Near {name} ({int(acres)} acres, {dist}m)")
+    # Large parks (15+ acres) within 300m
+    if acres >= 15 and dist <= 300:
+        return Flag(type="green", text=f"{name} within {dist}m ({int(acres)} acres)")
+    # Any decent park right next door
+    if acres >= 3 and dist <= 150:
         return Flag(type="green", text=f"{name} within {dist}m")
     return None
 
