@@ -27,6 +27,7 @@ import sqlite3
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import percentile_scores
 
 log = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ class AmenityScorer(Scorer):
 
         # Percentile-rank by weighted total
         raw = [block_stats[lst["geohash"]]["amenity_total"] for lst in listings]
-        pct_scores = _percentile_scores(raw, reverse=False)
+        pct_scores = percentile_scores(raw, reverse=False)
 
         results: list[ScorerResult] = []
         for lst, pct in zip(listings, pct_scores):
@@ -133,35 +134,3 @@ class AmenityScorer(Scorer):
             "amenity_dining": counts["dining"],
             "amenity_total": weighted,
         }
-
-
-def _percentile_scores(
-    values: list[float],
-    *,
-    reverse: bool = False,
-) -> list[float]:
-    """Convert raw values to 0–100 percentile scores with proper tie handling.
-
-    Tied values receive the **same** percentile (average of their ranks).
-    """
-    n = len(values)
-    if n == 0:
-        return []
-    if n == 1:
-        return [50.0]
-
-    indexed = sorted(enumerate(values), key=lambda t: t[1])
-    scores = [0.0] * n
-    i = 0
-    while i < n:
-        j = i
-        while j < n and indexed[j][1] == indexed[i][1]:
-            j += 1
-        avg_rank = (i + j - 1) / 2.0
-        avg_pct = avg_rank / (n - 1) * 100.0
-        for k in range(i, j):
-            idx = indexed[k][0]
-            scores[idx] = (100.0 - avg_pct) if reverse else avg_pct
-        i = j
-
-    return scores

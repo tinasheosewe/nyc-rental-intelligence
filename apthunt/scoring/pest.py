@@ -34,6 +34,7 @@ from haversine import haversine, Unit
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import percentile_scores
 
 
 RADIUS_M = 100
@@ -118,18 +119,17 @@ class PestScorer(Scorer):
             self._cache.put(gh, "pest_v2", stats)
 
         # Percentile-rank by pest_per_unit (lower = better)
-        # Zero-pest listings are clamped to 100 — no complaints = perfect.
+        # zero_is_perfect: no complaints → score 100.
         raw = [block_stats[lst["geohash"]]["pest_per_unit"] for lst in listings]
-        pct_scores = _percentile_scores(raw, reverse=True)
+        pct_scores = percentile_scores(raw, reverse=True, zero_is_perfect=True)
 
         results: list[ScorerResult] = []
         for lst, pct in zip(listings, pct_scores):
             stats = block_stats[lst["geohash"]]
-            score = 100.0 if stats["pest_per_unit"] == 0 else pct
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=score,
+                    score=pct,
                     components={
                         "pest_hpd_count": stats["pest_hpd_count"],
                         "pest_rodent_count": stats["pest_rodent_count"],
@@ -201,46 +201,3 @@ class PestScorer(Scorer):
             if d < best_d:
                 best, best_d = row, d
         return best
-
-
-def _percentile_scores(
-    values: list[float],
-    *,
-    reverse: bool = False,
-) -> list[float]:
-    """Convert raw values to 0–100 percentile scores with proper tie handling.
-
-    Tied values receive the **same** percentile (average of their ranks).
-    With ``reverse=True`` and all-zero inputs, every entry scores 100.
-
-    Args:
-        values:  One value per listing.
-        reverse: If True, *lower* raw values get *higher* scores
-                 (good for complaint counts).
-    """
-    n = len(values)
-    if n == 0:
-        return []
-    if n == 1:
-        return [50.0]
-
-    # Sort by value, tracking original indices
-    indexed = sorted(enumerate(values), key=lambda t: t[1])
-
-    # Assign average rank to tied groups
-    scores = [0.0] * n
-    i = 0
-    while i < n:
-        # Find the run of identical values
-        j = i
-        while j < n and indexed[j][1] == indexed[i][1]:
-            j += 1
-        # Average rank for the group (ranks are 0-based)
-        avg_rank = (i + j - 1) / 2.0
-        avg_pct = avg_rank / (n - 1) * 100.0
-        for k in range(i, j):
-            idx = indexed[k][0]
-            scores[idx] = (100.0 - avg_pct) if reverse else avg_pct
-        i = j
-
-    return scores

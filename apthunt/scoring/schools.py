@@ -17,6 +17,7 @@ import sqlite3
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import percentile_scores
 
 # 0.014° ≈ 1.5 km at NYC latitude
 _BBOX_DELTA = 0.014
@@ -70,7 +71,7 @@ class SchoolsScorer(Scorer):
             ratings.append((lst, stats["school_rating"], stats["school_name"]))
 
         # Percentile-rank: higher quality → higher score
-        scores = _percentile_scores([r for _, r, _ in ratings])
+        scores = percentile_scores([r for _, r, _ in ratings])
 
         results: list[ScorerResult] = []
         for i, (lst, rating, name) in enumerate(ratings):
@@ -125,30 +126,3 @@ class SchoolsScorer(Scorer):
                 best_name = s.get("school_name", "")
 
         return best_rating, best_name
-
-
-def _percentile_scores(values: list[float]) -> list[float]:
-    """Convert raw values to 0–100 percentile scores (higher value → higher score)."""
-    n = len(values)
-    if n == 0:
-        return []
-    if n == 1:
-        return [50.0]
-
-    indexed = sorted(enumerate(values), key=lambda t: t[1])
-    ranks = [0.0] * n
-    i = 0
-    while i < n:
-        j = i
-        while j < n - 1 and indexed[j + 1][1] == indexed[i][1]:
-            j += 1
-        avg_rank = (i + j) / 2.0
-        for k in range(i, j + 1):
-            ranks[indexed[k][0]] = avg_rank
-        i = j + 1
-
-    scores = [0.0] * n
-    for idx in range(n):
-        pct = ranks[idx] / (n - 1) * 100.0
-        scores[idx] = round(max(0.0, min(100.0, pct)), 1)
-    return scores

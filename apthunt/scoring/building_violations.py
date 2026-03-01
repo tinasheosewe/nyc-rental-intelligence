@@ -20,6 +20,7 @@ from haversine import haversine, Unit
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import percentile_scores
 
 
 class BuildingViolationsScorer(Scorer):
@@ -124,19 +125,18 @@ class BuildingViolationsScorer(Scorer):
             per_units.append((lst, per_unit))
 
         # Percentile-rank: fewer violations → higher score
-        # Zero violations = perfect score.
-        scores = _percentile_scores(
-            [pu for _, pu in per_units], reverse=True,
+        # zero_is_perfect: no violations → score 100.
+        scores = percentile_scores(
+            [pu for _, pu in per_units], reverse=True, zero_is_perfect=True,
         )
 
         results: list[ScorerResult] = []
         for i, (lst, per_unit) in enumerate(per_units):
             stats = block_stats[lst["geohash"]]
-            score = 100.0 if per_unit == 0 else scores[i]
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=score,
+                    score=scores[i],
                     components={
                         "building_violation_count": stats["building_violation_count"],
                         "building_unitsres": stats.get("building_unitsres", 1),
@@ -184,42 +184,3 @@ class BuildingViolationsScorer(Scorer):
             if d < best_d:
                 best, best_d = row, d
         return best
-
-
-def _percentile_scores(
-    values: list[float],
-    *,
-    reverse: bool = False,
-) -> list[float]:
-    """Convert raw values to 0–100 percentile scores.
-
-    Args:
-        values:  One value per listing.
-        reverse: If True, *lower* raw values get *higher* scores
-                 (appropriate for violations where fewer = better).
-    """
-    n = len(values)
-    if n == 0:
-        return []
-    if n == 1:
-        return [50.0]
-
-    indexed = sorted(enumerate(values), key=lambda t: t[1])
-    ranks = [0.0] * n
-    i = 0
-    while i < n:
-        j = i
-        while j < n - 1 and indexed[j + 1][1] == indexed[i][1]:
-            j += 1
-        avg_rank = (i + j) / 2.0
-        for k in range(i, j + 1):
-            ranks[indexed[k][0]] = avg_rank
-        i = j + 1
-
-    scores = [0.0] * n
-    for idx in range(n):
-        pct = ranks[idx] / (n - 1) * 100.0
-        if reverse:
-            pct = 100.0 - pct
-        scores[idx] = round(max(0.0, min(100.0, pct)), 1)
-    return scores

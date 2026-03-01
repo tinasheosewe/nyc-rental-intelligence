@@ -33,6 +33,7 @@ from haversine import haversine, Unit
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import percentile_scores
 
 
 class ManagementScorer(Scorer):
@@ -102,19 +103,18 @@ class ManagementScorer(Scorer):
             self._cache.put(gh, "management", stats)
 
         # Percentile-rank by complaints_per_unit (lower = better)
-        # Zero complaints = perfect score.
+        # zero_is_perfect: no complaints → score 100.
         raw_values = [block_stats[lst["geohash"]]["mgmt_complaints_per_unit"]
                       for lst in listings]
-        pct_scores = _percentile_scores(raw_values, reverse=True)
+        pct_scores = percentile_scores(raw_values, reverse=True, zero_is_perfect=True)
 
         results: list[ScorerResult] = []
         for lst, pct in zip(listings, pct_scores):
             stats = block_stats[lst["geohash"]]
-            score = 100.0 if stats["mgmt_complaints_per_unit"] == 0 else pct
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=score,
+                    score=pct,
                     components={
                         "mgmt_owner": stats["mgmt_owner"],
                         "mgmt_owner_buildings": stats["mgmt_owner_buildings"],
@@ -207,40 +207,3 @@ class ManagementScorer(Scorer):
             if d < best_d:
                 best, best_d = row, d
         return best
-
-
-def _percentile_scores(
-    values: list[float],
-    *,
-    reverse: bool = False,
-) -> list[float]:
-    """Convert raw values to 0–100 percentile scores with proper tie handling.
-
-    Tied values receive the **same** percentile (average of their ranks).
-
-    Args:
-        values:  One value per listing.
-        reverse: If True, *lower* raw values get *higher* scores
-                 (good for complaint counts).
-    """
-    n = len(values)
-    if n == 0:
-        return []
-    if n == 1:
-        return [50.0]
-
-    indexed = sorted(enumerate(values), key=lambda t: t[1])
-    scores = [0.0] * n
-    i = 0
-    while i < n:
-        j = i
-        while j < n and indexed[j][1] == indexed[i][1]:
-            j += 1
-        avg_rank = (i + j - 1) / 2.0
-        avg_pct = avg_rank / (n - 1) * 100.0
-        for k in range(i, j):
-            idx = indexed[k][0]
-            scores[idx] = (100.0 - avg_pct) if reverse else avg_pct
-        i = j
-
-    return scores
