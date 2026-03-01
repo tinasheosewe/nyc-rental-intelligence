@@ -26,7 +26,11 @@ export default function ScanView() {
   const visible = listings.filter((l) => !skipped.has(l.id));
   const sentinelRef = useRef<HTMLDivElement>(null);
 
-  // Infinite scroll via IntersectionObserver
+  // Infinite scroll via IntersectionObserver.
+  // Depends on isLoading so the observer is re-created after loadListings()
+  // completes (the sentinel DOM element is unmounted during loading and a
+  // new one is mounted when the grid renders — the old observer would be
+  // watching a stale element otherwise).
   useEffect(() => {
     const sentinel = sentinelRef.current;
     if (!sentinel) return;
@@ -41,7 +45,7 @@ export default function ScanView() {
     );
     observer.observe(sentinel);
     return () => observer.disconnect();
-  }, [hasMore, isLoadingMore, loadMore]);
+  }, [hasMore, isLoadingMore, loadMore, isLoading]);
 
   const handleCardClick = (listingId: string) => {
     const idx = listings.findIndex((l) => l.id === listingId);
