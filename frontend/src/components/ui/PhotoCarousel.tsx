@@ -81,7 +81,7 @@ export default function PhotoCarousel({
           {index > 0 && (
             <button
               onClick={(e) => go(-1, e)}
-              className="absolute left-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 backdrop-blur text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-sm"
+              className="absolute left-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 backdrop-blur text-white flex items-center justify-center text-sm"
               aria-label="Previous photo"
             >
               ‹
@@ -90,7 +90,7 @@ export default function PhotoCarousel({
           {index < total - 1 && (
             <button
               onClick={(e) => go(1, e)}
-              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/50 backdrop-blur text-white/80 hover:text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-sm"
+              className="absolute right-1.5 top-1/2 -translate-y-1/2 w-7 h-7 rounded-full bg-black/60 backdrop-blur text-white flex items-center justify-center text-sm"
               aria-label="Next photo"
             >
               ›
