@@ -88,29 +88,21 @@ def data_quality_label(coverage: float) -> str | None:
     return "very_limited"
 
 
-# Confidence floor: a listing with 0 scored dims should produce a
-# composite of  raw × FLOOR  at most, while 100 % coverage leaves
-# the score unchanged.
-_CONFIDENCE_FLOOR = 0.5
-
-
 def compute_composite(
     scores: dict[str, float],
     priorities: list[str] | None = None,
     exclude_schools: bool = False,
 ) -> tuple[float, str | None]:
     """
-    Confidence-adjusted weighted composite score (0–100).
+    Weighted composite score (0–100) with data-quality label.
 
     Computes group averages, then weights them by priority position:
         Top 2 groups → 3x weight
         Middle group → 2x weight
         Bottom 2 groups → 1x weight
 
-    The raw weighted average is then dampened by data coverage so that
-    thin-data listings don't rank artificially high:
-
-        adjusted = raw × (FLOOR + (1 - FLOOR) × coverage)
+    The score is NOT dampened — listings are ranked on available data
+    as-is. A data_quality label is returned for UI disclosure only.
 
     Args:
         scores: mapping of dimension name → score (0–100).
@@ -118,10 +110,11 @@ def compute_composite(
         exclude_schools: when True, omit schools from neighborhood avg.
 
     Returns:
-        (adjusted_composite, data_quality) where data_quality is one of
+        (composite, data_quality) where data_quality is one of
         None, "limited", or "very_limited".
     """
     group_scores = compute_group_scores(scores, exclude_schools=exclude_schools)
+    coverage = compute_coverage(scores, exclude_schools=exclude_schools)
     order = priorities or DEFAULT_GROUP_PRIORITIES
 
     # Build weight map based on group position
@@ -152,11 +145,5 @@ def compute_composite(
     if total_weight == 0:
         return (0.0, data_quality_label(0.0))
 
-    raw = weighted_sum / total_weight
-
-    # Confidence adjustment
-    coverage = compute_coverage(scores, exclude_schools=exclude_schools)
-    multiplier = _CONFIDENCE_FLOOR + (1 - _CONFIDENCE_FLOOR) * coverage
-    adjusted = round(raw * multiplier, 1)
-
-    return (adjusted, data_quality_label(coverage))
+    composite = round(weighted_sum / total_weight, 1)
+    return (composite, data_quality_label(coverage))
