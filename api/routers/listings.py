@@ -450,7 +450,12 @@ def get_listings(
                 ]
                 total = len(all_listings)
 
-            all_listings.sort(key=lambda x: x.scores.composite, reverse=True)
+            # Tiebreak: when composites are equal, prefer more data coverage
+            _DQ_RANK = {None: 2, "limited": 1, "very_limited": 0}
+            all_listings.sort(
+                key=lambda x: (x.scores.composite, _DQ_RANK.get(x.data_quality, 0)),
+                reverse=True,
+            )
             offset = (page - 1) * page_size
             listings = all_listings[offset : offset + page_size]
 
