@@ -44,7 +44,9 @@ def _rent_stabilized(row: dict) -> Optional[Flag]:
 
 
 def _transit(row: dict) -> Optional[Flag]:
-    count = row.get("transit_station_count") or 0
+    if row.get("transit_station_count") is None:
+        return None  # no transit data
+    count = row["transit_station_count"]
     if count >= 4:
         return Flag(type="green", text=f"{count} subway stations within walking distance")
     if count == 0:
@@ -53,7 +55,9 @@ def _transit(row: dict) -> Optional[Flag]:
 
 
 def _violations(row: dict) -> Optional[Flag]:
-    count = row.get("building_violation_count") or 0
+    if row.get("building_violation_count") is None:
+        return None  # no violation data
+    count = row["building_violation_count"]
     if count == 0:
         return Flag(type="green", text="No open building violations")
     elif count >= 3:
@@ -64,7 +68,9 @@ def _violations(row: dict) -> Optional[Flag]:
 
 
 def _management(row: dict) -> Optional[Flag]:
-    complaints = row.get("mgmt_complaints") or 0
+    if row.get("mgmt_complaints") is None:
+        return None  # no management data
+    complaints = row["mgmt_complaints"]
     if complaints == 0:
         return Flag(type="green", text="No HPD complaints on record")
     elif complaints >= 10:
@@ -100,7 +106,9 @@ def _parks(row: dict) -> Optional[Flag]:
 
 
 def _deal(row: dict) -> Optional[Flag]:
-    score = row.get("deal_score") or 50
+    if row.get("deal_score") is None:
+        return None  # no deal data
+    score = row["deal_score"]
     ppsqft = row.get("price_per_sqft")
     if score >= 80:
         txt = "Priced well below neighborhood median"
@@ -155,6 +163,8 @@ def _projects(row: dict) -> Optional[Flag]:
 
 
 def _pest(row: dict) -> Optional[Flag]:
+    if row.get("pest_hpd_count") is None and row.get("pest_rodent_count") is None:
+        return None  # no pest data
     hpd = row.get("pest_hpd_count") or 0
     rodent = row.get("pest_rodent_count") or 0
     total = hpd + rodent
@@ -170,7 +180,9 @@ def _pest(row: dict) -> Optional[Flag]:
 
 
 def _hpd_class_c(row: dict) -> Optional[Flag]:
-    c = row.get("building_hpd_class_c") or 0
+    if row.get("building_hpd_class_c") is None:
+        return None  # no data
+    c = row["building_hpd_class_c"]
     if c >= 3:
         return Flag(type="red", text=f"{c} hazardous (Class C) HPD violations")
     if c >= 1:
@@ -179,14 +191,18 @@ def _hpd_class_c(row: dict) -> Optional[Flag]:
 
 
 def _litigations(row: dict) -> Optional[Flag]:
-    n = row.get("mgmt_litigations") or 0
+    if row.get("mgmt_litigations") is None:
+        return None  # no data
+    n = row["mgmt_litigations"]
     if n >= 1:
         return Flag(type="red", text=f"Building has {n} open HPD litigation(s)")
     return None
 
 
 def _evictions(row: dict) -> Optional[Flag]:
-    n = row.get("mgmt_evictions") or 0
+    if row.get("mgmt_evictions") is None:
+        return None  # no data
+    n = row["mgmt_evictions"]
     if n >= 5:
         return Flag(type="red", text=f"{n} eviction filings at this building")
     if n >= 2:
