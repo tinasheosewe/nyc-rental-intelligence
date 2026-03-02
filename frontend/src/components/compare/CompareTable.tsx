@@ -10,6 +10,7 @@
 import type { Listing, ScoreGroupKey } from "@/lib/types";
 import { GROUP_BY_KEY } from "@/lib/types";
 import { scoreBg, scoreColor, medalIcon, formatPrice, formatBeds, getGroupScore } from "@/lib/utils";
+import { useStore } from "@/lib/store";
 import clsx from "clsx";
 
 interface CompareTableProps {
@@ -18,11 +19,12 @@ interface CompareTableProps {
 }
 
 export default function CompareTable({ listings, groups }: CompareTableProps) {
+  const kidsMode = useStore((s) => s.kidsMode);
   // Compute ranks per group
   const ranks: Record<string, Record<string, number>> = {};
   for (const gk of groups) {
     const sorted = [...listings].sort(
-      (a, b) => getGroupScore(b.scores, gk) - getGroupScore(a.scores, gk),
+      (a, b) => getGroupScore(b.scores, gk, kidsMode) - getGroupScore(a.scores, gk, kidsMode),
     );
     ranks[gk] = {};
     sorted.forEach((l, i) => {
@@ -77,7 +79,7 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
                   {g.icon} {g.label}
                 </td>
                 {listings.map((l) => {
-                  const score = getGroupScore(l.scores, gk);
+                  const score = getGroupScore(l.scores, gk, kidsMode);
                   const rank = ranks[gk][l.id];
                   return (
                     <td key={l.id} className="text-center py-2.5 px-2">

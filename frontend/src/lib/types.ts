@@ -117,6 +117,33 @@ export const DEFAULT_GROUP_PRIORITIES: ScoreGroupKey[] = [
 export const GROUP_BY_KEY: Record<ScoreGroupKey, ScoreGroup> =
   Object.fromEntries(SCORE_GROUPS.map((g) => [g.key, g])) as Record<ScoreGroupKey, ScoreGroup>;
 
+/**
+ * Return score groups with "schools" filtered out when kidsMode is off.
+ * When kidsMode is true, returns the original SCORE_GROUPS unchanged.
+ */
+export function getEffectiveGroups(kidsMode: boolean): ScoreGroup[] {
+  if (kidsMode) return SCORE_GROUPS;
+  return SCORE_GROUPS.map((g) => {
+    if (g.key !== "neighborhood") return g;
+    const dims = g.dimensions.filter((d) => d !== "schools");
+    return {
+      ...g,
+      dimensions: dims,
+      description: "Amenities, Parks, Greenery",
+    };
+  });
+}
+
+/**
+ * Return effective GROUP_BY_KEY with schools conditionally excluded.
+ */
+export function getEffectiveGroupByKey(kidsMode: boolean): Record<ScoreGroupKey, ScoreGroup> {
+  if (kidsMode) return GROUP_BY_KEY;
+  return Object.fromEntries(
+    getEffectiveGroups(kidsMode).map((g) => [g.key, g]),
+  ) as Record<ScoreGroupKey, ScoreGroup>;
+}
+
 // ── Data models ────────────────────────────────────────────────
 
 export interface Scores {

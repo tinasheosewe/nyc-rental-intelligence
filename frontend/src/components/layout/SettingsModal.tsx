@@ -31,6 +31,8 @@ export default function SettingsModal() {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const priorities = useStore((s) => s.priorities);
   const setPriorities = useStore((s) => s.setPriorities);
+  const kidsMode = useStore((s) => s.kidsMode);
+  const setKidsMode = useStore((s) => s.setKidsMode);
 
   const [draft, setDraft] = useState<ScoreGroupKey[]>(priorities);
 
@@ -174,6 +176,33 @@ export default function SettingsModal() {
                     );
                   })}
                 </div>
+              </div>
+
+              {/* Kids mode toggle */}
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-medium text-zinc-300">
+                    Kids Mode
+                  </h3>
+                  <p className="text-xs text-zinc-500 mt-0.5">
+                    Include school proximity scores in rankings.
+                  </p>
+                </div>
+
+                <button
+                  onClick={() => setKidsMode(!kidsMode)}
+                  className={clsx(
+                    "relative inline-flex h-7 w-12 items-center rounded-full transition-colors",
+                    kidsMode ? "bg-green-500" : "bg-zinc-700",
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      "inline-block h-5 w-5 transform rounded-full bg-white transition-transform",
+                      kidsMode ? "translate-x-6" : "translate-x-1",
+                    )}
+                  />
+                </button>
               </div>
 
               {/* Save */}

@@ -10,6 +10,7 @@
 import type { Listing, ScoreGroupKey } from "@/lib/types";
 import { GROUP_LABELS } from "@/lib/types";
 import { getGroupScore } from "@/lib/utils";
+import { useStore } from "@/lib/store";
 import {
   Radar,
   RadarChart,
@@ -29,13 +30,14 @@ interface CompareRadarProps {
 const COLORS = ["#22c55e", "#3b82f6", "#eab308", "#ef4444", "#a855f7"];
 
 export default function CompareRadar({ listings, groups }: CompareRadarProps) {
+  const kidsMode = useStore((s) => s.kidsMode);
   // Reshape data for Recharts radar
   const data = groups.map((gk) => {
     const point: Record<string, string | number> = {
       dimension: GROUP_LABELS[gk],
     };
     listings.forEach((l) => {
-      point[l.id] = Math.round(getGroupScore(l.scores, gk));
+      point[l.id] = Math.round(getGroupScore(l.scores, gk, kidsMode));
     });
     return point;
   });

@@ -18,6 +18,7 @@ import {
   GROUP_BY_KEY,
   GROUP_LABELS,
   SCORE_GROUP_KEYS,
+  getEffectiveGroups,
 } from "@/lib/types";
 import {
   formatPrice,
@@ -43,6 +44,7 @@ interface FeedCardProps {
 export default function FeedCard({ listing, direction }: FeedCardProps) {
   const priorities = useStore((s) => s.priorities);
   const sortBy = useStore((s) => s.sortBy);
+  const kidsMode = useStore((s) => s.kidsMode);
   const addToWatchlist = useStore((s) => s.addToWatchlist);
   const addToShortlist = useStore((s) => s.addToShortlist);
   const skipListing = useStore((s) => s.skipListing);
@@ -73,7 +75,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
   const sortScore =
     sortBy !== "composite" && sortBy !== "price"
       ? SCORE_GROUP_KEYS.includes(sortBy as ScoreGroupKey)
-        ? getGroupScore(listing.scores, sortBy as ScoreGroupKey)
+        ? getGroupScore(listing.scores, sortBy as ScoreGroupKey, kidsMode)
         : 0
       : 0;
 
@@ -95,8 +97,12 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
 
   const hasPhoto = listing.photos.length > 0;
 
-  // Groups ordered by user priorities
-  const orderedGroups = priorities.map((gk) => GROUP_BY_KEY[gk]).filter(Boolean);
+  // Groups ordered by user priorities (with schools filtered when kidsMode off)
+  const effectiveGroupByKey = getEffectiveGroups(kidsMode).reduce(
+    (acc, g) => ({ ...acc, [g.key]: g }),
+    {} as Record<string, typeof SCORE_GROUPS[number]>,
+  );
+  const orderedGroups = priorities.map((gk) => effectiveGroupByKey[gk]).filter(Boolean);
 
   return (
     <AnimatePresence mode="wait">
@@ -173,7 +179,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {/* Group score pills */}
           <div className="flex items-center gap-2 flex-wrap">
             {orderedGroups.map((group) => {
-              const gs = getGroupScore(listing.scores, group.key);
+              const gs = getGroupScore(listing.scores, group.key, kidsMode);
               return (
                 <span
                   key={group.key}
@@ -233,7 +239,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               Score Breakdown
             </h3>
             {orderedGroups.map((group) => {
-              const gs = getGroupScore(listing.scores, group.key);
+              const gs = getGroupScore(listing.scores, group.key, kidsMode);
               const isExpanded = expandedGroups.has(group.key);
 
               return (

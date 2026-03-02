@@ -3,7 +3,7 @@
  */
 
 import type { ScoreDimension, ScoreGroupKey, Scores } from "./types";
-import { GROUP_BY_KEY } from "./types";
+import { GROUP_BY_KEY, getEffectiveGroupByKey } from "./types";
 
 // ── Score color coding ─────────────────────────────────────────
 
@@ -117,8 +117,13 @@ export function getScore(
 }
 
 /** Compute the average score for a group from a Scores object. */
-export function getGroupScore(scores: Scores, groupKey: ScoreGroupKey): number {
-  const group = GROUP_BY_KEY[groupKey];
+export function getGroupScore(
+  scores: Scores,
+  groupKey: ScoreGroupKey,
+  kidsMode: boolean = false,
+): number {
+  const groupMap = getEffectiveGroupByKey(kidsMode);
+  const group = groupMap[groupKey];
   if (!group) return 0;
   const vals = group.dimensions.map((d) => (scores as unknown as Record<string, number>)[d] ?? 0);
   return vals.reduce((a, b) => a + b, 0) / vals.length;

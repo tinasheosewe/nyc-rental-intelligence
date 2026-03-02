@@ -44,11 +44,15 @@ SCORE_KEYS: list[str] = [
 ]
 
 
-def compute_group_scores(scores: dict[str, float]) -> dict[str, float]:
+def compute_group_scores(
+    scores: dict[str, float],
+    exclude_schools: bool = False,
+) -> dict[str, float]:
     """Compute average score for each group from individual dimension scores."""
     result: dict[str, float] = {}
     for group_key, dims in SCORE_GROUPS.items():
-        vals = [scores.get(d) or 0.0 for d in dims]
+        effective = [d for d in dims if not (exclude_schools and d == "schools")]
+        vals = [scores.get(d) or 0.0 for d in effective]
         result[group_key] = sum(vals) / len(vals) if vals else 0.0
     return result
 
@@ -56,6 +60,7 @@ def compute_group_scores(scores: dict[str, float]) -> dict[str, float]:
 def compute_composite(
     scores: dict[str, float],
     priorities: list[str] | None = None,
+    exclude_schools: bool = False,
 ) -> float:
     """
     Weighted composite score (0–100).
@@ -68,11 +73,12 @@ def compute_composite(
     Args:
         scores: mapping of dimension name → score (0–100).
         priorities: ordered list of group keys, most important first.
+        exclude_schools: when True, omit schools from neighborhood avg.
 
     Returns:
         Weighted average, rounded to 1 decimal.
     """
-    group_scores = compute_group_scores(scores)
+    group_scores = compute_group_scores(scores, exclude_schools=exclude_schools)
     order = priorities or DEFAULT_GROUP_PRIORITIES
 
     # Build weight map based on group position

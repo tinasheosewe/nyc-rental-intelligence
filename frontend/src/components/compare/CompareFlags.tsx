@@ -10,6 +10,7 @@
 import type { Listing, ScoreGroupKey } from "@/lib/types";
 import { GROUP_BY_KEY } from "@/lib/types";
 import { formatPrice, formatBeds, scoreColor, getGroupScore } from "@/lib/utils";
+import { useStore } from "@/lib/store";
 import FlagList from "@/components/ui/FlagList";
 import ScoreBadge from "@/components/ui/ScoreBadge";
 import clsx from "clsx";
@@ -31,12 +32,13 @@ function generateRelativeFlags(
   listing: Listing,
   all: Listing[],
   groups: ScoreGroupKey[],
+  kidsMode: boolean = false,
 ): RelativeFlag[] {
   const flags: RelativeFlag[] = [];
 
   for (const gk of groups) {
-    const myScore = getGroupScore(listing.scores, gk);
-    const allScores = all.map((l) => getGroupScore(l.scores, gk));
+    const myScore = getGroupScore(listing.scores, gk, kidsMode);
+    const allScores = all.map((l) => getGroupScore(l.scores, gk, kidsMode));
     const avg = allScores.reduce((a, b) => a + b, 0) / allScores.length;
     const max = Math.max(...allScores);
     const min = Math.min(...allScores);
@@ -75,6 +77,7 @@ function generateSummary(
   listing: Listing,
   all: Listing[],
   groups: ScoreGroupKey[],
+  kidsMode: boolean = false,
 ): string {
   const avgComposite = all.reduce((a, l) => a + l.scores.composite, 0) / all.length;
 
@@ -82,9 +85,9 @@ function generateSummary(
   const weaknesses: string[] = [];
 
   for (const gk of groups) {
-    const myScore = getGroupScore(listing.scores, gk);
+    const myScore = getGroupScore(listing.scores, gk, kidsMode);
     const avg =
-      all.reduce((a, l) => a + getGroupScore(l.scores, gk), 0) / all.length;
+      all.reduce((a, l) => a + getGroupScore(l.scores, gk, kidsMode), 0) / all.length;
     const delta = Math.round(myScore - avg);
     const label = GROUP_BY_KEY[gk].label.toLowerCase();
 
@@ -100,14 +103,15 @@ function generateSummary(
 }
 
 export default function CompareFlags({ listings, groups }: CompareFlagsProps) {
+  const kidsMode = useStore((s) => s.kidsMode);
   const sorted = [...listings].sort((a, b) => b.scores.composite - a.scores.composite);
   const winnerId = sorted[0]?.id;
 
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {sorted.map((listing) => {
-        const flags = generateRelativeFlags(listing, listings, groups);
-        const summary = generateSummary(listing, listings, groups);
+        const flags = generateRelativeFlags(listing, listings, groups, kidsMode);
+        const summary = generateSummary(listing, listings, groups, kidsMode);
         const isWinner = listing.id === winnerId;
 
         return (

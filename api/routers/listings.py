@@ -164,10 +164,14 @@ def _row_to_components(row: dict) -> dict[str, dict[str, object]]:
     return out
 
 
-def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
+def _row_to_listing(
+    row: dict,
+    priorities: list[str] | None = None,
+    exclude_schools: bool = False,
+) -> Listing:
     """Convert a raw DB row dict into a Listing response model."""
     score_vals = _row_to_scores(row)
-    composite = compute_composite(score_vals, priorities)
+    composite = compute_composite(score_vals, priorities, exclude_schools=exclude_schools)
 
     scores = Scores(
         composite=composite,
@@ -177,7 +181,7 @@ def _row_to_listing(row: dict, priorities: list[str] | None = None) -> Listing:
         noise=score_vals.get("noise", 0),
         building_violations=score_vals.get("building_violations", 0),
         parks=score_vals.get("parks", 0),
-        schools=score_vals.get("schools", 0),
+        schools=0.0 if exclude_schools else score_vals.get("schools", 0),
         management=score_vals.get("management", 0),
         amenity=score_vals.get("amenity", 0),
         shelter=score_vals.get("shelter", 0),
@@ -252,6 +256,7 @@ _SORT_MAP: dict[str, str] = {
     "value": "deal_score",
     "access": "transit_score",
     "neighborhood": "(COALESCE(amenity_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0) + COALESCE(schools_score,0)) / 4.0",
+    "neighborhood_no_schools": "(COALESCE(amenity_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0)) / 3.0",
     "safety": "(COALESCE(crime_score,0) + COALESCE(noise_score,0) + COALESCE(shelter_score,0)) / 3.0",
     "building": "(COALESCE(building_violations_score,0) + COALESCE(management_score,0) + COALESCE(pest_score,0)) / 3.0",
 }
@@ -271,8 +276,10 @@ def get_listings(
     rent_stabilized: Optional[bool] = Query(None),
     min_score: Optional[int] = Query(None, ge=0, le=100),
     priorities: Optional[str] = Query(None, description="Comma-separated group priority order"),
+    kids_mode: Optional[bool] = Query(None, description="Include schools in scoring"),
 ) -> ListingsResponse:
     """Paginated listing feed with filtering and sorting."""
+    exclude_schools = not kids_mode if kids_mode is not None else True
     conn = get_connection()
     try:
         # Build WHERE clause
@@ -317,6 +324,13 @@ def get_listings(
 
         # Determine sort
         sort_key = sort if sort in _SORT_MAP else "composite"
+        # When schools excluded, redirect schools sort → neighborhood and
+        # use the no-schools neighborhood formula.
+        if exclude_schools:
+            if sort_key == "schools":
+                sort_key = "neighborhood_no_schools"
+            elif sort_key == "neighborhood":
+                sort_key = "neighborhood_no_schools"
         db_sort_col = _SORT_MAP.get(sort_key, "")
 
         if db_sort_col:
@@ -333,13 +347,13 @@ def get_listings(
                 f"LIMIT ? OFFSET ?",
                 params + [page_size, offset],
             ).fetchall()
-            listings = [_row_to_listing(dict(r), priority_list) for r in rows]
+            listings = [_row_to_listing(dict(r), priority_list, exclude_schools) for r in rows]
         else:
             # Composite sort — need to compute on all, then paginate
             rows = conn.execute(
                 f"SELECT * FROM listings WHERE {where}", params
             ).fetchall()
-            all_listings = [_row_to_listing(dict(r), priority_list) for r in rows]
+            all_listings = [_row_to_listing(dict(r), priority_list, exclude_schools) for r in rows]
 
             # Filter by min_score if provided
             if min_score is not None:

@@ -36,6 +36,7 @@ export async function fetchListings(
   page: number = 1,
   pageSize: number = 50,
   priorities?: string[],
+  kidsMode?: boolean,
 ): Promise<ListingsResponse> {
   const params: Record<string, string> = {
     page: String(page),
@@ -45,6 +46,10 @@ export async function fetchListings(
 
   if (priorities && priorities.length > 0) {
     params.priorities = priorities.join(",");
+  }
+
+  if (kidsMode !== undefined) {
+    params.kids_mode = String(kidsMode);
   }
 
   if (filters.beds && filters.beds.length > 0) {

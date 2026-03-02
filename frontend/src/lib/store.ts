@@ -89,6 +89,8 @@ interface AppState {
   // Preferences
   priorities: ScoreGroupKey[];
   setPriorities: (p: ScoreGroupKey[]) => void;
+  kidsMode: boolean;
+  setKidsMode: (on: boolean) => void;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
 }
@@ -120,9 +122,9 @@ export const useStore = create<AppState>((set, get) => ({
   loadListings: async () => {
     set({ isLoading: true, listings: [], currentPage: 0, hasMore: true, feedIndex: 0 });
     try {
-      const { filters, sortBy, viewMode, priorities } = get();
+      const { filters, sortBy, viewMode, priorities, kidsMode } = get();
       const pageSize = viewMode === "feed" ? 10 : 24;
-      const res = await fetchListings(filters, sortBy, 1, pageSize, priorities);
+      const res = await fetchListings(filters, sortBy, 1, pageSize, priorities, kidsMode);
       set({
         listings: res.listings,
         totalListings: res.total,
@@ -137,13 +139,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadMore: async () => {
-    const { isLoadingMore, hasMore, currentPage, filters, sortBy, listings, viewMode, priorities } = get();
+    const { isLoadingMore, hasMore, currentPage, filters, sortBy, listings, viewMode, priorities, kidsMode } = get();
     if (isLoadingMore || !hasMore) return;
     set({ isLoadingMore: true });
     try {
       const pageSize = viewMode === "feed" ? 10 : 24;
       const nextPage = currentPage + 1;
-      const res = await fetchListings(filters, sortBy, nextPage, pageSize, priorities);
+      const res = await fetchListings(filters, sortBy, nextPage, pageSize, priorities, kidsMode);
       const merged = [...listings, ...res.listings];
       set({
         listings: merged,
@@ -262,6 +264,11 @@ export const useStore = create<AppState>((set, get) => ({
   priorities: [...DEFAULT_GROUP_PRIORITIES],
   setPriorities: (p) => {
     set({ priorities: p });
+    get().loadListings();
+  },
+  kidsMode: false,
+  setKidsMode: (on) => {
+    set({ kidsMode: on });
     get().loadListings();
   },
   settingsOpen: false,

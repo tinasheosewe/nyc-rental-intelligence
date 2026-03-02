@@ -7,26 +7,31 @@
 
 "use client";
 
+import { useMemo } from "react";
 import { useStore } from "@/lib/store";
-import { SCORE_GROUPS } from "@/lib/types";
+import { SCORE_GROUPS, getEffectiveGroups } from "@/lib/types";
 import clsx from "clsx";
-
-const SORT_OPTIONS = [
-  { key: "composite", label: "Composite" },
-  ...SCORE_GROUPS.map((g) => ({
-    key: g.key,
-    label: `${g.icon} ${g.label}`,
-  })),
-];
 
 export default function SortChips() {
   const sortBy = useStore((s) => s.sortBy);
   const setSortBy = useStore((s) => s.setSortBy);
+  const kidsMode = useStore((s) => s.kidsMode);
+
+  const sortOptions = useMemo(
+    () => [
+      { key: "composite", label: "Composite" },
+      ...getEffectiveGroups(kidsMode).map((g) => ({
+        key: g.key,
+        label: `${g.icon} ${g.label}`,
+      })),
+    ],
+    [kidsMode],
+  );
 
   return (
     <div className="sticky top-14 z-40 bg-zinc-950/80 backdrop-blur-sm border-b border-zinc-800/50">
       <div className="flex items-center gap-2 px-4 py-2 max-w-7xl mx-auto overflow-x-auto scrollbar-hide">
-        {SORT_OPTIONS.map(({ key, label }) => (
+        {sortOptions.map(({ key, label }) => (
           <button
             key={key}
             onClick={() => setSortBy(key)}

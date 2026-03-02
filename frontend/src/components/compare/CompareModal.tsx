@@ -11,7 +11,7 @@ import { useState, useMemo, useEffect } from "react";
 import dynamic from "next/dynamic";
 import { useStore } from "@/lib/store";
 import type { ScoreGroupKey, CompareTab } from "@/lib/types";
-import { SCORE_GROUPS, GROUP_BY_KEY } from "@/lib/types";
+import { SCORE_GROUPS, GROUP_BY_KEY, getEffectiveGroups } from "@/lib/types";
 import CompareTable from "./CompareTable";
 import CompareFlags from "./CompareFlags";
 import clsx from "clsx";
@@ -33,6 +33,8 @@ export default function CompareModal() {
   const watchlist = useStore((s) => s.watchlist);
   const shortlist = useStore((s) => s.shortlist);
   const priorities = useStore((s) => s.priorities);
+  const kidsMode = useStore((s) => s.kidsMode);
+  const effectiveGroups = getEffectiveGroups(kidsMode);
 
   const [step, setStep] = useState<"pick" | "compare">("pick");
   const [selectedGroups, setSelectedGroups] = useState<Set<ScoreGroupKey>>(
@@ -116,7 +118,7 @@ export default function CompareModal() {
               </div>
 
               <div className="grid grid-cols-2 gap-2">
-                {SCORE_GROUPS.map((group) => (
+                {effectiveGroups.map((group) => (
                   <button
                     key={group.key}
                     onClick={() => toggleGroup(group.key)}

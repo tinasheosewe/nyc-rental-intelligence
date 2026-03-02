@@ -39,10 +39,11 @@ export default function ScanCard({
 }: ScanCardProps) {
   const hasPhoto = listing.photos.length > 0;
   const sortBy = useStore((s) => s.sortBy);
+  const kidsMode = useStore((s) => s.kidsMode);
   const isGroupSort = SCORE_GROUP_KEYS.includes(sortBy as ScoreGroupKey);
   const isSortedByDimension = sortBy !== "composite" && !isGroupSort;
   const sortScore = isGroupSort
-    ? getGroupScore(listing.scores, sortBy as ScoreGroupKey)
+    ? getGroupScore(listing.scores, sortBy as ScoreGroupKey, kidsMode)
     : isSortedByDimension
       ? getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
       : listing.scores.composite;
