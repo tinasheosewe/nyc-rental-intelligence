@@ -34,6 +34,7 @@ import {
 import ScoreBadge from "@/components/ui/ScoreBadge";
 import ScoreBar from "@/components/ui/ScoreBar";
 import FlagList from "@/components/ui/FlagList";
+import PhotoCarousel from "@/components/ui/PhotoCarousel";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 
@@ -115,17 +116,16 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
         transition={{ duration: 0.3, ease: "easeOut" }}
         className="flex flex-col h-full overflow-y-auto pb-24"
       >
-        {/* Hero photo */}
-        <div className="relative w-full aspect-[16/9] bg-zinc-800 shrink-0">
+        {/* Hero photo carousel */}
+        <div className="relative w-full shrink-0">
           {hasPhoto ? (
-            <img
-              src={listing.photos[0]}
+            <PhotoCarousel
+              photos={listing.photos}
               alt={listing.address}
-              className="w-full h-full object-cover"
-              loading="lazy"
+              aspect="aspect-[16/9]"
             />
           ) : (
-            <div className="w-full h-full flex items-center justify-center text-zinc-600">
+            <div className="w-full aspect-[16/9] bg-zinc-800 flex items-center justify-center text-zinc-600">
               <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 22V12h6v10" />
@@ -133,7 +133,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             </div>
           )}
           {listing.no_fee && (
-            <span className="absolute top-3 left-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded">
+            <span className="absolute top-3 left-3 bg-green-500 text-white text-xs font-bold px-2 py-1 rounded z-10">
               NO FEE
             </span>
           )}

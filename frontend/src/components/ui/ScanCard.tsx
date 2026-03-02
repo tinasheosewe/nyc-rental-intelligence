@@ -21,6 +21,7 @@ import {
   getGroupScore,
   scoreLabel,
 } from "@/lib/utils";
+import PhotoCarousel from "@/components/ui/PhotoCarousel";
 import clsx from "clsx";
 
 interface ScanCardProps {
@@ -89,17 +90,18 @@ export default function ScanCard({
         </button>
       )}
 
-      {/* Thumbnail */}
-      <div className="aspect-[4/3] bg-zinc-800">
+      {/* Thumbnail carousel */}
+      <div className="bg-zinc-800">
         {hasPhoto ? (
-          <img
-            src={listing.photos[0]}
+          <PhotoCarousel
+            photos={listing.photos}
             alt={listing.address}
-            className="w-full h-full object-cover"
-            loading="lazy"
+            aspect="aspect-[4/3]"
+            showArrows={true}
+            maxDots={5}
           />
         ) : (
-          <div className="w-full h-full flex items-center justify-center text-zinc-700">
+          <div className="aspect-[4/3] w-full flex items-center justify-center text-zinc-700">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
             </svg>
