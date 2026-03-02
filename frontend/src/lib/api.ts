@@ -70,6 +70,12 @@ export async function fetchListings(
   if (filters.minScore != null) {
     params.min_score = String(filters.minScore);
   }
+  if (filters.minSqft != null) {
+    params.min_sqft = String(filters.minSqft);
+  }
+  if (filters.availableBefore) {
+    params.available_before = filters.availableBefore;
+  }
 
   return apiFetch<ListingsResponse>("/listings", params);
 }

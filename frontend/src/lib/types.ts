@@ -199,10 +199,17 @@ export interface Flag {
   text: string;
 }
 
+export interface PriceHistoryEntry {
+  date: string;
+  price: string;
+  event: string;
+}
+
 export interface BuildingInfo {
   owner: string | null;
   year_built: number | null;
   total_units: number | null;
+  stories: number | null;
   open_violations: number;
   total_violations: number;
   hpd_complaints_12mo: number;
@@ -224,6 +231,11 @@ export interface Listing {
   url: string | null;
   no_fee: boolean;
   days_on_market: number | null;
+  available_at: string | null;
+  description: string | null;
+  amenities: string[];
+  price_history: PriceHistoryEntry[];
+  relist_count: number;
 
   scores: Scores;
   score_components: Record<string, Record<string, string | number | null>>;
@@ -254,6 +266,8 @@ export interface FilterState {
   neighborhoods: string[];
   rentStabilized: boolean | null;
   minScore: number | null;
+  minSqft: number | null;
+  availableBefore: string | null;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -263,6 +277,8 @@ export const DEFAULT_FILTERS: FilterState = {
   neighborhoods: [],
   rentStabilized: null,
   minScore: null,
+  minSqft: null,
+  availableBefore: null,
 };
 
 // ── Dimension breakout config ──────────────────────────────────

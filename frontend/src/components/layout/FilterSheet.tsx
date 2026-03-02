@@ -234,6 +234,43 @@ export default function FilterSheet() {
                 </button>
               </div>
 
+              {/* Min sqft */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  Minimum Sqft
+                </label>
+                <input
+                  type="number"
+                  placeholder="e.g. 500"
+                  value={draft.minSqft ?? ""}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      minSqft: e.target.value ? Number(e.target.value) : null,
+                    }))
+                  }
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                />
+              </div>
+
+              {/* Available before */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  Available By
+                </label>
+                <input
+                  type="date"
+                  value={draft.availableBefore ?? ""}
+                  onChange={(e) =>
+                    setDraft((d) => ({
+                      ...d,
+                      availableBefore: e.target.value || null,
+                    }))
+                  }
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                />
+              </div>
+
               {/* Minimum score */}
               <div className="space-y-2">
                 <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">

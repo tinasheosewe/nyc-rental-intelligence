@@ -135,6 +135,7 @@ export default function ScanCard({
         </div>
         <p className="text-xs text-zinc-400">
           {formatBeds(listing.beds)} · {neighborhoodAbbr(listing.neighborhood)}
+          {listing.sqft ? ` · ${listing.sqft} sf` : ""}
           {listing.days_on_market != null && (
             <span className="text-zinc-500"> · {formatDaysOnMarket(listing.days_on_market)}</span>
           )}

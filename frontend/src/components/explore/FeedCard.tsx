@@ -150,6 +150,9 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               <p className="text-sm text-zinc-400">
                 {formatBeds(listing.beds)} · {formatBaths(listing.baths)}
                 {listing.sqft ? ` · ${listing.sqft} sqft` : ""}
+                {listing.sqft && listing.price
+                  ? ` · $${(listing.price / listing.sqft).toFixed(2)}/sqft`
+                  : ""}
               </p>
               <p className="text-sm text-zinc-500 mt-0.5">
                 {listing.address}
@@ -311,6 +314,74 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {/* Divider */}
           <div className="border-t border-zinc-800" />
 
+          {/* Description */}
+          {listing.description && (
+            <>
+              <div className="space-y-2">
+                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                  Description
+                </h3>
+                <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">
+                  {listing.description}
+                </p>
+              </div>
+              <div className="border-t border-zinc-800" />
+            </>
+          )}
+
+          {/* Amenities */}
+          {listing.amenities && listing.amenities.length > 0 && (
+            <>
+              <div className="space-y-2">
+                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                  Amenities
+                </h3>
+                <div className="flex flex-wrap gap-1.5">
+                  {listing.amenities.map((a, i) => (
+                    <span
+                      key={i}
+                      className="px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700"
+                    >
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-zinc-800" />
+            </>
+          )}
+
+          {/* Price History */}
+          {listing.price_history && listing.price_history.length > 0 && (
+            <>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    Price History
+                  </h3>
+                  {listing.relist_count > 1 && (
+                    <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-400">
+                      Relisted {listing.relist_count}x
+                    </span>
+                  )}
+                </div>
+                <div className="space-y-1.5">
+                  {listing.price_history.map((ph, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center justify-between text-sm"
+                    >
+                      <span className="text-zinc-500">{ph.date}</span>
+                      <span className="text-zinc-400 font-medium">{ph.price}</span>
+                      <span className="text-zinc-500 text-xs truncate max-w-[140px]">{ph.event}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="border-t border-zinc-800" />
+            </>
+          )}
+
           {/* Building details */}
           <div className="space-y-2 pb-6">
             <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
@@ -333,6 +404,12 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                 <>
                   <dt className="text-zinc-500">Units</dt>
                   <dd className="text-zinc-300">{listing.building.total_units}</dd>
+                </>
+              )}
+              {listing.building.stories != null && listing.building.stories > 0 && (
+                <>
+                  <dt className="text-zinc-500">Stories</dt>
+                  <dd className="text-zinc-300">{listing.building.stories}</dd>
                 </>
               )}
               <dt className="text-zinc-500">Building Violations</dt>

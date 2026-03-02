@@ -48,12 +48,21 @@ class Flag(BaseModel):
     text: str
 
 
+class PriceHistoryEntry(BaseModel):
+    """A single row from a listing's price history table."""
+
+    date: str
+    price: str
+    event: str
+
+
 class BuildingInfo(BaseModel):
     """Building-level metadata backing management/violation scores."""
 
     owner: Optional[str] = None
     year_built: Optional[int] = None
     total_units: Optional[int] = None
+    stories: Optional[int] = None
     open_violations: int = 0
     total_violations: int = 0
     hpd_complaints_12mo: int = 0
@@ -77,6 +86,11 @@ class Listing(BaseModel):
     url: Optional[str] = None
     no_fee: bool = False
     days_on_market: Optional[int] = None
+    available_at: Optional[str] = None
+    description: Optional[str] = None
+    amenities: list[str] = []
+    price_history: list[PriceHistoryEntry] = []
+    relist_count: int = 0
 
     scores: Scores = Scores()
     score_components: dict[str, dict[str, Any]] = {}

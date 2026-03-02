@@ -20,6 +20,7 @@ from api.models import (
     Flag,
     Listing,
     ListingsResponse,
+    PriceHistoryEntry,
     Scores,
     Trends,
 )
@@ -95,6 +96,13 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("convenience_laundry", "Laundromats"),
         ("convenience_dining", "Restaurants & cafés"),
         ("convenience_total", "Weighted total"),
+    ],
+    "deal": [
+        ("comp_median", "Neighborhood median rent"),
+        ("comp_set_size", "Comp set size"),
+        ("comp_scope", "Comp scope"),
+        ("comp_sqft_median", "Neighborhood median sqft"),
+        ("price_per_sqft", "$/sqft"),
     ],
     "unit_amenities": [
         ("unit_amenities_premium", "Premium amenities"),
@@ -214,12 +222,35 @@ def _row_to_listing(
         owner=row.get("mgmt_owner"),
         year_built=row.get("building_year"),
         total_units=row.get("building_unitsres"),
+        stories=row.get("building_stories"),
         open_violations=row.get("building_violation_count") or 0,
         total_violations=row.get("building_violation_count") or 0,
         hpd_complaints_12mo=row.get("mgmt_complaints") or 0,
     )
 
     components = _row_to_components(row)
+
+    # Parse amenities
+    raw_amenities = row.get("amenities")
+    amenities: list[str] = []
+    if raw_amenities:
+        try:
+            parsed_am = json.loads(raw_amenities)
+            if isinstance(parsed_am, list):
+                amenities = parsed_am
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+    # Parse price history
+    raw_ph = row.get("price_history")
+    price_history: list[PriceHistoryEntry] = []
+    if raw_ph:
+        try:
+            parsed_ph = json.loads(raw_ph)
+            if isinstance(parsed_ph, list):
+                price_history = [PriceHistoryEntry(**entry) for entry in parsed_ph]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
 
     return Listing(
         id=row["id"],
@@ -237,6 +268,11 @@ def _row_to_listing(
         url=row.get("url"),
         no_fee=bool(row.get("no_fee")),
         days_on_market=_days_on_market(row.get("first_seen_at")),
+        available_at=row.get("available_at"),
+        description=row.get("description"),
+        amenities=amenities,
+        price_history=price_history,
+        relist_count=row.get("relist_count") or 0,
         scores=scores,
         score_components=components,
         trends=trends,
@@ -287,6 +323,8 @@ def get_listings(
     neighborhoods: Optional[str] = Query(None, description="Comma-separated"),
     rent_stabilized: Optional[bool] = Query(None),
     min_score: Optional[int] = Query(None, ge=0, le=100),
+    min_sqft: Optional[int] = Query(None, ge=0),
+    available_before: Optional[str] = Query(None, description="ISO date; only listings available on or before"),
     priorities: Optional[str] = Query(None, description="Comma-separated group priority order"),
     kids_mode: Optional[bool] = Query(None, description="Include schools in scoring"),
 ) -> ListingsResponse:
@@ -321,6 +359,14 @@ def get_listings(
         if rent_stabilized is not None:
             conditions.append("rent_stabilized = ?")
             params.append(1 if rent_stabilized else 0)
+
+        if min_sqft is not None:
+            conditions.append("sqft >= ?")
+            params.append(min_sqft)
+
+        if available_before:
+            conditions.append("available_at IS NOT NULL AND available_at <= ?")
+            params.append(available_before)
 
         where = " AND ".join(conditions)
 

@@ -101,10 +101,26 @@ def _parks(row: dict) -> Optional[Flag]:
 
 def _deal(row: dict) -> Optional[Flag]:
     score = row.get("deal_score") or 50
+    ppsqft = row.get("price_per_sqft")
     if score >= 80:
-        return Flag(type="green", text="Priced well below neighborhood median")
+        txt = "Priced well below neighborhood median"
+        if ppsqft:
+            txt += f" (${ppsqft:.0f}/sqft)"
+        return Flag(type="green", text=txt)
     if score <= 20:
-        return Flag(type="red", text="Priced above neighborhood median")
+        txt = "Priced above neighborhood median"
+        if ppsqft:
+            txt += f" (${ppsqft:.0f}/sqft)"
+        return Flag(type="red", text=txt)
+    return None
+
+
+def _relist(row: dict) -> Optional[Flag]:
+    count = row.get("relist_count") or 0
+    if count >= 3:
+        return Flag(type="red", text=f"Relisted {count} times — possible issues")
+    if count == 2:
+        return Flag(type="yellow", text="Relisted twice")
     return None
 
 
@@ -194,6 +210,7 @@ _RULES = [
     _parks,
     _deal,
     _no_fee,
+    _relist,
     _shelter,
     _projects,
     _pest,
