@@ -6,19 +6,18 @@
  * Context-aware highlighting:
  *   - Explore / Scan:  all loaded listings, normal pins
  *   - Explore / Feed:  current card pin highlighted, others dimmed
- *   - Watchlist tab:   watchlist pins, normal
- *   - Shortlist tab:   shortlist pins, normal
+ *   - Watchlist / Shortlist tab:  queue pins, expanded listing highlighted
  *   - Compare open:    compared pins highlighted, others dimmed
  */
 
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useStore } from "@/lib/store";
 import type { Listing } from "@/lib/types";
 
-// Dynamically import MapContainer + MapContent as a single client-only bundle
+// Dynamically import MapContainer + MapContent (no SSR — Leaflet needs window)
 const MapContainer = dynamic(
   () => import("react-leaflet").then((m) => m.MapContainer),
   { ssr: false },
@@ -27,6 +26,7 @@ const MapContent = dynamic(() => import("./MapContent"), { ssr: false });
 
 const NYC_CENTER: [number, number] = [40.73, -73.99];
 const DEFAULT_ZOOM = 12;
+const FOCUSED_ZOOM = 15;
 
 export default function MapOverlay() {
   const mapOpen = useStore((s) => s.mapOpen);
@@ -40,13 +40,23 @@ export default function MapOverlay() {
   const skipped = useStore((s) => s.skipped);
   const compareIds = useStore((s) => s.compareIds);
   const compareOpen = useStore((s) => s.compareOpen);
+  const expandedQueueId = useStore((s) => s.expandedQueueId);
   const addToWatchlist = useStore((s) => s.addToWatchlist);
   const addToShortlist = useStore((s) => s.addToShortlist);
 
   const [mounted, setMounted] = useState(false);
+  const [tilesReady, setTilesReady] = useState(false);
+
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  // Reset tile-ready state when map re-opens
+  useEffect(() => {
+    if (mapOpen) setTilesReady(false);
+  }, [mapOpen]);
+
+  const handleTilesLoaded = useCallback(() => setTilesReady(true), []);
 
   // ── Derive which listings to display (filtering out skipped) ──
   const displayListings = useMemo((): Listing[] => {
@@ -60,13 +70,22 @@ export default function MapOverlay() {
     }
   }, [activeTab, listings, watchlist, shortlist, skipped]);
 
-  // ── Derive focused listing ID (feed mode single-card) ────────
+  // ── Derive focused listing ID ────────────────────────────────
   const focusedId = useMemo((): string | null => {
-    if (activeTab !== "explore" || viewMode !== "feed") return null;
-    const visible = listings.filter((l) => !skipped.has(l.id));
-    const idx = Math.min(feedIndex, visible.length - 1);
-    return visible[idx]?.id ?? null;
-  }, [activeTab, viewMode, feedIndex, listings, skipped]);
+    // Compare mode — no single focus
+    if (compareOpen && compareIds.size > 0) return null;
+    // Queue tabs — expanded listing
+    if (activeTab === "watchlist" || activeTab === "shortlist") {
+      return expandedQueueId;
+    }
+    // Explore feed — current card
+    if (activeTab === "explore" && viewMode === "feed") {
+      const visible = listings.filter((l) => !skipped.has(l.id));
+      const idx = Math.min(feedIndex, visible.length - 1);
+      return visible[idx]?.id ?? null;
+    }
+    return null;
+  }, [activeTab, viewMode, feedIndex, listings, skipped, compareOpen, compareIds, expandedQueueId]);
 
   // ── Derive highlight set ─────────────────────────────────────
   const highlightIds = useMemo((): Set<string> => {
@@ -74,6 +93,21 @@ export default function MapOverlay() {
     if (focusedId) return new Set([focusedId]);
     return new Set();
   }, [compareOpen, compareIds, focusedId]);
+
+  // ── Compute initial center/zoom so map starts at the right place ──
+  const { initialCenter, initialZoom } = useMemo(() => {
+    // Single focused listing → start centred on it
+    if (focusedId) {
+      const listing = displayListings.find((l) => l.id === focusedId);
+      if (listing) {
+        return {
+          initialCenter: [listing.latitude, listing.longitude] as [number, number],
+          initialZoom: FOCUSED_ZOOM,
+        };
+      }
+    }
+    return { initialCenter: NYC_CENTER, initialZoom: DEFAULT_ZOOM };
+  }, [focusedId, displayListings]);
 
   if (!mapOpen || !mounted) return null;
 
@@ -109,11 +143,23 @@ export default function MapOverlay() {
         </div>
       )}
 
+      {/* Loading spinner — shown until first tiles arrive */}
+      {!tilesReady && (
+        <div className="absolute inset-0 z-[999] flex items-center justify-center pointer-events-none">
+          <div className="flex flex-col items-center gap-3">
+            <div className="w-8 h-8 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
+            <span className="text-xs text-zinc-500">Loading map…</span>
+          </div>
+        </div>
+      )}
+
       {/* Map */}
       <div className="flex-1 w-full">
         <MapContainer
-          center={NYC_CENTER}
-          zoom={DEFAULT_ZOOM}
+          center={initialCenter}
+          zoom={initialZoom}
+          zoomControl={false}
+          preferCanvas
           className="w-full h-full"
           style={{ background: "#18181b" }}
         >
@@ -123,6 +169,7 @@ export default function MapOverlay() {
             focusedId={focusedId}
             addToWatchlist={addToWatchlist}
             addToShortlist={addToShortlist}
+            onTilesLoaded={handleTilesLoaded}
           />
         </MapContainer>
       </div>

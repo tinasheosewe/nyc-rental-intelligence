@@ -2,17 +2,18 @@
  * MapContent — Inner map component rendered inside MapContainer.
  *
  * Split from MapOverlay so useMap() works (must be inside MapContainer).
- * Handles: tile layer, pins, highlighting, fly-to, fit-bounds.
+ * Handles: tile layer, pins, clustering, highlighting, fly-to, fit-bounds.
  */
 
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   TileLayer,
   CircleMarker,
   Popup,
   Tooltip,
+  ZoomControl,
   useMap,
 } from "react-leaflet";
 import type { Listing } from "@/lib/types";
@@ -24,6 +25,16 @@ interface MapContentProps {
   focusedId: string | null;
   addToWatchlist: (l: Listing) => void;
   addToShortlist: (l: Listing) => void;
+  onTilesLoaded?: () => void;
+}
+
+/** Group of co-located listings sharing the same pin position */
+interface PinCluster {
+  key: string;
+  lat: number;
+  lng: number;
+  listings: Listing[];
+  avgScore: number;
 }
 
 function pinColor(score: number): string {
@@ -33,32 +44,76 @@ function pinColor(score: number): string {
   return "#ef4444";
 }
 
+/** Group listings by rounded coordinates (~11 m precision) */
+function clusterByLocation(listings: Listing[]): PinCluster[] {
+  const groups = new Map<string, Listing[]>();
+  for (const l of listings) {
+    const key = `${l.latitude.toFixed(4)}_${l.longitude.toFixed(4)}`;
+    const group = groups.get(key);
+    if (group) group.push(l);
+    else groups.set(key, [l]);
+  }
+  return Array.from(groups.entries()).map(([key, group]) => ({
+    key,
+    lat: group[0].latitude,
+    lng: group[0].longitude,
+    listings: group,
+    avgScore:
+      group.reduce((s, l) => s + l.scores.composite, 0) / group.length,
+  }));
+}
+
 export default function MapContent({
   listings,
   highlightIds,
   focusedId,
   addToWatchlist,
   addToShortlist,
+  onTilesLoaded,
 }: MapContentProps) {
   const map = useMap();
   const prevFocusedId = useRef<string | null>(null);
+  const initialMount = useRef(true);
+  const [tilesFired, setTilesFired] = useState(false);
 
   const hasHighlights = highlightIds.size > 0;
 
-  // Fly to focused listing when it changes
+  // ── Tile load tracking ───────────────────────────────────────
+  useEffect(() => {
+    if (tilesFired) return;
+    const handler = () => {
+      setTilesFired(true);
+      onTilesLoaded?.();
+    };
+    map.once("load", handler);
+    // TileLayer fires its own "load" when all visible tiles are loaded,
+    // but the map "load" event fires once the map is fully initialised.
+    // As a fallback, also listen over a short timer.
+    const timer = setTimeout(handler, 600);
+    return () => {
+      map.off("load", handler);
+      clearTimeout(timer);
+    };
+  }, [map, onTilesLoaded, tilesFired]);
+
+  // ── Navigate to focused listing ──────────────────────────────
   useEffect(() => {
     if (!focusedId || focusedId === prevFocusedId.current) return;
     prevFocusedId.current = focusedId;
 
     const listing = listings.find((l) => l.id === focusedId);
-    if (listing) {
-      map.flyTo([listing.latitude, listing.longitude], 15, {
-        duration: 0.8,
-      });
+    if (!listing) return;
+
+    if (initialMount.current) {
+      // First open — MapContainer already centred via props, no animation
+      initialMount.current = false;
+      return;
     }
+    // Subsequent focus changes — smooth fly
+    map.flyTo([listing.latitude, listing.longitude], 15, { duration: 0.6 });
   }, [focusedId, listings, map]);
 
-  // Fit bounds to all highlighted listings (compare mode)
+  // ── Fit bounds to all highlighted listings (compare mode) ────
   useEffect(() => {
     if (highlightIds.size < 2 || focusedId) return;
 
@@ -69,8 +124,31 @@ export default function MapContent({
     const bounds = L.latLngBounds(
       highlighted.map((l) => [l.latitude, l.longitude]),
     );
-    map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+
+    if (initialMount.current) {
+      initialMount.current = false;
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15, animate: false });
+    } else {
+      map.fitBounds(bounds, { padding: [60, 60], maxZoom: 15 });
+    }
   }, [highlightIds, listings, map, focusedId]);
+
+  // Mark initial mount done if nothing focused
+  useEffect(() => {
+    if (!focusedId && highlightIds.size < 2) {
+      initialMount.current = false;
+    }
+  }, [focusedId, highlightIds]);
+
+  // ── Cluster non-highlighted listings ─────────────────────────
+  const nonHighlighted = useMemo(
+    () => listings.filter((l) => !highlightIds.has(l.id)),
+    [listings, highlightIds],
+  );
+  const clusters = useMemo(
+    () => clusterByLocation(nonHighlighted),
+    [nonHighlighted],
+  );
 
   return (
     <>
@@ -78,33 +156,64 @@ export default function MapContent({
         url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
       />
+      <ZoomControl position="topright" />
 
-      {/* Render non-highlighted pins first (below), then highlighted (above) */}
-      {listings
-        .filter((l) => !highlightIds.has(l.id))
-        .map((listing) => (
+      {/* ── Non-highlighted pins (clustered) ─────────────────── */}
+      {clusters.map((cluster) =>
+        cluster.listings.length === 1 ? (
+          // Single listing — normal pin
           <CircleMarker
-            key={listing.id}
-            center={[listing.latitude, listing.longitude]}
+            key={cluster.key}
+            center={[cluster.lat, cluster.lng]}
             radius={hasHighlights ? 5 : 8}
             pathOptions={{
-              color: pinColor(listing.scores.composite),
-              fillColor: pinColor(listing.scores.composite),
+              color: pinColor(cluster.avgScore),
+              fillColor: pinColor(cluster.avgScore),
               fillOpacity: hasHighlights ? 0.2 : 0.8,
               weight: hasHighlights ? 1 : 2,
             }}
           >
             <Popup>
               <PinPopup
-                listing={listing}
+                listing={cluster.listings[0]}
                 addToWatchlist={addToWatchlist}
                 addToShortlist={addToShortlist}
               />
             </Popup>
           </CircleMarker>
-        ))}
+        ) : (
+          // Multi-listing cluster
+          <CircleMarker
+            key={cluster.key}
+            center={[cluster.lat, cluster.lng]}
+            radius={hasHighlights ? 8 : 14}
+            pathOptions={{
+              color: pinColor(cluster.avgScore),
+              fillColor: pinColor(cluster.avgScore),
+              fillOpacity: hasHighlights ? 0.25 : 0.85,
+              weight: hasHighlights ? 1 : 2,
+            }}
+          >
+            <Tooltip
+              direction="top"
+              offset={[0, -10]}
+              permanent
+              className="cluster-count-tooltip"
+            >
+              {cluster.listings.length}
+            </Tooltip>
+            <Popup>
+              <ClusterPopup
+                cluster={cluster}
+                addToWatchlist={addToWatchlist}
+                addToShortlist={addToShortlist}
+              />
+            </Popup>
+          </CircleMarker>
+        ),
+      )}
 
-      {/* Highlighted pins — rendered last so they stack on top */}
+      {/* ── Highlighted pins — always individual, rendered last ─ */}
       {listings
         .filter((l) => highlightIds.has(l.id))
         .map((listing) => (
@@ -141,7 +250,9 @@ export default function MapContent({
   );
 }
 
-/** Shared popup content for all pins */
+// ── Sub-components ─────────────────────────────────────────────
+
+/** Popup for a single listing pin */
 function PinPopup({
   listing,
   addToWatchlist,
@@ -173,6 +284,53 @@ function PinPopup({
         >
           ★ Shortlist
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Popup for a cluster of multiple listings at the same location */
+function ClusterPopup({
+  cluster,
+  addToWatchlist,
+  addToShortlist,
+}: {
+  cluster: PinCluster;
+  addToWatchlist: (l: Listing) => void;
+  addToShortlist: (l: Listing) => void;
+}) {
+  return (
+    <div className="text-xs min-w-[180px] max-w-[220px]">
+      <p className="font-semibold text-zinc-700 mb-2">
+        {cluster.listings.length} apartments here
+      </p>
+      <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
+        {cluster.listings.map((listing) => (
+          <div
+            key={listing.id}
+            className="border-t border-zinc-200 pt-1.5 first:border-0 first:pt-0"
+          >
+            <p className="font-medium text-zinc-900">{listing.address}</p>
+            <p className="text-zinc-500">
+              {formatPrice(listing.price)} · {formatBeds(listing.beds)} ·{" "}
+              {Math.round(listing.scores.composite)}
+            </p>
+            <div className="flex gap-1 pt-0.5">
+              <button
+                onClick={() => addToWatchlist(listing)}
+                className="text-[10px] px-1.5 py-0.5 bg-zinc-100 rounded hover:bg-zinc-200"
+              >
+                + Watch
+              </button>
+              <button
+                onClick={() => addToShortlist(listing)}
+                className="text-[10px] px-1.5 py-0.5 bg-zinc-100 rounded hover:bg-zinc-200"
+              >
+                ★ Short
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );

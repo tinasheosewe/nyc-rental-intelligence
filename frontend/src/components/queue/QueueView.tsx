@@ -8,7 +8,7 @@
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useCallback } from "react";
 import { useStore } from "@/lib/store";
 import { pushListingUrl } from "@/lib/useUrlState";
 import type { Listing } from "@/lib/types";
@@ -22,7 +22,8 @@ interface QueueViewProps {
 }
 
 export default function QueueView({ listings, queueType }: QueueViewProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const expandedId = useStore((s) => s.expandedQueueId);
+  const setExpandedId = useStore((s) => s.setExpandedQueueId);
   const compareIds = useStore((s) => s.compareIds);
   const toggleCompareId = useStore((s) => s.toggleCompareId);
   const setCompareOpen = useStore((s) => s.setCompareOpen);

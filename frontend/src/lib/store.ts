@@ -83,6 +83,8 @@ interface AppState {
   // Map
   mapOpen: boolean;
   setMapOpen: (open: boolean) => void;
+  expandedQueueId: string | null;
+  setExpandedQueueId: (id: string | null) => void;
 
   // Preferences
   priorities: ScoreGroupKey[];
@@ -96,7 +98,7 @@ interface AppState {
 export const useStore = create<AppState>((set, get) => ({
   // Navigation
   activeTab: "explore",
-  setActiveTab: (tab) => set({ activeTab: tab }),
+  setActiveTab: (tab) => set({ activeTab: tab, expandedQueueId: null }),
 
   // Explore
   viewMode: "feed",
@@ -253,6 +255,8 @@ export const useStore = create<AppState>((set, get) => ({
   // Map
   mapOpen: false,
   setMapOpen: (open) => set({ mapOpen: open }),
+  expandedQueueId: null,
+  setExpandedQueueId: (id) => set({ expandedQueueId: id }),
 
   // Preferences
   priorities: [...DEFAULT_GROUP_PRIORITIES],
