@@ -283,7 +283,7 @@ export const DEFAULT_FILTERS: FilterState = {
   minSqft: null,
   availableBefore: null,
   amenities: [],
-  minDataQuality: null,
+  minDataQuality: "limited",
 };
 
 // ── Dimension breakout config ──────────────────────────────────
