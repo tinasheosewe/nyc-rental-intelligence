@@ -1,7 +1,11 @@
 """
 GreeneryScorer — scores listings by surrounding green infrastructure.
 
-Combines three data sources:
+Measures *street-level* greenery — distinct from the Parks dimension which
+scores proximity to a single best park.  Greenery captures the density of
+living trees, mature canopy cover, and community gardens around a listing.
+
+Data sources:
 
 1. **Street Trees** (``ds_street_trees``) — NYC 2015 Street Tree Census.
    Counts living trees within 200 m and computes a canopy score based
@@ -10,26 +14,25 @@ Combines three data sources:
 2. **Community Gardens** (``ds_community_gardens``) — GreenThumb gardens.
    Counts community gardens within 500 m.
 
-3. **Parks** (``ds_parks``) — reuses the same dataset as ParksScorer
-   to count parks within 500 m (complements the parks *score* which
-   only tracks the single best park).
-
 Scoring (absolute, 0–100):
     Each component is scored independently with a sqrt diminishing-returns
     curve and capped at a threshold representing "excellent" urban greenery:
 
-        tree_pts   = sqrt(min(1, trees  / 200))  × 30   (200 trees = full)
-        canopy_pts = sqrt(min(1, canopy / 2000)) × 30   (2000 = mature canopy)
-        park_pts   = sqrt(min(1, parks  / 10))   × 25   (10 parks = full)
-        garden_pts = sqrt(min(1, gardens / 3))   × 15   (3 gardens = full)
+        tree_pts   = sqrt(min(1, trees  / 200))  × 40   (200 trees = full)
+        canopy_pts = sqrt(min(1, canopy / 2000)) × 40   (2000 = mature canopy)
+        garden_pts = sqrt(min(1, gardens / 3))   × 20   (3 gardens = full)
 
-        score = tree_pts + canopy_pts + park_pts + garden_pts   (max 100)
+        score = tree_pts + canopy_pts + garden_pts   (max 100)
+
+Note: ``greenery_park_count`` is still collected and stored for display
+purposes but does NOT contribute to the score — park quality is handled
+exclusively by the Parks dimension.
 
 Output columns:
     greenery_tree_count     INTEGER — living street trees within 200 m
     greenery_canopy_score   INTEGER — diameter-weighted canopy (capped per tree)
     greenery_garden_count   INTEGER — community gardens within 500 m
-    greenery_park_count     INTEGER — parks within 500 m
+    greenery_park_count     INTEGER — parks within 500 m (informational only)
 """
 
 from __future__ import annotations
@@ -52,14 +55,12 @@ PARK_SEARCH_DELTA = 0.005   # ~500 m in degrees
 # Absolute-score thresholds (component reaches full marks at this value)
 _TREE_CAP = 200       # street trees within 200 m
 _CANOPY_CAP = 2000    # diameter-weighted canopy sum
-_PARK_CAP = 10        # parks within 500 m
 _GARDEN_CAP = 3       # community gardens within 500 m
 
 # Component weights (sum = 100)
-_W_TREE = 30
-_W_CANOPY = 30
-_W_PARK = 25
-_W_GARDEN = 15
+_W_TREE = 40
+_W_CANOPY = 40
+_W_GARDEN = 20
 
 
 class GreeneryScorer(Scorer):
@@ -123,7 +124,6 @@ class GreeneryScorer(Scorer):
                 s["greenery_tree_count"],
                 s["greenery_canopy_score"],
                 s["greenery_garden_count"],
-                s["greenery_park_count"],
             )
             results.append(
                 ScorerResult(
@@ -141,14 +141,16 @@ class GreeneryScorer(Scorer):
 
     @staticmethod
     def _absolute_score(
-        trees: int, canopy: int, gardens: int, parks: int,
+        trees: int, canopy: int, gardens: int,
     ) -> float:
-        """Compute an absolute 0-100 greenery score with sqrt diminishing returns."""
+        """Compute an absolute 0-100 greenery score with sqrt diminishing returns.
+
+        Parks are intentionally excluded — that's a separate dimension.
+        """
         tree_pts = math.sqrt(min(1.0, trees / _TREE_CAP)) * _W_TREE
         canopy_pts = math.sqrt(min(1.0, canopy / _CANOPY_CAP)) * _W_CANOPY
-        park_pts = math.sqrt(min(1.0, parks / _PARK_CAP)) * _W_PARK
         garden_pts = math.sqrt(min(1.0, gardens / _GARDEN_CAP)) * _W_GARDEN
-        return round(tree_pts + canopy_pts + park_pts + garden_pts, 1)
+        return round(tree_pts + canopy_pts + garden_pts, 1)
 
     # ------------------------------------------------------------------
     # Data helpers

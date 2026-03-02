@@ -56,7 +56,7 @@ COMPONENT_COLUMNS = {
     "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
     "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total", "project_count", "project_nearest_m", "project_nearest_name"],
     "pest_score": ["pest_hpd_count", "pest_rodent_count", "pest_total", "pest_units", "pest_per_unit"],
-    "greenery_score": ["greenery_tree_count", "greenery_canopy_score", "greenery_garden_count", "greenery_park_count"],
+    "greenery_score": ["greenery_tree_count", "greenery_canopy_score", "greenery_garden_count"],
 }
 
 # Pretty labels
@@ -90,7 +90,7 @@ SCORE_DESCRIPTIONS = {
     "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
     "shelter_score": "Homeless shelters/services and NYCHA public housing projects within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
     "pest_score": "HPD pest complaints (building-level by BBL) + 311 rodent complaints (area-level within 100 m), normalised per residential unit, percentile-ranked. Fewer pests per unit = higher score.",
-    "greenery_score": "Absolute green infrastructure score: street trees (200 m), canopy coverage, community gardens (500 m), park count (500 m). sqrt diminishing-returns curve, max 100.",
+    "greenery_score": "Absolute street-level greenery score: street trees (200 m), canopy coverage, and community gardens (500 m). sqrt diminishing-returns curve, max 100. Parks are a separate dimension.",
 }
 
 # Scoring method type — controls how scores are displayed and colored

@@ -59,7 +59,7 @@ export const DIMENSION_TIER_LABELS: Record<ScoreDimension, ScoreTierLabels> = {
   convenience:         ["Everything Nearby", "Well Served",     "Decent Options",  "Limited",          "Sparse"],
   shelter:             ["Very Low Presence", "Low Presence",    "Some Presence",   "Notable Presence", "High Presence"],
   pest:                ["No Issues",        "Minimal Issues",   "Some Reports",    "Pest Concerns",    "Major Problems"],
-  greenery:            ["Lush",             "Very Green",       "Some Greenery",   "Sparse",           "Barren"],
+  greenery:            ["Lush",             "Very Green",       "Green",           "Some Greenery",    "Sparse"],
 };
 
 // ── Score groups ───────────────────────────────────────────────
@@ -370,6 +370,5 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
     { key: "greenery_tree_count", label: "Street trees (200 m)" },
     { key: "greenery_canopy_score", label: "Canopy score" },
     { key: "greenery_garden_count", label: "Community gardens (500 m)" },
-    { key: "greenery_park_count", label: "Parks (500 m)" },
   ],
 };

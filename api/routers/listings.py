@@ -164,7 +164,6 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("greenery_tree_count", "Street trees within 200 m"),
         ("greenery_canopy_score", "Canopy score (diameter-weighted)"),
         ("greenery_garden_count", "Community gardens within 500 m"),
-        ("greenery_park_count", "Parks within 500 m"),
     ],
 }
 
