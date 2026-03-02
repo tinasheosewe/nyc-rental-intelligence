@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { useStore } from "@/lib/store";
 import { useUrlState } from "@/lib/useUrlState";
 import { useEscapeStack } from "@/lib/useEscapeStack";
@@ -16,15 +15,10 @@ import MapOverlay from "@/components/map/MapOverlay";
 
 export default function HomePage() {
   const activeTab = useStore((s) => s.activeTab);
-  const loadListings = useStore((s) => s.loadListings);
   const watchlist = useStore((s) => s.watchlist);
   const shortlist = useStore((s) => s.shortlist);
 
-  useEffect(() => {
-    loadListings();
-  }, [loadListings]);
-
-  // Sync URL ↔ store and handle Escape key for overlays
+  // Sync URL ↔ store (also handles initial data load)
   useUrlState();
   useEscapeStack();
 
