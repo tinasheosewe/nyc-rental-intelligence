@@ -90,7 +90,7 @@ SCORE_DESCRIPTIONS = {
     "amenity_score": "Nearby amenities (grocery, pharmacy, gym, laundry, dining) within 500 m, percentile-ranked.",
     "shelter_score": "Homeless shelters/services and NYCHA public housing projects within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
     "pest_score": "HPD pest complaints (building-level by BBL) + 311 rodent complaints (area-level within 100 m), normalised per residential unit, percentile-ranked. Fewer pests per unit = higher score.",
-    "greenery_score": "Street tree density (200 m, diameter-weighted canopy) + community gardens (500 m) + park count (500 m), percentile-ranked. More green = higher score.",
+    "greenery_score": "Absolute green infrastructure score: street trees (200 m), canopy coverage, community gardens (500 m), park count (500 m). sqrt diminishing-returns curve, max 100.",
 }
 
 # Scoring method type — controls how scores are displayed and colored
@@ -107,7 +107,7 @@ SCORE_METHODS = {
     "amenity_score": "percentile",
     "shelter_score": "median_norm",
     "pest_score": "percentile",
-    "greenery_score": "percentile",
+    "greenery_score": "absolute",
 }
 
 # Human-readable component labels

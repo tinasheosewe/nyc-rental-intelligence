@@ -14,12 +14,16 @@ Combines three data sources:
    to count parks within 500 m (complements the parks *score* which
    only tracks the single best park).
 
-Scoring:
-    canopy_points = sum(min(dbh, 36) for each tree within 200 m)
-    garden_bonus  = garden_count × 20
-    park_bonus    = park_count × 15
-    raw = canopy_points + garden_bonus + park_bonus
-    Percentile-ranked across all listings.
+Scoring (absolute, 0–100):
+    Each component is scored independently with a sqrt diminishing-returns
+    curve and capped at a threshold representing "excellent" urban greenery:
+
+        tree_pts   = sqrt(min(1, trees  / 200))  × 30   (200 trees = full)
+        canopy_pts = sqrt(min(1, canopy / 2000)) × 30   (2000 = mature canopy)
+        park_pts   = sqrt(min(1, parks  / 10))   × 25   (10 parks = full)
+        garden_pts = sqrt(min(1, gardens / 3))   × 15   (3 gardens = full)
+
+        score = tree_pts + canopy_pts + park_pts + garden_pts   (max 100)
 
 Output columns:
     greenery_tree_count     INTEGER — living street trees within 200 m
@@ -31,6 +35,7 @@ Output columns:
 from __future__ import annotations
 
 import json
+import math
 import sqlite3
 
 from haversine import haversine, Unit
@@ -38,11 +43,23 @@ from haversine import haversine, Unit
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import dedupe_by_geohash, percentile_scores
+from apthunt.scoring.utils import dedupe_by_geohash
 
 TREE_RADIUS_M = 200
 GARDEN_RADIUS_M = 500
 PARK_SEARCH_DELTA = 0.005   # ~500 m in degrees
+
+# Absolute-score thresholds (component reaches full marks at this value)
+_TREE_CAP = 200       # street trees within 200 m
+_CANOPY_CAP = 2000    # diameter-weighted canopy sum
+_PARK_CAP = 10        # parks within 500 m
+_GARDEN_CAP = 3       # community gardens within 500 m
+
+# Component weights (sum = 100)
+_W_TREE = 30
+_W_CANOPY = 30
+_W_PARK = 25
+_W_GARDEN = 15
 
 
 class GreeneryScorer(Scorer):
@@ -76,7 +93,7 @@ class GreeneryScorer(Scorer):
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "greenery_v1")
+            cached = self._cache.get(gh, "greenery_v2")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
@@ -90,28 +107,28 @@ class GreeneryScorer(Scorer):
             # Parks within 500 m (count, not quality — that's ParksScorer)
             park_count = self._count_parks(lat, lon)
 
-            raw = canopy + garden_count * 20 + park_count * 15
-
             stats = {
                 "greenery_tree_count": tree_count,
                 "greenery_canopy_score": canopy,
                 "greenery_garden_count": garden_count,
                 "greenery_park_count": park_count,
-                "_raw": raw,
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "greenery_v1", stats)
-
-        raw_values = [block_stats[lst["geohash"]]["_raw"] for lst in listings]
-        pct_scores = percentile_scores(raw_values, reverse=False, zero_is_perfect=False)
+            self._cache.put(gh, "greenery_v2", stats)
 
         results: list[ScorerResult] = []
-        for lst, pct in zip(listings, pct_scores):
+        for lst in listings:
             s = block_stats[lst["geohash"]]
+            score = self._absolute_score(
+                s["greenery_tree_count"],
+                s["greenery_canopy_score"],
+                s["greenery_garden_count"],
+                s["greenery_park_count"],
+            )
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=pct,
+                    score=score,
                     components={
                         "greenery_tree_count": s["greenery_tree_count"],
                         "greenery_canopy_score": s["greenery_canopy_score"],
@@ -121,6 +138,17 @@ class GreeneryScorer(Scorer):
                 )
             )
         return results
+
+    @staticmethod
+    def _absolute_score(
+        trees: int, canopy: int, gardens: int, parks: int,
+    ) -> float:
+        """Compute an absolute 0-100 greenery score with sqrt diminishing returns."""
+        tree_pts = math.sqrt(min(1.0, trees / _TREE_CAP)) * _W_TREE
+        canopy_pts = math.sqrt(min(1.0, canopy / _CANOPY_CAP)) * _W_CANOPY
+        park_pts = math.sqrt(min(1.0, parks / _PARK_CAP)) * _W_PARK
+        garden_pts = math.sqrt(min(1.0, gardens / _GARDEN_CAP)) * _W_GARDEN
+        return round(tree_pts + canopy_pts + park_pts + garden_pts, 1)
 
     # ------------------------------------------------------------------
     # Data helpers

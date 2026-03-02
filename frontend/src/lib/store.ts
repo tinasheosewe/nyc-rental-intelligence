@@ -103,7 +103,7 @@ export const useStore = create<AppState>((set, get) => ({
   setActiveTab: (tab) => set({ activeTab: tab, expandedQueueId: null }),
 
   // Explore
-  viewMode: "feed",
+  viewMode: "scan",
   setViewMode: (mode) => set({ viewMode: mode }),
   feedIndex: 0,
   setFeedIndex: (idx) => set({ feedIndex: idx }),
