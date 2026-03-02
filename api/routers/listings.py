@@ -66,12 +66,17 @@ def _parse_photos(raw: Optional[str]) -> list[str]:
         return []
 
 
-def _row_to_scores(row: dict) -> dict[str, float]:
-    """Extract score values from a DB row into a flat dict."""
-    return {
-        key: float(row.get(f"{key}_score") or 0)
-        for key in SCORE_KEYS
-    }
+def _row_to_scores(row: dict) -> dict[str, float | None]:
+    """Extract score values from a DB row into a flat dict.
+
+    Returns None for dimensions where the DB value is NULL (no data),
+    so that compute_group_scores can exclude them from averages.
+    """
+    result: dict[str, float | None] = {}
+    for key in SCORE_KEYS:
+        raw = row.get(f"{key}_score")
+        result[key] = float(raw) if raw is not None else None
+    return result
 
 
 # Column map: dimension → list of (db_column, display_label) pairs
@@ -83,13 +88,18 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("pest_units", "Residential units"),
         ("pest_per_unit", "Pests per unit"),
     ],
-    "amenity": [
-        ("amenity_grocery", "Grocery / convenience"),
-        ("amenity_pharmacy", "Pharmacies"),
-        ("amenity_gym", "Gyms / fitness"),
-        ("amenity_laundry", "Laundromats"),
-        ("amenity_dining", "Restaurants & cafés"),
-        ("amenity_total", "Weighted total"),
+    "convenience": [
+        ("convenience_grocery", "Grocery / convenience"),
+        ("convenience_pharmacy", "Pharmacies"),
+        ("convenience_gym", "Gyms / fitness"),
+        ("convenience_laundry", "Laundromats"),
+        ("convenience_dining", "Restaurants & cafés"),
+        ("convenience_total", "Weighted total"),
+    ],
+    "unit_amenities": [
+        ("unit_amenities_premium", "Premium amenities"),
+        ("unit_amenities_standard", "Standard amenities"),
+        ("unit_amenities_total", "Weighted total"),
     ],
     "shelter": [
         ("shelter_count", "Shelters within 800 m"),
@@ -175,18 +185,19 @@ def _row_to_listing(
 
     scores = Scores(
         composite=composite,
-        deal=score_vals.get("deal", 0),
-        transit=score_vals.get("transit", 0),
-        crime=score_vals.get("crime", 0),
-        noise=score_vals.get("noise", 0),
-        building_violations=score_vals.get("building_violations", 0),
-        parks=score_vals.get("parks", 0),
-        schools=0.0 if exclude_schools else score_vals.get("schools", 0),
-        management=score_vals.get("management", 0),
-        amenity=score_vals.get("amenity", 0),
-        shelter=score_vals.get("shelter", 0),
-        pest=score_vals.get("pest", 0),
-        greenery=score_vals.get("greenery", 0),
+        deal=score_vals.get("deal") or 0,
+        transit=score_vals.get("transit") or 0,
+        crime=score_vals.get("crime") or 0,
+        noise=score_vals.get("noise") or 0,
+        building_violations=score_vals.get("building_violations") or 0,
+        parks=score_vals.get("parks") or 0,
+        schools=0.0 if exclude_schools else (score_vals.get("schools") or 0),
+        management=score_vals.get("management") or 0,
+        convenience=score_vals.get("convenience") or 0,
+        unit_amenities=score_vals.get("unit_amenities"),
+        shelter=score_vals.get("shelter") or 0,
+        pest=score_vals.get("pest") or 0,
+        greenery=score_vals.get("greenery") or 0,
         rent_stabilized=bool(row.get("rent_stabilized")),
     )
 
@@ -248,15 +259,16 @@ _SORT_MAP: dict[str, str] = {
     "parks": "parks_score",
     "schools": "schools_score",
     "management": "management_score",
-    "amenity": "amenity_score",
+    "convenience": "convenience_score",
+    "unit_amenities": "unit_amenities_score",
     "shelter": "shelter_score",
     "pest": "pest_score",
     "greenery": "greenery_score",
     # Group-level sorts (average of member dimensions)
-    "value": "deal_score",
+    "value": "(COALESCE(deal_score,0) + COALESCE(unit_amenities_score,deal_score)) / 2.0",
     "access": "transit_score",
-    "neighborhood": "(COALESCE(amenity_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0) + COALESCE(schools_score,0)) / 4.0",
-    "neighborhood_no_schools": "(COALESCE(amenity_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0)) / 3.0",
+    "neighborhood": "(COALESCE(convenience_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0) + COALESCE(schools_score,0)) / 4.0",
+    "neighborhood_no_schools": "(COALESCE(convenience_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0)) / 3.0",
     "safety": "(COALESCE(crime_score,0) + COALESCE(noise_score,0) + COALESCE(shelter_score,0)) / 3.0",
     "building": "(COALESCE(building_violations_score,0) + COALESCE(management_score,0) + COALESCE(pest_score,0)) / 3.0",
 }

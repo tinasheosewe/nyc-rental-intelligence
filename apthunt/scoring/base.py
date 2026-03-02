@@ -18,7 +18,7 @@ import sqlite3
 class ScorerResult:
     """Result from a single scorer for a single listing."""
     listing_id: str
-    score: float
+    score: float | None
     components: dict[str, Any] = field(default_factory=dict)
 
 

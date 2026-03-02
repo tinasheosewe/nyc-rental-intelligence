@@ -11,9 +11,9 @@ from __future__ import annotations
 # ── Score groups ────────────────────────────────────────────────
 
 SCORE_GROUPS: dict[str, list[str]] = {
-    "value": ["deal"],
+    "value": ["deal", "unit_amenities"],
     "access": ["transit"],
-    "neighborhood": ["amenity", "parks", "greenery", "schools"],
+    "neighborhood": ["convenience", "parks", "greenery", "schools"],
     "safety": ["crime", "noise", "shelter"],
     "building": ["building_violations", "management", "pest"],
 }
@@ -30,6 +30,7 @@ DEFAULT_GROUP_PRIORITIES: list[str] = [
 # All individual score column names in the DB
 SCORE_KEYS: list[str] = [
     "deal",
+    "unit_amenities",
     "transit",
     "crime",
     "noise",
@@ -37,7 +38,7 @@ SCORE_KEYS: list[str] = [
     "parks",
     "schools",
     "management",
-    "amenity",
+    "convenience",
     "shelter",
     "pest",
     "greenery",
@@ -45,14 +46,19 @@ SCORE_KEYS: list[str] = [
 
 
 def compute_group_scores(
-    scores: dict[str, float],
+    scores: dict[str, float | None],
     exclude_schools: bool = False,
 ) -> dict[str, float]:
-    """Compute average score for each group from individual dimension scores."""
+    """Compute average score for each group from individual dimension scores.
+
+    Dimensions with a None value (no data available) are excluded from the
+    average so they don't drag down the group score.  Only dimensions with
+    an actual numeric score (including 0) are counted.
+    """
     result: dict[str, float] = {}
     for group_key, dims in SCORE_GROUPS.items():
         effective = [d for d in dims if not (exclude_schools and d == "schools")]
-        vals = [scores.get(d) or 0.0 for d in effective]
+        vals = [float(scores[d]) for d in effective if scores.get(d) is not None]
         result[group_key] = sum(vals) / len(vals) if vals else 0.0
     return result
 

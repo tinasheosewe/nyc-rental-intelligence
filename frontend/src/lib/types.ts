@@ -9,6 +9,7 @@
 
 export const SCORE_DIMENSIONS = [
   "deal",
+  "unit_amenities",
   "transit",
   "crime",
   "noise",
@@ -16,7 +17,7 @@ export const SCORE_DIMENSIONS = [
   "parks",
   "schools",
   "management",
-  "amenity",
+  "convenience",
   "shelter",
   "pest",
   "greenery",
@@ -26,6 +27,7 @@ export type ScoreDimension = (typeof SCORE_DIMENSIONS)[number];
 
 export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   deal: "Deal",
+  unit_amenities: "Amenities",
   transit: "Transit",
   crime: "Crime",
   noise: "Noise",
@@ -33,7 +35,7 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   parks: "Parks",
   schools: "Schools",
   management: "Management",
-  amenity: "Amenities",
+  convenience: "Convenience",
   shelter: "Shelters & Projects",
   pest: "Pests",
   greenery: "Greenery",
@@ -46,6 +48,7 @@ export type ScoreTierLabels = [string, string, string, string, string];
 
 export const DIMENSION_TIER_LABELS: Record<ScoreDimension, ScoreTierLabels> = {
   deal:                ["Steal",            "Great Deal",       "Fair Price",      "Pricey",           "Overpriced"],
+  unit_amenities:      ["Fully Loaded",     "Well Equipped",    "Good Features",   "Basic",            "Bare Bones"],
   transit:             ["Car-Free",         "Excellent Transit","Good Transit",    "Limited Transit",  "Car Needed"],
   crime:               ["Very Safe",        "Safe",             "Moderate Risk",   "Some Risk",        "High Risk"],
   noise:               ["Very Quiet",       "Quiet",            "Moderate Noise",  "Noisy",            "Very Noisy"],
@@ -53,7 +56,7 @@ export const DIMENSION_TIER_LABELS: Record<ScoreDimension, ScoreTierLabels> = {
   parks:               ["Park Paradise",    "Great Parks",      "Good Access",     "Few Parks",        "No Parks Nearby"],
   schools:             ["Top Schools",      "Great Schools",    "Good Schools",    "Few Options",      "Limited Schools"],
   management:          ["Excellent Mgmt",   "Good Mgmt",       "Average Mgmt",    "Poor Mgmt",        "Bad Mgmt"],
-  amenity:             ["Everything Nearby", "Well Served",     "Decent Options",  "Limited",          "Sparse"],
+  convenience:         ["Everything Nearby", "Well Served",     "Decent Options",  "Limited",          "Sparse"],
   shelter:             ["Very Low Presence", "Low Presence",    "Some Presence",   "Notable Presence", "High Presence"],
   pest:                ["No Issues",        "Minimal Issues",   "Some Reports",    "Pest Concerns",    "Major Problems"],
   greenery:            ["Lush",             "Very Green",       "Some Greenery",   "Sparse",           "Barren"],
@@ -84,8 +87,8 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     key: "value",
     label: "Value",
     icon: "💰",
-    dimensions: ["deal"],
-    description: "Deal quality",
+    dimensions: ["deal", "unit_amenities"],
+    description: "Deal Quality, Unit Features",
   },
   {
     key: "access",
@@ -98,8 +101,8 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     key: "neighborhood",
     label: "Neighborhood",
     icon: "🌳",
-    dimensions: ["amenity", "parks", "greenery", "schools"],
-    description: "Amenities, Parks, Greenery, Schools",
+    dimensions: ["convenience", "parks", "greenery", "schools"],
+    description: "Convenience, Parks, Greenery, Schools",
   },
   {
     key: "safety",
@@ -149,7 +152,7 @@ export function getEffectiveGroups(kidsMode: boolean): ScoreGroup[] {
     return {
       ...g,
       dimensions: dims,
-      description: "Amenities, Parks, Greenery",
+      description: "Convenience, Parks, Greenery",
     };
   });
 }
@@ -169,6 +172,7 @@ export function getEffectiveGroupByKey(kidsMode: boolean): Record<ScoreGroupKey,
 export interface Scores {
   composite: number;
   deal: number;
+  unit_amenities: number | null;
   transit: number;
   crime: number;
   noise: number;
@@ -176,7 +180,7 @@ export interface Scores {
   parks: number;
   schools: number;
   management: number;
-  amenity: number;
+  convenience: number;
   shelter: number;
   pest: number;
   greenery: number;
@@ -278,13 +282,18 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
     { key: "pest_units", label: "Residential units" },
     { key: "pest_per_unit", label: "Pests per unit" },
   ],
-  amenity: [
-    { key: "amenity_grocery", label: "Grocery / convenience" },
-    { key: "amenity_pharmacy", label: "Pharmacies" },
-    { key: "amenity_gym", label: "Gyms / fitness" },
-    { key: "amenity_laundry", label: "Laundromats" },
-    { key: "amenity_dining", label: "Restaurants & cafés" },
-    { key: "amenity_total", label: "Weighted total" },
+  convenience: [
+    { key: "convenience_grocery", label: "Grocery / convenience" },
+    { key: "convenience_pharmacy", label: "Pharmacies" },
+    { key: "convenience_gym", label: "Gyms / fitness" },
+    { key: "convenience_laundry", label: "Laundromats" },
+    { key: "convenience_dining", label: "Restaurants & cafés" },
+    { key: "convenience_total", label: "Weighted total" },
+  ],
+  unit_amenities: [
+    { key: "unit_amenities_premium", label: "Premium amenities" },
+    { key: "unit_amenities_standard", label: "Standard amenities" },
+    { key: "unit_amenities_total", label: "Weighted total" },
   ],
   shelter: [
     { key: "shelter_count", label: "Shelters within 800 m" },

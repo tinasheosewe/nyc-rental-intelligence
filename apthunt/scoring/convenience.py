@@ -1,22 +1,22 @@
 """
-AmenityScorer — scores listings by nearby everyday amenities.
+ConvenienceScorer — scores listings by nearby everyday conveniences.
 
 Uses pre-downloaded OpenStreetMap amenity data (via DataStore) to count
 grocery stores, pharmacies, gyms, laundromats, cafés, and restaurants
 within a walkable radius.
 
 Scoring:
-    Weighted amenity count within 500 m.
+    Weighted convenience count within 500 m.
     Essentials (grocery, pharmacy) weighted higher than lifestyle
     (café, restaurant).  Percentile-ranked across all listings.
 
 Output columns:
-    amenity_grocery   INTEGER — supermarkets + convenience stores
-    amenity_pharmacy  INTEGER
-    amenity_gym       INTEGER — fitness centres
-    amenity_laundry   INTEGER
-    amenity_dining    INTEGER — restaurants + cafés
-    amenity_total     INTEGER — weighted total
+    convenience_grocery   INTEGER — supermarkets + convenience stores
+    convenience_pharmacy  INTEGER
+    convenience_gym       INTEGER — fitness centres
+    convenience_laundry   INTEGER
+    convenience_dining    INTEGER — restaurants + cafés
+    convenience_total     INTEGER — weighted total
 """
 
 from __future__ import annotations
@@ -43,7 +43,7 @@ _WEIGHTS = {
 _CATEGORIES = list(_WEIGHTS.keys())
 
 
-class AmenityScorer(Scorer):
+class ConvenienceScorer(Scorer):
 
     def __init__(self, store: DataStore, cache: BlockCache):
         self._store = store
@@ -52,16 +52,16 @@ class AmenityScorer(Scorer):
 
     @property
     def name(self) -> str:
-        return "amenity"
+        return "convenience"
 
     def columns(self) -> dict[str, str]:
         return {
-            "amenity_grocery": "INTEGER",
-            "amenity_pharmacy": "INTEGER",
-            "amenity_gym": "INTEGER",
-            "amenity_laundry": "INTEGER",
-            "amenity_dining": "INTEGER",
-            "amenity_total": "INTEGER",
+            "convenience_grocery": "INTEGER",
+            "convenience_pharmacy": "INTEGER",
+            "convenience_gym": "INTEGER",
+            "convenience_laundry": "INTEGER",
+            "convenience_dining": "INTEGER",
+            "convenience_total": "INTEGER",
         }
 
     def score(
@@ -74,17 +74,17 @@ class AmenityScorer(Scorer):
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in geohash_to_latlon.items():
-            cached = self._cache.get(gh, "amenity_v2")
+            cached = self._cache.get(gh, "convenience_v2")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
 
             stats = self._count_nearby(lat, lon, RADIUS_M)
             block_stats[gh] = stats
-            self._cache.put(gh, "amenity_v2", stats)
+            self._cache.put(gh, "convenience_v2", stats)
 
         # Percentile-rank by weighted total
-        raw = [block_stats[lst["geohash"]]["amenity_total"] for lst in listings]
+        raw = [block_stats[lst["geohash"]]["convenience_total"] for lst in listings]
         pct_scores = percentile_scores(raw, reverse=False)
 
         results: list[ScorerResult] = []
@@ -95,12 +95,12 @@ class AmenityScorer(Scorer):
                     listing_id=lst["id"],
                     score=pct,
                     components={
-                        "amenity_grocery": stats["amenity_grocery"],
-                        "amenity_pharmacy": stats["amenity_pharmacy"],
-                        "amenity_gym": stats["amenity_gym"],
-                        "amenity_laundry": stats["amenity_laundry"],
-                        "amenity_dining": stats["amenity_dining"],
-                        "amenity_total": stats["amenity_total"],
+                        "convenience_grocery": stats["convenience_grocery"],
+                        "convenience_pharmacy": stats["convenience_pharmacy"],
+                        "convenience_gym": stats["convenience_gym"],
+                        "convenience_laundry": stats["convenience_laundry"],
+                        "convenience_dining": stats["convenience_dining"],
+                        "convenience_total": stats["convenience_total"],
                     },
                 )
             )
@@ -125,10 +125,10 @@ class AmenityScorer(Scorer):
         weighted = sum(counts[cat] * _WEIGHTS[cat] for cat in _CATEGORIES)
 
         return {
-            "amenity_grocery": counts["grocery"],
-            "amenity_pharmacy": counts["pharmacy"],
-            "amenity_gym": counts["gym"],
-            "amenity_laundry": counts["laundry"],
-            "amenity_dining": counts["dining"],
-            "amenity_total": weighted,
+            "convenience_grocery": counts["grocery"],
+            "convenience_pharmacy": counts["pharmacy"],
+            "convenience_gym": counts["gym"],
+            "convenience_laundry": counts["laundry"],
+            "convenience_dining": counts["dining"],
+            "convenience_total": weighted,
         }

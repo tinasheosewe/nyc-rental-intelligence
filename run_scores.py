@@ -33,7 +33,8 @@ from apthunt.scoring.parks import ParksScorer
 from apthunt.scoring.schools import SchoolsScorer
 from apthunt.scoring.rent_stabilized import RentStabilizedScorer
 from apthunt.scoring.management import ManagementScorer
-from apthunt.scoring.amenity import AmenityScorer
+from apthunt.scoring.convenience import ConvenienceScorer
+from apthunt.scoring.unit_amenities import UnitAmenitiesScorer
 from apthunt.scoring.shelter import ShelterScorer
 from apthunt.scoring.pest import PestScorer
 from apthunt.scoring.greenery import GreeneryScorer
@@ -66,7 +67,8 @@ def build_scorers(
         "schools": lambda: SchoolsScorer(store, cache),
         "rent_stabilized": lambda: RentStabilizedScorer(store, cache),
         "management": lambda: ManagementScorer(store, cache),
-        "amenity": lambda: AmenityScorer(store, cache),
+        "convenience": lambda: ConvenienceScorer(store, cache),
+        "unit_amenities": lambda: UnitAmenitiesScorer(),
         "shelter": lambda: ShelterScorer(store, cache),
         "pest": lambda: PestScorer(store, cache),
         "greenery": lambda: GreeneryScorer(store, cache),
@@ -121,7 +123,8 @@ def main():
         print("  parks                - Proximity to parks/green space")
         print("  schools              - Public school quality")
         print("  management           - Owner/management company reputation (HPD complaints)")
-        print("  amenity              - Nearby amenities (grocery, pharmacy, gym, etc.)")
+        print("  convenience          - Nearby conveniences (grocery, pharmacy, gym, etc.)")
+        print("  unit_amenities       - In-unit / in-building amenities (washer/dryer, doorman, etc.)")
         print("  shelter              - Proximity to homeless shelters/services & NYCHA projects")
         return
 
