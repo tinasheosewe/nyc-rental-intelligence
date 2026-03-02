@@ -53,6 +53,29 @@ main {
 .leaflet-container {
   background: #18181b !important;
 }
+
+/* Prevent Tailwind v4 preflight (img { max-width:100%; height:auto })
+   from breaking Leaflet tile rendering. Tiles are 256×256 px images
+   positioned absolutely; Tailwind's reset shrinks them. */
+.leaflet-pane,
+.leaflet-tile,
+.leaflet-marker-icon,
+.leaflet-marker-shadow,
+.leaflet-tile-container,
+.leaflet-map-pane img,
+.leaflet-overlay-pane svg {
+  max-width: none !important;
+  max-height: none !important;
+}
+.leaflet-tile {
+  width: 256px !important;
+  height: 256px !important;
+}
+.leaflet-container img.leaflet-tile {
+  padding: 0;
+  margin: 0;
+}
+
 .leaflet-popup-content-wrapper {
   background: #fafafa;
   border-radius: 12px;
@@ -60,4 +83,12 @@ main {
 }
 .leaflet-popup-tip {
   background: #fafafa;
+}
+
+/* Pulsing ring animation for highlighted map pins */
+@keyframes ping-slow {
+  75%, 100% {
+    transform: scale(2.5);
+    opacity: 0;
+  }
 }
