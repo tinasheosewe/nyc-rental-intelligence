@@ -58,11 +58,21 @@ def _violations(row: dict) -> Optional[Flag]:
     if row.get("building_violation_count") is None:
         return None  # no violation data
     count = row["building_violation_count"]
+    units = max(row.get("building_unitsres") or 1, 1)
+    per_unit = count / units
     if count == 0:
         return Flag(type="green", text="No open building violations")
-    elif count >= 3:
+    # Rate-aware: use per-unit rate for buildings with 20+ units
+    if units >= 20:
+        if per_unit >= 0.5:
+            return Flag(type="red", text=f"{count} open DOB violations ({per_unit:.2f}/unit)")
+        if per_unit >= 0.2:
+            return Flag(type="yellow", text=f"{count} open DOB violations ({per_unit:.2f}/unit)")
+        return None  # low per-unit rate, not flagworthy
+    # Small buildings: raw count thresholds
+    if count >= 3:
         return Flag(type="red", text=f"{count} open DOB violations")
-    else:
+    if count >= 1:
         return Flag(type="yellow", text=f"{count} open DOB violation(s)")
     return None
 
@@ -71,11 +81,21 @@ def _management(row: dict) -> Optional[Flag]:
     if row.get("mgmt_complaints") is None:
         return None  # no management data
     complaints = row["mgmt_complaints"]
+    units = max(row.get("mgmt_owner_units") or 1, 1)
+    per_unit = complaints / units
     if complaints == 0:
         return Flag(type="green", text="No HPD complaints on record")
-    elif complaints >= 10:
+    # Rate-aware: use per-unit rate for portfolios with 50+ units
+    if units >= 50:
+        if per_unit >= 0.3:
+            return Flag(type="red", text=f"Management: {complaints} HPD complaints ({per_unit:.2f}/unit)")
+        if per_unit >= 0.1:
+            return Flag(type="yellow", text=f"Management: {complaints} HPD complaints ({per_unit:.2f}/unit)")
+        return None  # low per-unit rate, not flagworthy
+    # Small portfolios: raw count thresholds
+    if complaints >= 10:
         return Flag(type="red", text=f"Management: {complaints} HPD complaints")
-    elif complaints >= 5:
+    if complaints >= 5:
         return Flag(type="yellow", text=f"Management: {complaints} HPD complaints")
     return None
 
@@ -181,8 +201,21 @@ def _pest(row: dict) -> Optional[Flag]:
     hpd = row.get("pest_hpd_count") or 0
     rodent = row.get("pest_rodent_count") or 0
     total = hpd + rodent
+    units = max(row.get("pest_units") or row.get("building_unitsres") or 1, 1)
     if total == 0:
         return Flag(type="green", text="No pest or rodent complaints")
+    # Rate-aware for large buildings
+    if units >= 50:
+        per_unit = hpd / units
+        if per_unit >= 0.05:  # 5%+ units with pest complaints
+            return Flag(type="red", text=f"{hpd} HPD pest complaints ({per_unit:.1%} of units)")
+        if per_unit >= 0.02:
+            return Flag(type="yellow", text=f"Some pest activity ({hpd} building, {rodent} area)")
+        # Low building rate but check area rodents separately
+        if rodent >= 10:
+            return Flag(type="yellow", text=f"{rodent} rodent complaints in area")
+        return None  # negligible rate
+    # Small buildings: raw count thresholds
     if hpd >= 5:
         return Flag(type="red", text=f"{hpd} HPD pest complaints in building")
     if total >= 10:
@@ -196,6 +229,18 @@ def _hpd_class_c(row: dict) -> Optional[Flag]:
     if row.get("building_hpd_class_c") is None:
         return None  # no data
     c = row["building_hpd_class_c"]
+    units = max(row.get("building_unitsres") or 1, 1)
+    if c == 0:
+        return None
+    # Rate-aware for large buildings
+    if units >= 50:
+        per_unit = c / units
+        if per_unit >= 0.02:  # 2%+ units with hazardous violations
+            return Flag(type="red", text=f"{c} hazardous (Class C) HPD violations ({per_unit:.1%} of units)")
+        if per_unit >= 0.005:  # 0.5-2%
+            return Flag(type="yellow", text=f"{c} hazardous (Class C) HPD violation(s)")
+        return None  # negligible rate
+    # Small buildings: any Class C is concerning
     if c >= 3:
         return Flag(type="red", text=f"{c} hazardous (Class C) HPD violations")
     if c >= 1:
@@ -216,6 +261,18 @@ def _evictions(row: dict) -> Optional[Flag]:
     if row.get("mgmt_evictions") is None:
         return None  # no data
     n = row["mgmt_evictions"]
+    units = max(row.get("building_unitsres") or row.get("mgmt_owner_units") or 1, 1)
+    if n == 0:
+        return None
+    # Rate-aware: for large buildings, evictions are normal at low rates
+    if units >= 50:
+        per_unit = n / units
+        if per_unit >= 0.05:  # 5%+ of units had evictions
+            return Flag(type="red", text=f"{n} eviction filings ({per_unit:.1%} of units)")
+        if per_unit >= 0.02:  # 2-5%
+            return Flag(type="yellow", text=f"{n} eviction filings ({per_unit:.1%} of units)")
+        return None  # < 2% eviction rate in large building = not flagworthy
+    # Small buildings: raw count
     if n >= 5:
         return Flag(type="red", text=f"{n} eviction filings at this building")
     if n >= 2:
