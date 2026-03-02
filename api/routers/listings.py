@@ -9,6 +9,7 @@ Endpoints:
 from __future__ import annotations
 
 import json
+import math
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -311,6 +312,17 @@ _SORT_MAP: dict[str, str] = {
 }
 
 
+# ── Score coverage SQL helper ──────────────────────────────────
+
+_SCORE_DB_COLS = [f"{k}_score" for k in SCORE_KEYS]  # 13 columns
+
+
+def _coverage_sql(exclude_schools: bool) -> str:
+    """SQL expression that counts scored (non-NULL) dimensions."""
+    cols = [c for c in _SCORE_DB_COLS if not (exclude_schools and c == "schools_score")]
+    return "(" + " + ".join(f"CASE WHEN {c} IS NOT NULL THEN 1 ELSE 0 END" for c in cols) + ")"
+
+
 # ── Endpoints ───────────────────────────────────────────────────
 
 @router.get("/listings", response_model=ListingsResponse)
@@ -326,6 +338,8 @@ def get_listings(
     min_score: Optional[int] = Query(None, ge=0, le=100),
     min_sqft: Optional[int] = Query(None, ge=0),
     available_before: Optional[str] = Query(None, description="ISO date; only listings available on or before"),
+    amenities: Optional[str] = Query(None, description="Comma-separated required amenity names"),
+    min_data_quality: Optional[str] = Query(None, description="Minimum data quality: 'full' or 'limited'"),
     priorities: Optional[str] = Query(None, description="Comma-separated group priority order"),
     kids_mode: Optional[bool] = Query(None, description="Include schools in scoring"),
 ) -> ListingsResponse:
@@ -368,6 +382,20 @@ def get_listings(
         if available_before:
             conditions.append("available_at IS NOT NULL AND available_at <= ?")
             params.append(available_before)
+
+        # Amenity filter — SQL LIKE on JSON array column
+        if amenities:
+            for amenity in (a.strip() for a in amenities.split(",")):
+                conditions.append('amenities LIKE ?')
+                params.append(f'%"{amenity}"%')
+
+        # Data-quality filter — minimum scored dimensions
+        if min_data_quality in ("full", "limited"):
+            n_dims = len([c for c in _SCORE_DB_COLS if not (exclude_schools and c == "schools_score")])
+            threshold = 0.75 if min_data_quality == "full" else 0.25
+            min_scored = math.ceil(threshold * n_dims)
+            conditions.append(f"{_coverage_sql(exclude_schools)} >= ?")
+            params.append(min_scored)
 
         where = " AND ".join(conditions)
 
@@ -463,5 +491,27 @@ def get_neighborhoods() -> list[str]:
             "ORDER BY neighborhood"
         ).fetchall()
         return [r[0] for r in rows]
+    finally:
+        conn.close()
+
+
+@router.get("/amenities", response_model=list[str])
+def get_amenities() -> list[str]:
+    """Return sorted list of distinct amenity names across active listings."""
+    conn = get_connection()
+    try:
+        rows = conn.execute(
+            "SELECT amenities FROM listings "
+            "WHERE UPPER(status) = 'ACTIVE' AND amenities IS NOT NULL AND amenities != '[]'"
+        ).fetchall()
+        all_amenities: set[str] = set()
+        for row in rows:
+            try:
+                parsed = json.loads(row[0])
+                if isinstance(parsed, list):
+                    all_amenities.update(parsed)
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return sorted(all_amenities)
     finally:
         conn.close()

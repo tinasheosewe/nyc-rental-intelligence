@@ -10,7 +10,7 @@
 import { useState, useEffect } from "react";
 import { useStore } from "@/lib/store";
 import type { FilterState } from "@/lib/types";
-import { fetchNeighborhoods } from "@/lib/api";
+import { fetchNeighborhoods, fetchAmenities } from "@/lib/api";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
 
@@ -20,6 +20,12 @@ const BED_OPTIONS = [
   { value: 2, label: "2" },
   { value: 3, label: "3+" },
 ];
+
+const DATA_QUALITY_OPTIONS = [
+  { value: null, label: "Any" },
+  { value: "limited", label: "Exclude very limited" },
+  { value: "full", label: "Good data only" },
+] as const;
 
 export default function FilterSheet() {
   const filterSheetOpen = useStore((s) => s.filterSheetOpen);
@@ -32,10 +38,13 @@ export default function FilterSheet() {
   const [draft, setDraft] = useState<FilterState>(filters);
   const [allNeighborhoods, setAllNeighborhoods] = useState<string[]>([]);
   const [nbSearch, setNbSearch] = useState("");
+  const [allAmenities, setAllAmenities] = useState<string[]>([]);
+  const [amSearch, setAmSearch] = useState("");
 
-  // Fetch neighborhoods on mount
+  // Fetch neighborhoods + amenities on mount
   useEffect(() => {
     fetchNeighborhoods().then(setAllNeighborhoods).catch(() => {});
+    fetchAmenities().then(setAllAmenities).catch(() => {});
   }, []);
 
   // Sync draft when filters change externally
@@ -295,6 +304,93 @@ export default function FilterSheet() {
                     {draft.minScore ?? 0}
                   </span>
                   <span>100</span>
+                </div>
+              </div>
+
+              {/* Amenities */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  Amenities
+                  {draft.amenities.length > 0 && (
+                    <span className="ml-1 text-zinc-400">({draft.amenities.length})</span>
+                  )}
+                </label>
+                <input
+                  type="text"
+                  placeholder="Search amenities\u2026"
+                  value={amSearch}
+                  onChange={(e) => setAmSearch(e.target.value)}
+                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                />
+                {/* Selected chips */}
+                {draft.amenities.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {draft.amenities.map((am) => (
+                      <button
+                        key={am}
+                        onClick={() =>
+                          setDraft((d) => ({
+                            ...d,
+                            amenities: d.amenities.filter((a) => a !== am),
+                          }))
+                        }
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-200"
+                      >
+                        {am}
+                        <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Dropdown */}
+                <div className="max-h-36 overflow-y-auto rounded-lg bg-zinc-800 border border-zinc-700">
+                  {allAmenities
+                    .filter(
+                      (am) =>
+                        am.toLowerCase().includes(amSearch.toLowerCase()) &&
+                        !draft.amenities.includes(am),
+                    )
+                    .map((am) => (
+                      <button
+                        key={am}
+                        onClick={() =>
+                          setDraft((d) => ({
+                            ...d,
+                            amenities: [...d.amenities, am],
+                          }))
+                        }
+                        className="block w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+                      >
+                        {am}
+                      </button>
+                    ))}
+                </div>
+              </div>
+
+              {/* Data availability */}
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                  Data Availability
+                </label>
+                <div className="flex items-center gap-2">
+                  {DATA_QUALITY_OPTIONS.map(({ value, label }) => (
+                    <button
+                      key={label}
+                      onClick={() =>
+                        setDraft((d) => ({ ...d, minDataQuality: value }))
+                      }
+                      className={clsx(
+                        "px-4 py-2 rounded-lg text-sm font-medium transition-all",
+                        draft.minDataQuality === value
+                          ? "bg-white text-zinc-900"
+                          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700",
+                      )}
+                    >
+                      {label}
+                    </button>
+                  ))}
                 </div>
               </div>
 

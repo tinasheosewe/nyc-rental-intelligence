@@ -269,6 +269,8 @@ export interface FilterState {
   minScore: number | null;
   minSqft: number | null;
   availableBefore: string | null;
+  amenities: string[];
+  minDataQuality: string | null;
 }
 
 export const DEFAULT_FILTERS: FilterState = {
@@ -280,6 +282,8 @@ export const DEFAULT_FILTERS: FilterState = {
   minScore: null,
   minSqft: null,
   availableBefore: null,
+  amenities: [],
+  minDataQuality: null,
 };
 
 // ── Dimension breakout config ──────────────────────────────────

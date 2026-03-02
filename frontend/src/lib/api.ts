@@ -76,6 +76,12 @@ export async function fetchListings(
   if (filters.availableBefore) {
     params.available_before = filters.availableBefore;
   }
+  if (filters.amenities && filters.amenities.length > 0) {
+    params.amenities = filters.amenities.join(",");
+  }
+  if (filters.minDataQuality) {
+    params.min_data_quality = filters.minDataQuality;
+  }
 
   return apiFetch<ListingsResponse>("/listings", params);
 }
@@ -86,4 +92,8 @@ export async function fetchListing(id: string): Promise<Listing> {
 
 export async function fetchNeighborhoods(): Promise<string[]> {
   return apiFetch<string[]>("/neighborhoods");
+}
+
+export async function fetchAmenities(): Promise<string[]> {
+  return apiFetch<string[]>("/amenities");
 }
