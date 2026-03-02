@@ -38,7 +38,11 @@ function generateRelativeFlags(
 
   for (const gk of groups) {
     const myScore = getGroupScore(listing.scores, gk, kidsMode);
-    const allScores = all.map((l) => getGroupScore(l.scores, gk, kidsMode));
+    if (myScore === null) continue;
+    const allScores = all
+      .map((l) => getGroupScore(l.scores, gk, kidsMode))
+      .filter((v): v is number => v !== null);
+    if (allScores.length === 0) continue;
     const avg = allScores.reduce((a, b) => a + b, 0) / allScores.length;
     const max = Math.max(...allScores);
     const min = Math.min(...allScores);
@@ -86,8 +90,13 @@ function generateSummary(
 
   for (const gk of groups) {
     const myScore = getGroupScore(listing.scores, gk, kidsMode);
+    if (myScore === null) continue;
+    const peerScores = all
+      .map((l) => getGroupScore(l.scores, gk, kidsMode))
+      .filter((v): v is number => v !== null);
+    if (peerScores.length === 0) continue;
     const avg =
-      all.reduce((a, l) => a + getGroupScore(l.scores, gk, kidsMode), 0) / all.length;
+      peerScores.reduce((a, b) => a + b, 0) / peerScores.length;
     const delta = Math.round(myScore - avg);
     const label = GROUP_BY_KEY[gk].label.toLowerCase();
 

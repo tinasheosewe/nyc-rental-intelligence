@@ -47,8 +47,9 @@ export default function ScanCard({
   const sortScore = isGroupSort
     ? getGroupScore(listing.scores, sortBy as ScoreGroupKey, kidsMode)
     : isSortedByDimension
-      ? getScore(listing.scores as unknown as Record<string, number | boolean>, sortBy as ScoreDimension) ?? 0
+      ? getScore(listing.scores as unknown as Record<string, number | boolean | null>, sortBy as ScoreDimension)
       : listing.scores.composite;
+  const displayScore = sortScore ?? listing.scores.composite;
   const sortLabel = isGroupSort
     ? GROUP_LABELS[sortBy as ScoreGroupKey]
     : isSortedByDimension
@@ -116,7 +117,7 @@ export default function ScanCard({
             {formatPrice(listing.price)}
           </span>
           <div className="flex items-center gap-1.5">
-            {sortLabel && (
+            {sortLabel && sortScore !== null && (
               <span className="text-[10px] text-zinc-500 font-medium">
                 {sortLabel}
               </span>
@@ -124,12 +125,12 @@ export default function ScanCard({
             <div
               className={clsx(
                 "w-12 h-12 rounded-full flex items-center justify-center text-[9px] font-bold leading-tight text-center ring-1",
-                scoreColor(sortScore),
-                scoreRing(sortScore),
+                scoreColor(displayScore),
+                scoreRing(displayScore),
                 "bg-zinc-900",
               )}
             >
-              {scoreLabel(sortScore)}
+              {scoreLabel(displayScore)}
             </div>
           </div>
         </div>

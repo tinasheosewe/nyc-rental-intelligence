@@ -37,7 +37,8 @@ export default function CompareRadar({ listings, groups }: CompareRadarProps) {
       dimension: GROUP_LABELS[gk],
     };
     listings.forEach((l) => {
-      point[l.id] = Math.round(getGroupScore(l.scores, gk, kidsMode));
+      const gs = getGroupScore(l.scores, gk, kidsMode);
+      point[l.id] = gs !== null ? Math.round(gs) : 0;
     });
     return point;
   });

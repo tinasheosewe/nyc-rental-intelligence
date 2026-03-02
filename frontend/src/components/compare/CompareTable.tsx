@@ -24,7 +24,7 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
   const ranks: Record<string, Record<string, number>> = {};
   for (const gk of groups) {
     const sorted = [...listings].sort(
-      (a, b) => getGroupScore(b.scores, gk, kidsMode) - getGroupScore(a.scores, gk, kidsMode),
+      (a, b) => (getGroupScore(b.scores, gk, kidsMode) ?? 0) - (getGroupScore(a.scores, gk, kidsMode) ?? 0),
     );
     ranks[gk] = {};
     sorted.forEach((l, i) => {
@@ -83,18 +83,22 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
                   const rank = ranks[gk][l.id];
                   return (
                     <td key={l.id} className="text-center py-2.5 px-2">
-                      <div className="flex items-center justify-center gap-2">
-                        <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
-                          <div
-                            className={clsx("h-full rounded-full", scoreBg(score))}
-                            style={{ width: `${score}%` }}
-                          />
+                      {score !== null ? (
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                            <div
+                              className={clsx("h-full rounded-full", scoreBg(score))}
+                              style={{ width: `${score}%` }}
+                            />
+                          </div>
+                          <span className={clsx("text-xs", scoreColor(score))}>
+                            {scoreLabel(score)}
+                          </span>
+                          <span className="text-xs">{medalIcon(rank)}</span>
                         </div>
-                        <span className={clsx("text-xs", scoreColor(score))}>
-                          {scoreLabel(score)}
-                        </span>
-                        <span className="text-xs">{medalIcon(rank)}</span>
-                      </div>
+                      ) : (
+                        <span className="text-xs text-zinc-600">—</span>
+                      )}
                     </td>
                   );
                 })}

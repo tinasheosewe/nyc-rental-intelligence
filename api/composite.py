@@ -48,18 +48,18 @@ SCORE_KEYS: list[str] = [
 def compute_group_scores(
     scores: dict[str, float | None],
     exclude_schools: bool = False,
-) -> dict[str, float]:
+) -> dict[str, float | None]:
     """Compute average score for each group from individual dimension scores.
 
     Dimensions with a None value (no data available) are excluded from the
-    average so they don't drag down the group score.  Only dimensions with
-    an actual numeric score (including 0) are counted.
+    average so they don't drag down the group score.  If every dimension in
+    a group is None, the group itself returns None (no data).
     """
-    result: dict[str, float] = {}
+    result: dict[str, float | None] = {}
     for group_key, dims in SCORE_GROUPS.items():
         effective = [d for d in dims if not (exclude_schools and d == "schools")]
         vals = [float(scores[d]) for d in effective if scores.get(d) is not None]
-        result[group_key] = sum(vals) / len(vals) if vals else 0.0
+        result[group_key] = sum(vals) / len(vals) if vals else None
     return result
 
 
@@ -105,7 +105,9 @@ def compute_composite(
     total_weight = 0
     weighted_sum = 0.0
     for key in SCORE_GROUPS:
-        val = group_scores.get(key, 0.0)
+        val = group_scores.get(key)
+        if val is None:
+            continue  # skip groups with no scored dimensions
         w = weights.get(key, 1)
         weighted_sum += val * w
         total_weight += w

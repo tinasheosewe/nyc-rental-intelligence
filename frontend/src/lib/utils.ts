@@ -140,24 +140,26 @@ export function formatDaysOnMarket(days: number | null): string {
 export function getScore(
   scores: Record<string, number | boolean | null>,
   dim: ScoreDimension,
-): number {
+): number | null {
   const val = scores[dim];
-  return typeof val === "number" ? val : 0;
+  return typeof val === "number" ? val : null;
 }
 
 /** Compute the average score for a group from a Scores object.
- *  Dimensions with a null value (no data) are excluded from the average. */
+ *  Dimensions with a null value (no data) are excluded from the average.
+ *  Returns null if every dimension in the group lacks data. */
 export function getGroupScore(
   scores: Scores,
   groupKey: ScoreGroupKey,
   kidsMode: boolean = false,
-): number {
+): number | null {
   const groupMap = getEffectiveGroupByKey(kidsMode);
   const group = groupMap[groupKey];
-  if (!group) return 0;
+  if (!group) return null;
   const raw = scores as unknown as Record<string, number | boolean | null>;
   const vals = group.dimensions
     .map((d) => raw[d])
     .filter((v): v is number => typeof v === "number" && v !== null);
-  return vals.reduce((a, b) => a + b, 0) / (vals.length || 1);
+  if (vals.length === 0) return null;
+  return vals.reduce((a, b) => a + b, 0) / vals.length;
 }

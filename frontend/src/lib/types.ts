@@ -171,19 +171,19 @@ export function getEffectiveGroupByKey(kidsMode: boolean): Record<ScoreGroupKey,
 
 export interface Scores {
   composite: number;
-  deal: number;
+  deal: number | null;
   unit_amenities: number | null;
-  transit: number;
-  crime: number;
-  noise: number;
-  building_violations: number;
-  parks: number;
-  schools: number;
-  management: number;
-  convenience: number;
-  shelter: number;
-  pest: number;
-  greenery: number;
+  transit: number | null;
+  crime: number | null;
+  noise: number | null;
+  building_violations: number | null;
+  parks: number | null;
+  schools: number | null;
+  management: number | null;
+  convenience: number | null;
+  shelter: number | null;
+  pest: number | null;
+  greenery: number | null;
   rent_stabilized: boolean;
 }
 

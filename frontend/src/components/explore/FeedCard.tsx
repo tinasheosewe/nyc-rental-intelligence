@@ -78,8 +78,8 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
     sortBy !== "composite" && sortBy !== "price"
       ? SCORE_GROUP_KEYS.includes(sortBy as ScoreGroupKey)
         ? getGroupScore(listing.scores, sortBy as ScoreGroupKey, kidsMode)
-        : 0
-      : 0;
+        : null
+      : null;
 
   const handleSkip = () => {
     skipListing(listing.id);
@@ -169,7 +169,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             </div>
             <div className="flex flex-col items-end gap-1">
               <ScoreBadge score={listing.scores.composite} size="lg" label="Score" />
-              {sortLabel && (
+              {sortLabel && sortScore !== null && (
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
                   {sortLabel}{" "}
                   <span className={scoreColor(sortScore)}>
@@ -184,6 +184,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           <div className="flex items-center gap-2 flex-wrap">
             {orderedGroups.map((group) => {
               const gs = getGroupScore(listing.scores, group.key, kidsMode);
+              if (gs === null) return null;
               return (
                 <span
                   key={group.key}
@@ -244,6 +245,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             </h3>
             {orderedGroups.map((group) => {
               const gs = getGroupScore(listing.scores, group.key, kidsMode);
+              if (gs === null) return null;
               const isExpanded = expandedGroups.has(group.key);
 
               return (
@@ -270,9 +272,10 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                     <div className="px-3 pb-3 pt-1 space-y-2 border-t border-zinc-800/50">
                       {group.dimensions.map((dim) => {
                         const score = getScore(
-                          listing.scores as unknown as Record<string, number | boolean>,
+                          listing.scores as unknown as Record<string, number | boolean | null>,
                           dim,
                         );
+                        if (score === null) return null;
                         const trend =
                           dim === "crime"
                             ? listing.trends.crime_direction

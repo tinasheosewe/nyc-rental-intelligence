@@ -13,22 +13,26 @@ from pydantic import BaseModel
 
 
 class Scores(BaseModel):
-    """All scoring dimensions plus rent-stabilized flag."""
+    """All scoring dimensions plus rent-stabilized flag.
+
+    Dimensions default to None (not 0) when no data is available.
+    The frontend must treat None as "no data" — not as a zero score.
+    """
 
     composite: float = 0.0
-    deal: float = 0.0
-    transit: float = 0.0
-    crime: float = 0.0
-    noise: float = 0.0
-    building_violations: float = 0.0
-    parks: float = 0.0
-    schools: float = 0.0
-    management: float = 0.0
-    convenience: float = 0.0
+    deal: Optional[float] = None
+    transit: Optional[float] = None
+    crime: Optional[float] = None
+    noise: Optional[float] = None
+    building_violations: Optional[float] = None
+    parks: Optional[float] = None
+    schools: Optional[float] = None
+    management: Optional[float] = None
+    convenience: Optional[float] = None
     unit_amenities: Optional[float] = None
-    shelter: float = 0.0
-    pest: float = 0.0
-    greenery: float = 0.0
+    shelter: Optional[float] = None
+    pest: Optional[float] = None
+    greenery: Optional[float] = None
     rent_stabilized: bool = False
 
 
