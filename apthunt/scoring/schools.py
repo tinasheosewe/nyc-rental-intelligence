@@ -5,9 +5,11 @@ Uses pre-downloaded DOE High School Directory (stored in ``ds_schools``).
 Quality composite = average of attendance_rate and pct_stu_safe
 (both 0–1 floats).  Best school in 1.5 km wins.
 
-Scoring: percentile-rank across all listings in the current universe.
-Higher quality composite → higher score.
-Listing at the median gets 50, best gets ~100, worst gets ~0.
+Scoring (absolute, 0–100):
+    score = quality composite of best nearby school × 100.
+    The composite is already a meaningful 0–100 scale (attendance rate
+    and student safety percentage), so no percentile ranking is needed.
+    Higher composite → higher score.  No school nearby → 0.
 """
 
 from __future__ import annotations
@@ -17,7 +19,7 @@ import sqlite3
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import dedupe_by_geohash, percentile_scores
+from apthunt.scoring.utils import dedupe_by_geohash
 
 # 0.014° ≈ 1.5 km at NYC latitude
 _BBOX_DELTA = 0.014
@@ -62,24 +64,16 @@ class SchoolsScorer(Scorer):
             block_stats[gh] = stats
             self._cache.put(gh, "schools", stats)
 
-        # Collect ratings for percentile ranking
-        ratings: list[tuple[dict, float, str]] = []
+        results: list[ScorerResult] = []
         for lst in listings:
             stats = block_stats[lst["geohash"]]
-            ratings.append((lst, stats["school_rating"], stats["school_name"]))
-
-        # Percentile-rank: higher quality → higher score
-        scores = percentile_scores([r for _, r, _ in ratings])
-
-        results: list[ScorerResult] = []
-        for i, (lst, rating, name) in enumerate(ratings):
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=scores[i],
+                    score=stats["school_rating"],
                     components={
-                        "school_name": name,
-                        "school_rating": rating,
+                        "school_name": stats["school_name"],
+                        "school_rating": stats["school_rating"],
                     },
                 )
             )

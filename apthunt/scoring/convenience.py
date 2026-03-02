@@ -5,10 +5,17 @@ Uses pre-downloaded OpenStreetMap amenity data (via DataStore) to count
 grocery stores, pharmacies, gyms, laundromats, cafés, and restaurants
 within a walkable radius.
 
-Scoring:
-    Weighted convenience count within 500 m.
-    Essentials (grocery, pharmacy) weighted higher than lifestyle
-    (café, restaurant).  Percentile-ranked across all listings.
+Scoring (absolute, 0–100):
+    Each category is scored independently with sqrt diminishing returns,
+    capped at a threshold representing "well-served":
+
+        grocery_pts  = sqrt(min(1, grocery / 8))  × 30
+        pharmacy_pts = sqrt(min(1, pharmacy / 4)) × 20
+        dining_pts   = sqrt(min(1, dining / 30))  × 20
+        gym_pts      = sqrt(min(1, gym / 4))      × 15
+        laundry_pts  = sqrt(min(1, laundry / 3))  × 15
+
+        score = grocery_pts + pharmacy_pts + dining_pts + gym_pts + laundry_pts
 
 Output columns:
     convenience_grocery   INTEGER — supermarkets + convenience stores
@@ -16,28 +23,45 @@ Output columns:
     convenience_gym       INTEGER — fitness centres
     convenience_laundry   INTEGER
     convenience_dining    INTEGER — restaurants + cafés
-    convenience_total     INTEGER — weighted total
+    convenience_total     INTEGER — weighted total (legacy, kept for reference)
 """
 
 from __future__ import annotations
 
 import logging
+import math
 import sqlite3
 
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
-from apthunt.scoring.utils import dedupe_by_geohash, percentile_scores
+from apthunt.scoring.utils import dedupe_by_geohash
 
 log = logging.getLogger(__name__)
 
-# Category weights (essentials > lifestyle)
+# Category weights for weighted total (kept for display)
 _WEIGHTS = {
     "grocery": 3,
     "pharmacy": 3,
     "gym": 2,
     "laundry": 2,
     "dining": 1,
+}
+
+# Absolute-score thresholds and weights (sum = 100)
+_CAPS = {
+    "grocery": 8,
+    "pharmacy": 4,
+    "gym": 4,
+    "laundry": 3,
+    "dining": 30,
+}
+_SCORE_WEIGHTS = {
+    "grocery": 30,
+    "pharmacy": 20,
+    "dining": 20,
+    "gym": 15,
+    "laundry": 15,
 }
 
 _CATEGORIES = list(_WEIGHTS.keys())
@@ -83,17 +107,14 @@ class ConvenienceScorer(Scorer):
             block_stats[gh] = stats
             self._cache.put(gh, "convenience_v2", stats)
 
-        # Percentile-rank by weighted total
-        raw = [block_stats[lst["geohash"]]["convenience_total"] for lst in listings]
-        pct_scores = percentile_scores(raw, reverse=False)
-
         results: list[ScorerResult] = []
-        for lst, pct in zip(listings, pct_scores):
+        for lst in listings:
             stats = block_stats[lst["geohash"]]
+            score = self._absolute_score(stats)
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=pct,
+                    score=score,
                     components={
                         "convenience_grocery": stats["convenience_grocery"],
                         "convenience_pharmacy": stats["convenience_pharmacy"],
@@ -105,6 +126,17 @@ class ConvenienceScorer(Scorer):
                 )
             )
         return results
+
+    @staticmethod
+    def _absolute_score(stats: dict) -> float:
+        """Compute an absolute 0-100 convenience score with sqrt diminishing returns."""
+        total = 0.0
+        for cat in _CATEGORIES:
+            count = stats[f"convenience_{cat}"]
+            cap = _CAPS[cat]
+            weight = _SCORE_WEIGHTS[cat]
+            total += math.sqrt(min(1.0, count / cap)) * weight
+        return round(total, 1)
 
     # ------------------------------------------------------------------
 
