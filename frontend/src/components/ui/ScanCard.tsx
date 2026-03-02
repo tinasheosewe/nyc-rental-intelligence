@@ -141,6 +141,18 @@ export default function ScanCard({
             <span className="text-zinc-500"> · {formatDaysOnMarket(listing.days_on_market)}</span>
           )}
         </p>
+        {listing.data_quality && (
+          <span
+            className={clsx(
+              "text-[9px] font-medium px-1.5 py-0.5 rounded-full w-fit",
+              listing.data_quality === "very_limited"
+                ? "bg-red-500/10 text-red-400"
+                : "bg-yellow-500/10 text-yellow-400",
+            )}
+          >
+            {listing.data_quality === "very_limited" ? "Very limited data" : "Limited data"}
+          </span>
+        )}
       </div>
 
       {/* No-fee badge */}

@@ -238,6 +238,7 @@ export interface Listing {
   relist_count: number;
 
   scores: Scores;
+  data_quality: string | null;
   score_components: Record<string, Record<string, string | number | null>>;
   trends: Trends;
   flags: Flag[];

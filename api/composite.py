@@ -63,18 +63,54 @@ def compute_group_scores(
     return result
 
 
+def compute_coverage(
+    scores: dict[str, float | None],
+    exclude_schools: bool = False,
+) -> float:
+    """Fraction of scored dimensions (0.0 – 1.0)."""
+    dims = [k for k in SCORE_KEYS if not (exclude_schools and k == "schools")]
+    scored = sum(1 for k in dims if scores.get(k) is not None)
+    return scored / len(dims) if dims else 0.0
+
+
+def data_quality_label(coverage: float) -> str | None:
+    """Human-readable data-quality label.
+
+    Returns:
+        None        – ≥ 75 % of dimensions scored (trustworthy)
+        "limited"   – 25-74 %
+        "very_limited" – < 25 %
+    """
+    if coverage >= 0.75:
+        return None
+    if coverage >= 0.25:
+        return "limited"
+    return "very_limited"
+
+
+# Confidence floor: a listing with 0 scored dims should produce a
+# composite of  raw × FLOOR  at most, while 100 % coverage leaves
+# the score unchanged.
+_CONFIDENCE_FLOOR = 0.5
+
+
 def compute_composite(
     scores: dict[str, float],
     priorities: list[str] | None = None,
     exclude_schools: bool = False,
-) -> float:
+) -> tuple[float, str | None]:
     """
-    Weighted composite score (0–100).
+    Confidence-adjusted weighted composite score (0–100).
 
     Computes group averages, then weights them by priority position:
         Top 2 groups → 3x weight
         Middle group → 2x weight
         Bottom 2 groups → 1x weight
+
+    The raw weighted average is then dampened by data coverage so that
+    thin-data listings don't rank artificially high:
+
+        adjusted = raw × (FLOOR + (1 - FLOOR) × coverage)
 
     Args:
         scores: mapping of dimension name → score (0–100).
@@ -82,7 +118,8 @@ def compute_composite(
         exclude_schools: when True, omit schools from neighborhood avg.
 
     Returns:
-        Weighted average, rounded to 1 decimal.
+        (adjusted_composite, data_quality) where data_quality is one of
+        None, "limited", or "very_limited".
     """
     group_scores = compute_group_scores(scores, exclude_schools=exclude_schools)
     order = priorities or DEFAULT_GROUP_PRIORITIES
@@ -113,6 +150,13 @@ def compute_composite(
         total_weight += w
 
     if total_weight == 0:
-        return 0.0
+        return (0.0, data_quality_label(0.0))
 
-    return round(weighted_sum / total_weight, 1)
+    raw = weighted_sum / total_weight
+
+    # Confidence adjustment
+    coverage = compute_coverage(scores, exclude_schools=exclude_schools)
+    multiplier = _CONFIDENCE_FLOOR + (1 - _CONFIDENCE_FLOOR) * coverage
+    adjusted = round(raw * multiplier, 1)
+
+    return (adjusted, data_quality_label(coverage))

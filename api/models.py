@@ -97,6 +97,7 @@ class Listing(BaseModel):
     relist_count: int = 0
 
     scores: Scores = Scores()
+    data_quality: Optional[str] = None
     score_components: dict[str, dict[str, Any]] = {}
     trends: Trends = Trends()
     flags: list[Flag] = []

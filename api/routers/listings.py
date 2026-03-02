@@ -189,7 +189,7 @@ def _row_to_listing(
 ) -> Listing:
     """Convert a raw DB row dict into a Listing response model."""
     score_vals = _row_to_scores(row)
-    composite = compute_composite(score_vals, priorities, exclude_schools=exclude_schools)
+    composite, data_quality = compute_composite(score_vals, priorities, exclude_schools=exclude_schools)
 
     scores = Scores(
         composite=composite,
@@ -274,6 +274,7 @@ def _row_to_listing(
         price_history=price_history,
         relist_count=row.get("relist_count") or 0,
         scores=scores,
+        data_quality=data_quality,
         score_components=components,
         trends=trends,
         flags=flags,

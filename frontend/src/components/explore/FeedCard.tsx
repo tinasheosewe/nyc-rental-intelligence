@@ -169,6 +169,18 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             </div>
             <div className="flex flex-col items-end gap-1">
               <ScoreBadge score={listing.scores.composite} size="lg" label="Score" />
+              {listing.data_quality && (
+                <span
+                  className={clsx(
+                    "text-[10px] font-medium px-2 py-0.5 rounded-full",
+                    listing.data_quality === "very_limited"
+                      ? "bg-red-500/10 text-red-400"
+                      : "bg-yellow-500/10 text-yellow-400",
+                  )}
+                >
+                  {listing.data_quality === "very_limited" ? "Very limited data" : "Limited data"}
+                </span>
+              )}
               {sortLabel && sortScore !== null && (
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
                   {sortLabel}{" "}
