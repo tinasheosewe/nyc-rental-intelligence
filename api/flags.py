@@ -18,10 +18,17 @@ from api.models import Flag
 def _crime_trend(row: dict) -> Optional[Flag]:
     direction = row.get("crime_trend_direction", "stable")
     ratio = row.get("crime_trend_ratio") or 1.0
+    score = row.get("crime_score")
     pct = abs(round((1 - ratio) * 100))
-    if direction == "improving" and pct >= 5:
+    if pct < 5:
+        return None
+    if direction == "improving":
+        if score is not None and score < 30:
+            return Flag(type="yellow", text=f"High crime area, but down {pct}% over 6 months")
         return Flag(type="green", text=f"Crime down {pct}% over 6 months")
-    if direction == "worsening" and pct >= 5:
+    if direction == "worsening":
+        if score is not None and score >= 70:
+            return Flag(type="yellow", text=f"Crime up {pct}% over 6 months (still low overall)")
         return Flag(type="red", text=f"Crime up {pct}% over 6 months")
     return None
 
@@ -29,10 +36,17 @@ def _crime_trend(row: dict) -> Optional[Flag]:
 def _noise_trend(row: dict) -> Optional[Flag]:
     direction = row.get("noise_trend_direction", "stable")
     ratio = row.get("noise_trend_ratio") or 1.0
+    score = row.get("noise_score")
     pct = abs(round((ratio - 1) * 100))
-    if direction == "improving" and pct >= 5:
+    if pct < 5:
+        return None
+    if direction == "improving":
+        if score is not None and score < 30:
+            return Flag(type="yellow", text=f"Noisy area, but complaints down {pct}%")
         return Flag(type="green", text=f"Noise complaints down {pct}%")
-    if direction == "worsening" and pct >= 5:
+    if direction == "worsening":
+        if score is not None and score >= 70:
+            return Flag(type="yellow", text=f"Noise complaints up {pct}% (still quiet overall)")
         return Flag(type="yellow", text=f"Noise complaints up {pct}%")
     return None
 
