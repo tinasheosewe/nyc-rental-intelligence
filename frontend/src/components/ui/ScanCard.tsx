@@ -19,6 +19,7 @@ import {
   scoreRing,
   getScore,
   getGroupScore,
+  scoreLabel,
 } from "@/lib/utils";
 import clsx from "clsx";
 
@@ -120,13 +121,13 @@ export default function ScanCard({
             )}
             <div
               className={clsx(
-                "w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ring-1",
+                "w-12 h-12 rounded-full flex items-center justify-center text-[9px] font-bold leading-tight text-center ring-1",
                 scoreColor(sortScore),
                 scoreRing(sortScore),
                 "bg-zinc-900",
               )}
             >
-              {Math.round(sortScore)}
+              {scoreLabel(sortScore)}
             </div>
           </div>
         </div>

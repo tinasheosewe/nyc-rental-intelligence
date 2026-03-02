@@ -8,8 +8,8 @@
 "use client";
 
 import { useState } from "react";
-import { scoreBg, trendArrow, trendColor } from "@/lib/utils";
-import type { BreakoutItem } from "@/lib/types";
+import { scoreBg, trendArrow, trendColor, dimensionLabel } from "@/lib/utils";
+import type { BreakoutItem, ScoreDimension } from "@/lib/types";
 import clsx from "clsx";
 
 interface ScoreBarProps {
@@ -19,6 +19,8 @@ interface ScoreBarProps {
   trend?: string;
   medal?: string;
   compact?: boolean;
+  /** Score dimension key for dimension-specific labels. */
+  dim?: ScoreDimension;
   /** Sub-component breakout items to reveal on tap. */
   breakout?: BreakoutItem[];
   /** Raw component values for this dimension, keyed by DB column name. */
@@ -32,6 +34,7 @@ export default function ScoreBar({
   trend,
   medal,
   compact = false,
+  dim,
   breakout,
   componentValues,
 }: ScoreBarProps) {
@@ -63,8 +66,8 @@ export default function ScoreBar({
             style={{ width: `${pct}%` }}
           />
         </div>
-        <span className={clsx("font-mono shrink-0", compact ? "text-xs w-8" : "text-sm w-10")}>
-          {Math.round(score)}
+        <span className={clsx("shrink-0", compact ? "text-xs" : "text-xs")}>
+          {dimensionLabel(score, dim)}
         </span>
         {trend && (
           <span className={clsx("text-sm shrink-0", trendColor(trend))}>

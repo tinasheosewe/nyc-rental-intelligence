@@ -6,7 +6,7 @@
 
 "use client";
 
-import { scoreColor, scoreRing } from "@/lib/utils";
+import { scoreColor, scoreRing, scoreLabel } from "@/lib/utils";
 import clsx from "clsx";
 
 interface ScoreBadgeProps {
@@ -16,9 +16,9 @@ interface ScoreBadgeProps {
 }
 
 const SIZES = {
-  sm: "w-10 h-10 text-sm",
-  md: "w-14 h-14 text-lg",
-  lg: "w-20 h-20 text-2xl",
+  sm: "w-10 h-10 text-[9px] leading-tight",
+  md: "w-14 h-14 text-[11px] leading-tight",
+  lg: "w-20 h-20 text-sm leading-tight",
 } as const;
 
 export default function ScoreBadge({ score, size = "md", label }: ScoreBadgeProps) {
@@ -26,14 +26,14 @@ export default function ScoreBadge({ score, size = "md", label }: ScoreBadgeProp
     <div className="flex flex-col items-center gap-1">
       <div
         className={clsx(
-          "rounded-full flex items-center justify-center font-bold",
+          "rounded-full flex items-center justify-center font-bold text-center",
           "ring-2 bg-zinc-900",
           scoreRing(score),
           scoreColor(score),
           SIZES[size],
         )}
       >
-        {Math.round(score)}
+        {scoreLabel(score)}
       </div>
       {label && (
         <span className="text-[10px] text-zinc-500 uppercase tracking-wider">

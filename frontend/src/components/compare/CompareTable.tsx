@@ -9,7 +9,7 @@
 
 import type { Listing, ScoreGroupKey } from "@/lib/types";
 import { GROUP_BY_KEY } from "@/lib/types";
-import { scoreBg, scoreColor, medalIcon, formatPrice, formatBeds, getGroupScore } from "@/lib/utils";
+import { scoreBg, scoreColor, medalIcon, formatPrice, formatBeds, getGroupScore, scoreLabel } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import clsx from "clsx";
 
@@ -90,8 +90,8 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
                             style={{ width: `${score}%` }}
                           />
                         </div>
-                        <span className={clsx("text-xs font-mono", scoreColor(score))}>
-                          {Math.round(score)}
+                        <span className={clsx("text-xs", scoreColor(score))}>
+                          {scoreLabel(score)}
                         </span>
                         <span className="text-xs">{medalIcon(rank)}</span>
                       </div>
@@ -115,7 +115,7 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
                       scoreColor(l.scores.composite),
                     )}
                   >
-                    {Math.round(l.scores.composite)}
+                    {scoreLabel(l.scores.composite)}
                   </span>
                   <span className="text-xs">{medalIcon(compositeRanks[l.id])}</span>
                   {l.id === winnerId && (

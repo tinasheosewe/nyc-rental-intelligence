@@ -17,7 +17,7 @@ import {
   useMap,
 } from "react-leaflet";
 import type { Listing } from "@/lib/types";
-import { formatPrice, formatBeds } from "@/lib/utils";
+import { formatPrice, formatBeds, scoreLabel } from "@/lib/utils";
 
 interface MapContentProps {
   listings: Listing[];
@@ -235,7 +235,7 @@ export default function MapContent({
               className="!bg-zinc-900 !text-white !border-zinc-700 !rounded-lg !text-[10px] !px-2 !py-1 !shadow-lg"
             >
               {listing.address.split(",")[0]} ·{" "}
-              {Math.round(listing.scores.composite)}
+              {scoreLabel(listing.scores.composite)}
             </Tooltip>
             <Popup>
               <PinPopup
@@ -269,7 +269,7 @@ function PinPopup({
         {formatPrice(listing.price)} · {formatBeds(listing.beds)}
       </p>
       <p className="text-zinc-600">
-        Score: {Math.round(listing.scores.composite)}
+        Score: {scoreLabel(listing.scores.composite)}
       </p>
       <div className="flex gap-1 pt-1">
         <button
@@ -313,7 +313,7 @@ function ClusterPopup({
             <p className="font-medium text-zinc-900">{listing.address}</p>
             <p className="text-zinc-500">
               {formatPrice(listing.price)} · {formatBeds(listing.beds)} ·{" "}
-              {Math.round(listing.scores.composite)}
+              {scoreLabel(listing.scores.composite)}
             </p>
             <div className="flex gap-1 pt-0.5">
               <button

@@ -9,7 +9,7 @@
 
 import type { Listing, ScoreGroupKey } from "@/lib/types";
 import { GROUP_BY_KEY } from "@/lib/types";
-import { formatPrice, formatBeds, scoreColor, getGroupScore } from "@/lib/utils";
+import { formatPrice, formatBeds, scoreColor, getGroupScore, scoreLabel } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import FlagList from "@/components/ui/FlagList";
 import ScoreBadge from "@/components/ui/ScoreBadge";
@@ -47,12 +47,12 @@ function generateRelativeFlags(
     if (myScore === max && myScore > avg + 5) {
       flags.push({
         type: "green",
-        text: `Best ${label.toLowerCase()} score (${Math.round(myScore)})`,
+        text: `Best ${label.toLowerCase()} (${scoreLabel(myScore)})`,
       });
     } else if (myScore === min && myScore < avg - 5) {
       flags.push({
         type: "red",
-        text: `Lowest ${label.toLowerCase()} score (${Math.round(myScore)})`,
+        text: `Lowest ${label.toLowerCase()} (${scoreLabel(myScore)})`,
       });
     }
   }

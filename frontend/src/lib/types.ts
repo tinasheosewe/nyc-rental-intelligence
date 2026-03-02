@@ -39,6 +39,26 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   greenery: "Greenery",
 };
 
+// ── Dimension-specific score tier labels ───────────────────────
+// 5 tiers: [90–100, 75–89, 60–74, 40–59, 0–39]
+
+export type ScoreTierLabels = [string, string, string, string, string];
+
+export const DIMENSION_TIER_LABELS: Record<ScoreDimension, ScoreTierLabels> = {
+  deal:                ["Steal",            "Great Deal",       "Fair Price",      "Pricey",           "Overpriced"],
+  transit:             ["Car-Free",         "Excellent Transit","Good Transit",    "Limited Transit",  "Car Needed"],
+  crime:               ["Very Safe",        "Safe",             "Moderate Risk",   "Some Risk",        "High Risk"],
+  noise:               ["Very Quiet",       "Quiet",            "Moderate Noise",  "Noisy",            "Very Noisy"],
+  building_violations: ["Pristine",         "Well Maintained",  "Some Issues",     "Concerns",         "Many Violations"],
+  parks:               ["Park Paradise",    "Great Parks",      "Good Access",     "Few Parks",        "No Parks Nearby"],
+  schools:             ["Top Schools",      "Great Schools",    "Good Schools",    "Few Options",      "Limited Schools"],
+  management:          ["Excellent Mgmt",   "Good Mgmt",       "Average Mgmt",    "Poor Mgmt",        "Bad Mgmt"],
+  amenity:             ["Everything Nearby", "Well Served",     "Decent Options",  "Limited",          "Sparse"],
+  shelter:             ["Very Low Presence", "Low Presence",    "Some Presence",   "Notable Presence", "High Presence"],
+  pest:                ["No Issues",        "Minimal Issues",   "Some Reports",    "Pest Concerns",    "Major Problems"],
+  greenery:            ["Lush",             "Very Green",       "Some Greenery",   "Sparse",           "Barren"],
+};
+
 // ── Score groups ───────────────────────────────────────────────
 
 export const SCORE_GROUP_KEYS = [

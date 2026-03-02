@@ -7,7 +7,7 @@
 
 "use client";
 
-import { scoreBgMuted, scoreColor } from "@/lib/utils";
+import { scoreBgMuted, scoreColor, scoreLabel } from "@/lib/utils";
 import clsx from "clsx";
 
 interface ScorePillProps {
@@ -28,7 +28,7 @@ export default function ScorePill({ label, score, trend }: ScorePillProps) {
         scoreColor(score),
       )}
     >
-      {label} {Math.round(score)}
+      {label} {scoreLabel(score)}
       {arrow}
     </span>
   );

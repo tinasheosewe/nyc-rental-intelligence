@@ -29,6 +29,7 @@ import {
   scoreBgMuted,
   getScore,
   getGroupScore,
+  scoreLabel,
 } from "@/lib/utils";
 import ScoreBadge from "@/components/ui/ScoreBadge";
 import ScoreBar from "@/components/ui/ScoreBar";
@@ -169,7 +170,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                 <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
                   {sortLabel}{" "}
                   <span className={scoreColor(sortScore)}>
-                    {Math.round(sortScore)}
+                    {scoreLabel(sortScore)}
                   </span>
                 </span>
               )}
@@ -189,7 +190,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                     scoreColor(gs),
                   )}
                 >
-                  {group.icon} {group.label} {Math.round(gs)}
+                  {group.icon} {group.label} {scoreLabel(gs)}
                 </span>
               );
             })}
@@ -253,8 +254,8 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                     <span className="flex-1 text-left text-sm font-medium text-zinc-300">
                       {group.label}
                     </span>
-                    <span className={clsx("text-sm font-bold font-mono", scoreColor(gs))}>
-                      {Math.round(gs)}
+                    <span className={clsx("text-sm font-bold", scoreColor(gs))}>
+                      {scoreLabel(gs)}
                     </span>
                     <span className="text-xs text-zinc-600 w-4 text-center select-none">
                       {isExpanded ? "▾" : "▸"}
@@ -281,6 +282,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                             label={DIMENSION_LABELS[dim]}
                             score={score}
                             trend={trend}
+                            dim={dim}
                             breakout={DIMENSION_BREAKOUT[dim]}
                             componentValues={listing.score_components?.[dim]}
                           />

@@ -3,7 +3,7 @@
  */
 
 import type { ScoreDimension, ScoreGroupKey, Scores } from "./types";
-import { GROUP_BY_KEY, getEffectiveGroupByKey } from "./types";
+import { GROUP_BY_KEY, getEffectiveGroupByKey, DIMENSION_TIER_LABELS } from "./types";
 
 // ── Score color coding ─────────────────────────────────────────
 
@@ -33,6 +33,35 @@ export function scoreRing(score: number): string {
   if (score >= 50) return "ring-yellow-500";
   if (score >= 25) return "ring-orange-500";
   return "ring-red-500";
+}
+
+// ── Score labels ───────────────────────────────────────────────
+
+/** Map a 0–100 score to a tier index: 0 = best, 4 = worst. */
+function scoreTier(score: number): number {
+  if (score >= 90) return 0;
+  if (score >= 75) return 1;
+  if (score >= 60) return 2;
+  if (score >= 40) return 3;
+  return 4;
+}
+
+const GENERIC_LABELS = ["Excellent", "Great", "Good", "Fair", "Poor"] as const;
+
+/** Generic 5-tier label (Excellent / Great / Good / Fair / Poor). */
+export function scoreLabel(score: number): string {
+  return GENERIC_LABELS[scoreTier(score)];
+}
+
+/**
+ * Dimension-specific label, e.g. "Very Safe" for crime=85.
+ * Falls back to generic label if dimension is unknown.
+ */
+export function dimensionLabel(score: number, dim?: ScoreDimension): string {
+  if (!dim) return scoreLabel(score);
+  const tiers = DIMENSION_TIER_LABELS[dim];
+  if (!tiers) return scoreLabel(score);
+  return tiers[scoreTier(score)];
 }
 
 // ── Formatting ─────────────────────────────────────────────────

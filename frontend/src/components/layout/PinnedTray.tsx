@@ -8,7 +8,7 @@
 "use client";
 
 import { useStore } from "@/lib/store";
-import { scoreRing } from "@/lib/utils";
+import { scoreRing, scoreLabel } from "@/lib/utils";
 import clsx from "clsx";
 
 export default function PinnedTray() {
@@ -31,7 +31,7 @@ export default function PinnedTray() {
               "w-10 h-10 rounded-full overflow-hidden ring-2 transition-transform hover:scale-110",
               scoreRing(listing.scores.composite),
             )}
-            title={`${listing.address} — ${Math.round(listing.scores.composite)}`}
+            title={`${listing.address} — ${scoreLabel(listing.scores.composite)}`}
           >
             {listing.photos.length > 0 ? (
               <img
