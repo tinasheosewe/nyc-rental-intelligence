@@ -35,12 +35,17 @@ export async function fetchListings(
   sort: string = "composite",
   page: number = 1,
   pageSize: number = 50,
+  priorities?: string[],
 ): Promise<ListingsResponse> {
   const params: Record<string, string> = {
     page: String(page),
     page_size: String(pageSize),
     sort,
   };
+
+  if (priorities && priorities.length > 0) {
+    params.priorities = priorities.join(",");
+  }
 
   if (filters.beds && filters.beds.length > 0) {
     params.beds = filters.beds.join(",");

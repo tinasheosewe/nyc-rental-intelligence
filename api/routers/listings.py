@@ -270,6 +270,7 @@ def get_listings(
     neighborhoods: Optional[str] = Query(None, description="Comma-separated"),
     rent_stabilized: Optional[bool] = Query(None),
     min_score: Optional[int] = Query(None, ge=0, le=100),
+    priorities: Optional[str] = Query(None, description="Comma-separated group priority order"),
 ) -> ListingsResponse:
     """Paginated listing feed with filtering and sorting."""
     conn = get_connection()
@@ -304,6 +305,11 @@ def get_listings(
 
         where = " AND ".join(conditions)
 
+        # Parse priority ordering for composite score
+        priority_list: list[str] | None = None
+        if priorities:
+            priority_list = [p.strip() for p in priorities.split(",") if p.strip()]
+
         # Count total
         total = conn.execute(
             f"SELECT COUNT(*) FROM listings WHERE {where}", params
@@ -327,13 +333,13 @@ def get_listings(
                 f"LIMIT ? OFFSET ?",
                 params + [page_size, offset],
             ).fetchall()
-            listings = [_row_to_listing(dict(r)) for r in rows]
+            listings = [_row_to_listing(dict(r), priority_list) for r in rows]
         else:
             # Composite sort — need to compute on all, then paginate
             rows = conn.execute(
                 f"SELECT * FROM listings WHERE {where}", params
             ).fetchall()
-            all_listings = [_row_to_listing(dict(r)) for r in rows]
+            all_listings = [_row_to_listing(dict(r), priority_list) for r in rows]
 
             # Filter by min_score if provided
             if min_score is not None:

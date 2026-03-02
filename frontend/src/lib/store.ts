@@ -120,9 +120,9 @@ export const useStore = create<AppState>((set, get) => ({
   loadListings: async () => {
     set({ isLoading: true, listings: [], currentPage: 0, hasMore: true, feedIndex: 0 });
     try {
-      const { filters, sortBy, viewMode } = get();
+      const { filters, sortBy, viewMode, priorities } = get();
       const pageSize = viewMode === "feed" ? 10 : 24;
-      const res = await fetchListings(filters, sortBy, 1, pageSize);
+      const res = await fetchListings(filters, sortBy, 1, pageSize, priorities);
       set({
         listings: res.listings,
         totalListings: res.total,
@@ -137,13 +137,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadMore: async () => {
-    const { isLoadingMore, hasMore, currentPage, filters, sortBy, listings, viewMode } = get();
+    const { isLoadingMore, hasMore, currentPage, filters, sortBy, listings, viewMode, priorities } = get();
     if (isLoadingMore || !hasMore) return;
     set({ isLoadingMore: true });
     try {
       const pageSize = viewMode === "feed" ? 10 : 24;
       const nextPage = currentPage + 1;
-      const res = await fetchListings(filters, sortBy, nextPage, pageSize);
+      const res = await fetchListings(filters, sortBy, nextPage, pageSize, priorities);
       const merged = [...listings, ...res.listings];
       set({
         listings: merged,
@@ -260,7 +260,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   // Preferences
   priorities: [...DEFAULT_GROUP_PRIORITIES],
-  setPriorities: (p) => set({ priorities: p }),
+  setPriorities: (p) => {
+    set({ priorities: p });
+    get().loadListings();
+  },
   settingsOpen: false,
   setSettingsOpen: (open) => set({ settingsOpen: open }),
 }));
