@@ -104,6 +104,8 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("comp_scope", "Comp scope"),
         ("comp_sqft_median", "Neighborhood median sqft"),
         ("price_per_sqft", "$/sqft"),
+        ("tenure_median_months", "Est. tenant tenure (months)"),
+        ("tenure_cycle_count", "Listing cycles"),
     ],
     "unit_amenities": [
         ("unit_amenities_premium", "Premium amenities"),

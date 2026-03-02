@@ -125,6 +125,19 @@ def _deal(row: dict) -> Optional[Flag]:
 
 def _relist(row: dict) -> Optional[Flag]:
     count = row.get("relist_count") or 0
+    tenure = row.get("tenure_median_months")
+
+    # If we computed tenure, use it for a more informative flag
+    if tenure is not None and tenure > 0:
+        if tenure <= 6:
+            return Flag(type="red", text=f"High turnover — avg tenant ~{tenure:.0f} mo")
+        if tenure <= 9:
+            return Flag(type="yellow", text=f"Short tenure — avg tenant ~{tenure:.0f} mo")
+        if tenure >= 24:
+            return Flag(type="green", text=f"Stable tenants — avg stay ~{tenure:.0f} mo")
+        return None  # 9-24 months = normal, no flag
+
+    # Fallback to relist count when tenure can't be computed
     if count >= 3:
         return Flag(type="red", text=f"Relisted {count} times — possible issues")
     if count == 2:

@@ -14,6 +14,7 @@ Also integrates:
 
 Scoring:
     total_complaints (HPD + 311 heat) + litigation penalty (×10 each)
+    + eviction penalty (×5 each)
     normalised per residential unit, then percentile-ranked.
     Fewer complaints per unit → higher score.
 
@@ -219,7 +220,7 @@ class ManagementScorer(Scorer):
             cached["mgmt_heat_complaints"] = heat_311
             cached["mgmt_evictions"] = evictions
             cached["mgmt_litigations"] = litigations
-            total = cached["mgmt_complaints"] + heat_311 + litigations * 10
+            total = cached["mgmt_complaints"] + heat_311 + litigations * 10 + evictions * 5
             units = max(cached["mgmt_owner_units"], 1)
             cached["mgmt_complaints_per_unit"] = round(total / units, 3)
             return cached
@@ -264,7 +265,7 @@ class ManagementScorer(Scorer):
                 if col:
                     cat_counts[col] += 1
 
-        total_all = total_complaints + heat_311 + litigations * 10
+        total_all = total_complaints + heat_311 + litigations * 10 + evictions * 5
         cpu = total_all / max(total_units, 1)
 
         stats = {

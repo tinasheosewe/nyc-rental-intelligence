@@ -78,7 +78,7 @@ SCORE_LABELS = {
 
 # Methodology descriptions — shown as help text on the Score Analysis tab
 SCORE_DESCRIPTIONS = {
-    "deal_score": "Z-score vs comp-set median. 50 = average deal; higher = below-market.",
+    "deal_score": "Z-score vs comp-set median. 50 = average deal; higher = below-market. Includes price, $/sqft, sqft, and tenant tenure (when available). Tenure estimated from listing relist history — rapid relists clustered to avoid false short-lease signals.",
     "transit_score": "Subway stations & routes within 800 m. Linear: 12 pts/station + 3 pts/route, max 100.",
     "crime_score": "NYPD complaints within 400 m (12 mo), severity-weighted. 50 = median; 100 = zero crime. Includes trend.",
     "noise_score": "311 quality-of-life complaints within 300 m (12 mo). 50 = median; 100 = zero complaints. Includes trend.",

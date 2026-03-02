@@ -296,6 +296,14 @@ export interface BreakoutItem {
 
 /** Which dimensions have sub-component breakouts, keyed by ScoreDimension. */
 export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>> = {
+  deal: [
+    { key: "comp_median", label: "Neighborhood median" },
+    { key: "comp_set_size", label: "Comp set size" },
+    { key: "price_per_sqft", label: "Price per sqft" },
+    { key: "comp_sqft_median", label: "Median sqft (comps)" },
+    { key: "tenure_median_months", label: "Est. tenant tenure", unit: "mo" },
+    { key: "tenure_cycle_count", label: "Listing cycles" },
+  ],
   pest: [
     { key: "pest_hpd_count", label: "HPD pest complaints (building)" },
     { key: "pest_rodent_count", label: "311 rodent complaints (100 m)" },

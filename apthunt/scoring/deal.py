@@ -1,20 +1,30 @@
 """
 DealScorer — multi-signal value score.
 
-Combines up to three signals when data is available:
+Combines up to four signals when data is available:
   1. Price vs neighborhood median  (weight 0.40)
   2. $/sqft vs neighborhood median (weight 0.30)
   3. Absolute sqft vs neighborhood median (weight 0.30)
+  4. Tenant tenure bonus/penalty   (weight 0.10, applied as multiplier)
 
 When sqft is unavailable the score falls back to price-only (weight 1.0).
 Comp sets are grouped by (neighborhood, bed count) — no citywide fallback.
 Scores are z-score normalized: 50 = mean, ±25 per stdev, clamped 0–100.
+
+Tenure estimation:
+    Derived from the listing's price_history "Listed" events.
+    Rapid relists within 90 days are clustered into a single listing
+    attempt (prevents "5 relists in 3 months = 5 short leases").
+    Gap between clusters ≈ vacancy + lease term.  Estimated tenure
+    = gap - 30 days assumed vacancy.
 """
 
 from __future__ import annotations
 
+import json
 import statistics
 import sqlite3
+from datetime import datetime
 from typing import Optional
 
 from apthunt.scoring.base import Scorer, ScorerResult
@@ -25,6 +35,13 @@ MIN_COMP_SET = 3
 W_PRICE = 0.40
 W_PRICE_PER_SQFT = 0.30
 W_SQFT = 0.30
+W_TENURE = 0.10  # applied by scaling down other weights 10%
+
+# Tenure estimation constants
+_RELIST_CLUSTER_DAYS = 90   # relists within this window = same attempt
+_ASSUMED_VACANCY_DAYS = 30  # subtracted from gap to estimate net tenure
+_BENCHMARK_MONTHS = 12      # "neutral" tenure (1-year lease)
+_TENURE_SCALE = 24          # normalisation denominator for deviation
 
 
 def _true_cost(listing: dict) -> int | None:
@@ -48,6 +65,8 @@ class DealScorer(Scorer):
             "comp_scope": "TEXT",
             "comp_sqft_median": "INTEGER",
             "price_per_sqft": "REAL",
+            "tenure_median_months": "REAL",
+            "tenure_cycle_count": "INTEGER",
         }
 
     def score(
@@ -94,12 +113,17 @@ class DealScorer(Scorer):
                 and len(ppsqft_values) >= MIN_COMP_SET
             )
 
+            # Tenure estimation from price history
+            tenure_months, tenure_cycles = self._estimate_tenure(lst)
+
             meta: dict = {
                 "comp_median": int(price_median),
                 "comp_set_size": set_size,
                 "comp_scope": "neighborhood",
                 "comp_sqft_median": None,
                 "price_per_sqft": None,
+                "tenure_median_months": tenure_months,
+                "tenure_cycle_count": tenure_cycles,
             }
 
             if has_sqft:
@@ -125,6 +149,13 @@ class DealScorer(Scorer):
                 # Graceful degradation: price-only
                 combined = price_dev
 
+            # Signal 4: tenure bonus/penalty (when available)
+            if tenure_months is not None:
+                tenure_dev = (tenure_months - _BENCHMARK_MONTHS) / _TENURE_SCALE
+                tenure_dev = max(-0.5, min(1.0, tenure_dev))
+                # Scale existing signals down by (1 - W_TENURE), add tenure
+                combined = combined * (1.0 - W_TENURE) + W_TENURE * tenure_dev
+
             intermediate.append((lst["id"], combined, meta))
 
         # Pass 2: z-score normalization
@@ -140,6 +171,80 @@ class DealScorer(Scorer):
             ))
 
         return results
+
+    # ── Tenure estimation ─────────────────────────────────────
+
+    @staticmethod
+    def _estimate_tenure(lst: dict) -> tuple[Optional[float], int]:
+        """Estimate median tenant tenure from price_history.
+
+        Algorithm:
+          1. Extract all "Listed" event dates (ignoring "Delisted").
+          2. Sort chronologically.
+          3. Cluster: merge dates within _RELIST_CLUSTER_DAYS into a
+             single listing attempt (the user's "don't get fooled by
+             5 relists in 3 months" rule).
+          4. Gap between clusters ≈ vacancy + lease term.
+          5. Subtract _ASSUMED_VACANCY_DAYS → estimated net tenure.
+          6. Return (median_months, cycle_count).  None if < 2 clusters.
+
+        Returns:
+            (median_months, cycle_count) or (None, 0).
+        """
+        raw = lst.get("price_history")
+        if not raw:
+            return None, 0
+
+        if isinstance(raw, str):
+            try:
+                entries = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return None, 0
+        elif isinstance(raw, list):
+            entries = raw
+        else:
+            return None, 0
+
+        if not entries:
+            return None, 0
+
+        # Collect dates of "Listed" events (not "Delisted")
+        listed_dates: list[datetime] = []
+        for entry in entries:
+            event = (entry.get("event") or "").strip()
+            if "listed" in event.lower() and "delisted" not in event.lower():
+                date_str = entry.get("date", "")
+                for fmt in ("%m/%d/%y", "%m/%d/%Y", "%Y-%m-%d"):
+                    try:
+                        listed_dates.append(datetime.strptime(date_str, fmt))
+                        break
+                    except ValueError:
+                        continue
+
+        if len(listed_dates) < 2:
+            return None, 0
+
+        listed_dates.sort()
+
+        # Cluster rapid relists: merge dates within _RELIST_CLUSTER_DAYS
+        clusters: list[datetime] = [listed_dates[0]]
+        for dt in listed_dates[1:]:
+            if (dt - clusters[-1]).days <= _RELIST_CLUSTER_DAYS:
+                continue  # same listing attempt, skip
+            clusters.append(dt)
+
+        if len(clusters) < 2:
+            return None, len(clusters)
+
+        # Gaps between clusters → estimated tenure
+        tenures_months: list[float] = []
+        for i in range(1, len(clusters)):
+            gap_days = (clusters[i] - clusters[i - 1]).days
+            net_days = max(0, gap_days - _ASSUMED_VACANCY_DAYS)
+            tenures_months.append(net_days / 30.44)  # avg days per month
+
+        median_months = round(statistics.median(tenures_months), 1)
+        return median_months, len(clusters)
 
     # ── Comp-set builders ───────────────────────────────────────
 
