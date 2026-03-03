@@ -86,8 +86,12 @@ export default function ListPanel() {
     <>
       {/* === Desktop list panel === */}
       <div className="hidden lg:flex lg:flex-col border-r border-[#E5E0D8] bg-white overflow-hidden">
-        {/* Desktop tabs */}
+        {/* Logo + Desktop tabs */}
         <div className="px-4 pt-3 pb-2">
+          <div className="flex items-center gap-1.5 mb-3">
+            <span className="text-lg font-bold tracking-tight text-gray-900">RESIDE</span>
+            <span className="w-2 h-2 rounded-full bg-amber-500 -mt-2" />
+          </div>
           <nav className="grid grid-cols-3 gap-1 bg-[#F3F0EB] rounded-lg p-1">
             {TABS.map(({ key, label }) => (
               <button
