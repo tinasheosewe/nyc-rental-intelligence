@@ -72,6 +72,16 @@ const OVERLAYS: OverlayOption[] = [
       </svg>
     ),
   },
+  {
+    key: "pest",
+    label: "Pests",
+    description: "Rodent & pest complaint density",
+    icon: (
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19c-4 0-7-2.5-7-6 0-2.5 1.5-4.5 3.5-5.5M12 19c4 0 7-2.5 7-6 0-2.5-1.5-4.5-3.5-5.5M12 19v-6m0 0c-1.5 0-2.5-1-2.5-2.5S10.5 8 12 8s2.5 1 2.5 2.5S13.5 13 12 13zm-4.5-5.5L5 5m11.5 2.5L19 5M8 17l-3 3m11-3l3 3" />
+      </svg>
+    ),
+  },
 ];
 
 export default function MapOverlayButtons() {
