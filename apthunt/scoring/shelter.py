@@ -105,16 +105,16 @@ class ShelterScorer(Scorer):
                     s_nearest_name = r.get("facname") or ""
 
             # ── NYCHA projects ───────────────────────────────
+            # Group by development name so that one housing complex
+            # with many buildings counts as ONE facility, not N.
             project_rows = self._store.query_circle(
                 "projects",
                 lat=lat, lon=lon, radius_m=_RADIUS_M,
                 select="development,latitude,longitude",
             )
 
-            p_count = 0
-            p_weighted = 0.0
-            p_nearest_m = 9999
-            p_nearest_name = ""
+            # dev_name → nearest distance (m)
+            dev_nearest: dict[str, float] = {}
 
             for r in project_rows:
                 rlat = float(r.get("latitude") or 0)
@@ -124,12 +124,20 @@ class ShelterScorer(Scorer):
                 dist = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
                 if dist > _RADIUS_M:
                     continue
-                p_count += 1
-                proximity = max(0.0, 1.0 - dist / _RADIUS_M)
-                p_weighted += proximity
-                if dist < p_nearest_m:
-                    p_nearest_m = int(dist)
-                    p_nearest_name = r.get("development") or ""
+                dev = r.get("development") or "unknown"
+                if dev not in dev_nearest or dist < dev_nearest[dev]:
+                    dev_nearest[dev] = dist
+
+            p_count = len(dev_nearest)
+            p_weighted = sum(
+                max(0.0, 1.0 - d / _RADIUS_M) for d in dev_nearest.values()
+            )
+            p_nearest_m = 9999
+            p_nearest_name = ""
+            if dev_nearest:
+                nearest_dev = min(dev_nearest, key=dev_nearest.get)
+                p_nearest_m = int(dev_nearest[nearest_dev])
+                p_nearest_name = nearest_dev
 
             # ── Combined weighted total ──────────────────────
             weighted_total = round(s_weighted + p_weighted, 3)

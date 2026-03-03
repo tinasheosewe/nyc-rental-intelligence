@@ -68,16 +68,38 @@ def _parse_photos(raw: Optional[str]) -> list[str]:
         return []
 
 
+# ── Grade curve ─────────────────────────────────────────────────
+#
+# Raw scores are on a 0-100 scale where the median is ~50.
+# Psychologically 50 reads as an F.  A concave power curve pushes
+# the median into B-/C+ territory so averages "feel" acceptable
+# and only genuinely bad areas look bad.
+#
+#   raw 0 → 0  |  25 → 55  |  50 → 76  |  75 → 90  |  100 → 100
+
+_GRADE_EXPONENT = 0.4
+
+
+def _grade_curve(raw: float) -> float:
+    """Monotonic concave curve: raises the middle while keeping 0 and 100 fixed."""
+    if raw <= 0:
+        return 0.0
+    if raw >= 100:
+        return 100.0
+    return round(100.0 * (raw / 100.0) ** _GRADE_EXPONENT, 1)
+
+
 def _row_to_scores(row: dict) -> dict[str, float | None]:
     """Extract score values from a DB row into a flat dict.
 
+    Applies the grade curve so the UI shows school-grade-like values.
     Returns None for dimensions where the DB value is NULL (no data),
     so that compute_group_scores can exclude them from averages.
     """
     result: dict[str, float | None] = {}
     for key in SCORE_KEYS:
         raw = row.get(f"{key}_score")
-        result[key] = float(raw) if raw is not None else None
+        result[key] = _grade_curve(float(raw)) if raw is not None else None
     return result
 
 
