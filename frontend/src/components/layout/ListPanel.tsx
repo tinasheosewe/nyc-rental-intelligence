@@ -43,9 +43,6 @@ export default function ListPanel() {
   const setCompareOpen = useStore((s) => s.setCompareOpen);
 
   const isQueueTab = activeTab === "watchlist" || activeTab === "shortlist";
-  const queueSelectedCount = isQueueTab
-    ? Array.from(compareIds).filter((id) => visible.some((l) => l.id === id)).length
-    : 0;
 
   const counts: Record<QueueTab, number> = {
     explore: 0,
@@ -63,6 +60,10 @@ export default function ListPanel() {
         return listings.filter((l) => !skipped.has(l.id));
     }
   }, [activeTab, listings, watchlist, shortlist, skipped]);
+
+  const queueSelectedCount = isQueueTab
+    ? Array.from(compareIds).filter((id) => visible.some((l) => l.id === id)).length
+    : 0;
 
   // Infinite scroll sentinel
   const sentinelRef = useRef<HTMLDivElement>(null);

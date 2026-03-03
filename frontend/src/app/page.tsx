@@ -73,7 +73,7 @@ export default function HomePage() {
         <ListPanel />
 
         {/* Center panel — persistent map */}
-        <div className="relative bg-gray-100">
+        <div className="relative bg-gray-100 isolate z-0">
           {mounted && (
             <MapContainer
               center={NYC_CENTER}
