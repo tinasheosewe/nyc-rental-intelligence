@@ -10,6 +10,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   TileLayer,
+  Circle,
   CircleMarker,
   Popup,
   Tooltip,
@@ -45,8 +46,15 @@ function pinColor(score: number): string {
   return "#EF4444";
 }
 
+function heatColor(score: number): string {
+  if (score >= 75) return "#22c55e"; // green-500
+  if (score >= 50) return "#eab308"; // yellow-500
+  if (score >= 25) return "#f97316"; // orange-500
+  return "#ef4444"; // red-500
+}
+
 /** Group listings by rounded coordinates (~11 m precision) */
-function clusterByLocation(listings: Listing[], colorBy?: ScoreDimension | null): PinCluster[] {
+function clusterByLocation(listings: Listing[]): PinCluster[] {
   const groups = new Map<string, Listing[]>();
   for (const l of listings) {
     const key = `${l.latitude.toFixed(4)}_${l.longitude.toFixed(4)}`;
@@ -59,9 +67,8 @@ function clusterByLocation(listings: Listing[], colorBy?: ScoreDimension | null)
     lat: group[0].latitude,
     lng: group[0].longitude,
     listings: group,
-    avgScore: colorBy
-      ? group.reduce((s, l) => s + (l.scores[colorBy] ?? l.scores.composite), 0) / group.length
-      : group.reduce((s, l) => s + l.scores.composite, 0) / group.length,
+    avgScore:
+      group.reduce((s, l) => s + l.scores.composite, 0) / group.length,
   }));
 }
 
@@ -149,8 +156,8 @@ export default function MapContent({
     [listings, highlightIds],
   );
   const clusters = useMemo(
-    () => clusterByLocation(nonHighlighted, colorBy),
-    [nonHighlighted, colorBy],
+    () => clusterByLocation(nonHighlighted),
+    [nonHighlighted],
   );
 
   return (
@@ -160,6 +167,26 @@ export default function MapContent({
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
       />
       <ZoomControl position="topright" />
+
+      {/* ── Heatmap area overlay ──────────────────────────────── */}
+      {colorBy &&
+        listings.map((listing) => {
+          const score = listing.scores[colorBy] ?? 50;
+          return (
+            <Circle
+              key={`heat-${listing.id}`}
+              center={[listing.latitude, listing.longitude]}
+              radius={350}
+              pathOptions={{
+                color: "transparent",
+                fillColor: heatColor(score),
+                fillOpacity: 0.25,
+                weight: 0,
+              }}
+              interactive={false}
+            />
+          );
+        })}
 
       {/* ── Non-highlighted pins (clustered) ─────────────────── */}
       {clusters.map((cluster) =>
@@ -226,7 +253,7 @@ export default function MapContent({
             radius={12}
             pathOptions={{
               color: "#ffffff",
-              fillColor: pinColor(colorBy ? (listing.scores[colorBy] ?? listing.scores.composite) : listing.scores.composite),
+              fillColor: pinColor(listing.scores.composite),
               fillOpacity: 1,
               weight: 3,
             }}

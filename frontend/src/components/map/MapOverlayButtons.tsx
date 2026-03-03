@@ -2,12 +2,13 @@
  * MapOverlayButtons — Vertical column of overlay toggle buttons on the map.
  *
  * Positioned below the Leaflet zoom controls (top-right).
- * Each button toggles a score-dimension "heatmap" coloring on the pins.
- * Active button gets amber highlight; clicking again returns to composite.
+ * Each button toggles a score-dimension heatmap area overlay.
+ * Active button gets amber highlight; clicking again clears the overlay.
  */
 
 "use client";
 
+import { useState } from "react";
 import { useStore } from "@/lib/store";
 import type { ScoreDimension } from "@/lib/types";
 import clsx from "clsx";
@@ -15,6 +16,7 @@ import clsx from "clsx";
 interface OverlayOption {
   key: ScoreDimension;
   label: string;
+  description: string;
   icon: React.ReactNode;
 }
 
@@ -22,54 +24,61 @@ const OVERLAYS: OverlayOption[] = [
   {
     key: "crime",
     label: "Crime",
+    description: "Safety from violent & property crime",
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
       </svg>
     ),
   },
   {
     key: "noise",
     label: "Noise",
+    description: "Ambient noise level from 311 complaints",
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072M17.95 6.05a8 8 0 010 11.9M6.5 8.788l4.5-3.788v14l-4.5-3.788H3a1 1 0 01-1-1v-4.424a1 1 0 011-1h3.5z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707A1 1 0 0112 5v14a1 1 0 01-1.707.707L5.586 15z" />
       </svg>
     ),
   },
   {
     key: "transit",
     label: "Transit",
+    description: "Subway & bus access within walking distance",
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 17l-2 2m0 0l-2-2m2 2V3m8 14l2 2m0 0l2-2m-2 2V3M3 7h4m-4 4h4m10-4h4m-4 4h4" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 17a2 2 0 11-4 0 2 2 0 014 0zm10 0a2 2 0 11-4 0 2 2 0 014 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10m14 0V9a1 1 0 00-.667-.943l-4-1.5A1 1 0 0012 6.5V16" />
       </svg>
     ),
   },
   {
     key: "parks",
     label: "Parks",
+    description: "Proximity and acreage of green spaces",
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
       </svg>
     ),
   },
   {
     key: "deal",
     label: "Value",
+    description: "Price relative to comparable listings",
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A2 2 0 013 12V7a4 4 0 014-4z" />
       </svg>
     ),
   },
   {
     key: "convenience",
     label: "Convenience",
+    description: "Grocery, dining & everyday errands nearby",
     icon: (
       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 100 4 2 2 0 000-4z" />
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
       </svg>
     ),
   },
@@ -78,25 +87,38 @@ const OVERLAYS: OverlayOption[] = [
 export default function MapOverlayButtons() {
   const mapColorOverlay = useStore((s) => s.mapColorOverlay);
   const setMapColorOverlay = useStore((s) => s.setMapColorOverlay);
+  const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   return (
     <div className="absolute top-[120px] right-[10px] z-[1001] flex flex-col gap-1">
-      {OVERLAYS.map(({ key, label, icon }) => {
+      {OVERLAYS.map(({ key, label, description, icon }) => {
         const active = mapColorOverlay === key;
+        const hovered = hoveredKey === key;
         return (
-          <button
-            key={key}
-            onClick={() => setMapColorOverlay(active ? null : key)}
-            className={clsx(
-              "w-8 h-8 flex items-center justify-center rounded-md shadow-md border transition-all duration-200",
-              active
-                ? "bg-amber-500 text-white border-amber-500 shadow-amber-200"
-                : "bg-white text-gray-500 border-[#E5E0D8] hover:text-gray-800 hover:bg-[#F3F0EB]",
+          <div key={key} className="relative">
+            <button
+              onClick={() => setMapColorOverlay(active ? null : key)}
+              onMouseEnter={() => setHoveredKey(key)}
+              onMouseLeave={() => setHoveredKey(null)}
+              className={clsx(
+                "w-8 h-8 flex items-center justify-center rounded-md shadow-md border transition-all duration-200",
+                active
+                  ? "bg-amber-500 text-white border-amber-500 shadow-amber-200"
+                  : "bg-white text-gray-500 border-[#E5E0D8] hover:text-gray-800 hover:bg-[#F3F0EB]",
+              )}
+            >
+              {icon}
+            </button>
+
+            {/* Hover tooltip — left of button */}
+            {hovered && (
+              <div className="absolute right-10 top-1/2 -translate-y-1/2 whitespace-nowrap bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none">
+                <p className="font-semibold">{label}</p>
+                <p className="text-gray-300 text-[10px]">{description}</p>
+                <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+              </div>
             )}
-            title={active ? `Hide ${label} overlay` : `Show ${label} overlay`}
-          >
-            {icon}
-          </button>
+          </div>
         );
       })}
     </div>
