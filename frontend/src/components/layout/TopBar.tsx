@@ -38,7 +38,7 @@ export default function TopBar() {
 
   return (
     <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#E5E0D8]">
-      <div className="flex items-center justify-between h-14 px-4 max-w-7xl mx-auto">
+      <div className="flex items-center justify-between h-14 px-4">
         {/* Logo */}
         <div className="flex items-center gap-1.5 shrink-0">
           <span className="text-lg font-bold tracking-tight text-gray-900">
