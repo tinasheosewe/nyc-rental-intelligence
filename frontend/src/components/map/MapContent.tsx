@@ -161,8 +161,8 @@ export default function MapContent({
       />
       <ZoomControl position="topright" />
 
-      {/* ── IDW heatmap overlay ───────────────────────────────── */}
-      {colorBy && <HeatmapLayer listings={listings} dimension={colorBy} />}
+      {/* ── Grid-based heatmap overlay ─────────────────────── */}
+      {colorBy && <HeatmapLayer dimension={colorBy} />}
 
       {/* ── Non-highlighted pins (clustered) ─────────────────── */}
       {clusters.map((cluster) =>
