@@ -22,15 +22,6 @@ const ITEMS = [
     ),
   },
   {
-    key: "compare" as const,
-    label: "Compare",
-    icon: (
-      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM21 16c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2z" />
-      </svg>
-    ),
-  },
-  {
     key: "settings" as const,
     label: "Settings",
     icon: (
@@ -45,15 +36,11 @@ const ITEMS = [
 export default function MapPill() {
   const filterSheetOpen = useStore((s) => s.filterSheetOpen);
   const setFilterSheetOpen = useStore((s) => s.setFilterSheetOpen);
-  const compareOpen = useStore((s) => s.compareOpen);
-  const setCompareOpen = useStore((s) => s.setCompareOpen);
   const settingsOpen = useStore((s) => s.settingsOpen);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
-  const compareIds = useStore((s) => s.compareIds);
 
   const isActive = (key: string) => {
     if (key === "filter") return filterSheetOpen;
-    if (key === "compare") return compareOpen;
     if (key === "settings") return settingsOpen;
     return false;
   };
@@ -61,15 +48,13 @@ export default function MapPill() {
   const toggle = (key: string) => {
     if (key === "filter") {
       setFilterSheetOpen(!filterSheetOpen);
-    } else if (key === "compare") {
-      setCompareOpen(!compareOpen);
     } else if (key === "settings") {
       setSettingsOpen(!settingsOpen);
     }
   };
 
   return (
-    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10">
+    <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-[1001]">
       <div className="flex items-center gap-1 bg-white/90 backdrop-blur-md rounded-full shadow-lg border border-[#E5E0D8] p-1">
         {ITEMS.map(({ key, label, icon }) => {
           const active = isActive(key);
@@ -86,11 +71,6 @@ export default function MapPill() {
             >
               {icon}
               <span>{label}</span>
-              {key === "compare" && compareIds.size > 0 && !active && (
-                <span className="ml-0.5 text-[10px] bg-amber-100 text-amber-700 px-1.5 rounded-full font-bold">
-                  {compareIds.size}
-                </span>
-              )}
             </button>
           );
         })}
