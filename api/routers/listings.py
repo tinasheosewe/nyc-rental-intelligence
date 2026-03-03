@@ -328,6 +328,7 @@ def _row_to_listing(
             lon=lon,
             target_group_scores=group_scores,
             target_composite=composite,
+            target_price=row.get("price") or 0,
         )
 
     return Listing(

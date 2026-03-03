@@ -6,13 +6,15 @@ using the 13-dimension scoring engine.
 
 Similar (5):
     Same beds, nearby (same neighborhood with borough fallback),
-    ranked by a blend of cosine similarity and geographic proximity
-    so results are as close as possible to the viewed listing.
+    ranked by a blend of cosine similarity, geographic proximity,
+    and price proximity so results are as close as possible to the
+    viewed listing in every dimension.
 
 Also Consider (5):
     Same constraints, but each listing is similar on 4 groups
     yet *better* on a different 5th group. One per score group.
-    Among qualifying candidates, picks the closest one.
+    Among qualifying candidates, picks the closest by a blend of
+    distance and price proximity.
 """
 
 from __future__ import annotations
@@ -145,48 +147,60 @@ def find_comparable_listings(
     lon: float,
     target_group_scores: dict[str, float | None],
     target_composite: float,
+    target_price: int = 0,
     n_similar: int = 5,
     n_also_consider: int = 5,
 ) -> tuple[list[ComparableListing], list[ComparableListing]]:
     """
     Find similar and also-consider listings.
 
-    Rankings blend cosine similarity with geographic proximity so that
-    results are as close to the viewed listing as possible while still
-    being meaningfully comparable.
+    Rankings blend cosine similarity, geographic proximity, and price
+    proximity so results are as close to the viewed listing as possible
+    in location, price, and score profile.
 
     Returns (similar, also_consider).
     """
-    candidates = _fetch_candidates(conn, listing_id, beds, neighborhood, borough, lat, lon)
+    candidates = _fetch_candidates(
+        conn, listing_id, beds, neighborhood, borough, lat, lon,
+        target_price=target_price,
+    )
 
     if len(candidates) < 3:
         return [], []
 
-    # Compute group scores & haversine distance for each candidate
-    scored: list[tuple[dict, dict[str, float | None], float, float]] = []
+    # Compute group scores, haversine distance, & price ratio for each candidate
+    scored: list[tuple[dict, dict[str, float | None], float, float, float]] = []
     for row in candidates:
         gs = _row_to_group_scores(row)
         vals = [v for v in gs.values() if v is not None]
         comp = sum(vals) / len(vals) if vals else 0.0
         dist = _haversine_km(lat, lon, float(row["lat"]), float(row["lon"]))
-        scored.append((row, gs, round(comp, 1), dist))
+        cand_price = row.get("price") or 0
+        if target_price > 0 and cand_price > 0:
+            price_ratio = abs(cand_price - target_price) / target_price
+        else:
+            price_ratio = 0.0
+        scored.append((row, gs, round(comp, 1), dist, price_ratio))
 
     target_vec = _group_vector(target_group_scores, GROUP_KEYS)
 
-    # ── Similar: rank by proximity-weighted cosine similarity ───
+    # ── Similar: rank by proximity + price weighted cosine sim ──
     #
-    # combined = cosine_sim * proximity_weight
-    # proximity_weight = 1 / (1 + dist_km * 3)
+    # combined = cosine_sim * proximity_weight * price_weight
     #
-    # This strongly favours nearby listings: at 0 km → weight 1.0,
-    # 0.3 km → 0.53, 1 km → 0.25, 2 km → 0.14.  Among listings
-    # at comparable distances, the higher cosine sim wins.
+    # proximity_weight  = 1 / (1 + dist_km * 3)
+    #   0 km → 1.0, 0.3 km → 0.53, 1 km → 0.25
+    #
+    # price_weight      = 1 / (1 + price_ratio * 2)
+    #   0% diff → 1.0, 10% → 0.83, 25% → 0.67, 50% → 0.50
+    #
     ranked: list[tuple[float, int]] = []
-    for i, (row, gs, comp, dist) in enumerate(scored):
+    for i, (row, gs, comp, dist, price_ratio) in enumerate(scored):
         vec = _group_vector(gs, GROUP_KEYS)
         cos = _cosine_similarity(target_vec, vec)
         proximity_w = 1.0 / (1.0 + dist * 3.0)
-        combined = cos * proximity_w
+        price_w = 1.0 / (1.0 + price_ratio * 2.0)
+        combined = cos * proximity_w * price_w
         ranked.append((combined, i))
 
     ranked.sort(key=lambda x: x[0], reverse=True)
@@ -198,15 +212,15 @@ def find_comparable_listings(
         for _, idx in ranked[:n_similar]
     ]
 
-    # ── Also Consider: one per group, pick closest qualifying ───
+    # ── Also Consider: one per group, pick best by dist+price ───
     used_ids = {s.id for s in similar}
     also_consider: list[ComparableListing] = []
 
     for group_key in GROUP_KEYS:
         target_group_val = target_group_scores.get(group_key) or 50.0
-        best_candidate: tuple[float, int] | None = None  # (dist, idx)
+        best_candidate: tuple[float, int] | None = None  # (penalty, idx)
 
-        for i, (row, gs, comp, dist) in enumerate(scored):
+        for i, (row, gs, comp, dist, price_ratio) in enumerate(scored):
             if row["id"] in used_ids:
                 continue
 
@@ -224,13 +238,15 @@ def find_comparable_listings(
             if other_sim < 0.85:
                 continue
 
-            # Among qualifying candidates, pick the closest
-            if best_candidate is None or dist < best_candidate[0]:
-                best_candidate = (dist, i)
+            # Combined penalty: distance (km) + price deviation
+            # Normalise so distance and price contribute roughly equally
+            penalty = dist + price_ratio * 3.0  # 30% price diff ≈ 0.9 km
+            if best_candidate is None or penalty < best_candidate[0]:
+                best_candidate = (penalty, i)
 
         if best_candidate is not None:
             idx = best_candidate[1]
-            row, gs, comp, dist = scored[idx]
+            row, gs, comp, dist, _ = scored[idx]
             also_consider.append(
                 _row_to_comparable(row, gs, comp, better_in=group_key, distance_km=dist)
             )
@@ -247,9 +263,14 @@ def _fetch_candidates(
     borough: str,
     lat: float,
     lon: float,
+    target_price: int = 0,
     max_distance_deg: float = 0.03,  # ~3 km
+    price_band: float = 0.50,  # ±50% of target price
 ) -> list[dict]:
-    """Fetch candidate listings: same beds, nearby, active."""
+    """Fetch candidate listings: same beds, nearby, similar price, active."""
+    price_lo = int(target_price * (1 - price_band)) if target_price > 0 else 0
+    price_hi = int(target_price * (1 + price_band)) if target_price > 0 else 999999999
+
     # Try same neighborhood first
     rows = conn.execute(
         """
@@ -259,10 +280,11 @@ def _fetch_candidates(
           AND beds = ?
           AND LOWER(neighborhood) = LOWER(?)
           AND lat IS NOT NULL AND lon IS NOT NULL
+          AND price BETWEEN ? AND ?
         ORDER BY ABS(lat - ?) + ABS(lon - ?)
         LIMIT 50
         """,
-        (listing_id, beds, neighborhood, lat, lon),
+        (listing_id, beds, neighborhood, price_lo, price_hi, lat, lon),
     ).fetchall()
 
     # If not enough in neighborhood, expand to borough + nearby
@@ -276,10 +298,12 @@ def _fetch_candidates(
               AND LOWER(borough) = LOWER(?)
               AND lat IS NOT NULL AND lon IS NOT NULL
               AND ABS(lat - ?) < ? AND ABS(lon - ?) < ?
+              AND price BETWEEN ? AND ?
             ORDER BY ABS(lat - ?) + ABS(lon - ?)
             LIMIT 50
             """,
-            (listing_id, beds, borough, lat, max_distance_deg, lon, max_distance_deg, lat, lon),
+            (listing_id, beds, borough, lat, max_distance_deg, lon, max_distance_deg,
+             price_lo, price_hi, lat, lon),
         ).fetchall()
 
     return [dict(r) for r in rows]
