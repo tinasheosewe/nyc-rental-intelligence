@@ -201,13 +201,16 @@ export default function HeatmapLayer({ listings, dimension }: HeatmapLayerProps)
   const layerRef = useRef<L.GridLayer | null>(null);
 
   useEffect(() => {
-    // Build data points
+    // Build data points — blend parks+greenery when "parks" is selected
+    const blendDimensions: ScoreDimension[] =
+      dimension === "parks" ? ["parks", "greenery"] : [dimension];
+
     const dataPoints: DataPoint[] = listings
-      .map((l) => ({
-        lat: l.latitude,
-        lng: l.longitude,
-        score: l.scores[dimension] ?? 50,
-      }))
+      .map((l) => {
+        const scores = blendDimensions.map((d) => l.scores[d] ?? null).filter((s): s is number => s !== null);
+        const avg = scores.length > 0 ? scores.reduce((a, b) => a + b, 0) / scores.length : 50;
+        return { lat: l.latitude, lng: l.longitude, score: avg };
+      })
       .filter((d) => d.score !== null);
 
     // Remove old layer
