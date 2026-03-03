@@ -16,13 +16,14 @@ import {
   ZoomControl,
   useMap,
 } from "react-leaflet";
-import type { Listing } from "@/lib/types";
+import type { Listing, ScoreDimension } from "@/lib/types";
 import { formatPrice, formatBeds, scoreLabel } from "@/lib/utils";
 
 interface MapContentProps {
   listings: Listing[];
   highlightIds: Set<string>;
   focusedId: string | null;
+  colorBy?: ScoreDimension | null;
   addToWatchlist: (l: Listing) => void;
   addToShortlist: (l: Listing) => void;
   onTilesLoaded?: () => void;
@@ -45,7 +46,7 @@ function pinColor(score: number): string {
 }
 
 /** Group listings by rounded coordinates (~11 m precision) */
-function clusterByLocation(listings: Listing[]): PinCluster[] {
+function clusterByLocation(listings: Listing[], colorBy?: ScoreDimension | null): PinCluster[] {
   const groups = new Map<string, Listing[]>();
   for (const l of listings) {
     const key = `${l.latitude.toFixed(4)}_${l.longitude.toFixed(4)}`;
@@ -58,8 +59,9 @@ function clusterByLocation(listings: Listing[]): PinCluster[] {
     lat: group[0].latitude,
     lng: group[0].longitude,
     listings: group,
-    avgScore:
-      group.reduce((s, l) => s + l.scores.composite, 0) / group.length,
+    avgScore: colorBy
+      ? group.reduce((s, l) => s + (l.scores[colorBy] ?? l.scores.composite), 0) / group.length
+      : group.reduce((s, l) => s + l.scores.composite, 0) / group.length,
   }));
 }
 
@@ -67,6 +69,7 @@ export default function MapContent({
   listings,
   highlightIds,
   focusedId,
+  colorBy,
   addToWatchlist,
   addToShortlist,
   onTilesLoaded,
@@ -146,8 +149,8 @@ export default function MapContent({
     [listings, highlightIds],
   );
   const clusters = useMemo(
-    () => clusterByLocation(nonHighlighted),
-    [nonHighlighted],
+    () => clusterByLocation(nonHighlighted, colorBy),
+    [nonHighlighted, colorBy],
   );
 
   return (
@@ -223,7 +226,7 @@ export default function MapContent({
             radius={12}
             pathOptions={{
               color: "#ffffff",
-              fillColor: pinColor(listing.scores.composite),
+              fillColor: pinColor(colorBy ? (listing.scores[colorBy] ?? listing.scores.composite) : listing.scores.composite),
               fillOpacity: 1,
               weight: 3,
             }}

@@ -10,6 +10,7 @@ import PinnedTray from "@/components/layout/PinnedTray";
 import CompareModal from "@/components/compare/CompareModal";
 import MapOverlay from "@/components/map/MapOverlay";
 import MapPill from "@/components/map/MapPill";
+import MapOverlayButtons from "@/components/map/MapOverlayButtons";
 import ListPanel from "@/components/layout/ListPanel";
 import DetailPanel from "@/components/layout/DetailPanel";
 import dynamic from "next/dynamic";
@@ -41,6 +42,7 @@ export default function HomePage() {
   const selectedListingId = useStore((s) => s.selectedListingId);
   const addToWatchlist = useStore((s) => s.addToWatchlist);
   const addToShortlist = useStore((s) => s.addToShortlist);
+  const mapColorOverlay = useStore((s) => s.mapColorOverlay);
 
   // Map state for desktop persistent map
   const [mounted, setMounted] = useState(false);
@@ -88,6 +90,7 @@ export default function HomePage() {
                 listings={displayListings}
                 highlightIds={highlightIds}
                 focusedId={selectedListingId}
+                colorBy={mapColorOverlay}
                 addToWatchlist={addToWatchlist}
                 addToShortlist={addToShortlist}
                 onTilesLoaded={handleTilesLoaded}
@@ -95,6 +98,7 @@ export default function HomePage() {
             </MapContainer>
           )}
           <MapPill />
+          <MapOverlayButtons />
         </div>
 
         {/* Right panel — detail */}

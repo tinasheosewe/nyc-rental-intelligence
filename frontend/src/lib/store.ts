@@ -21,6 +21,7 @@ import type {
   ViewMode,
   FilterState,
   ScoreGroupKey,
+  ScoreDimension,
 } from "./types";
 import { DEFAULT_FILTERS, DEFAULT_GROUP_PRIORITIES } from "./types";
 import { fetchListings } from "./api";
@@ -83,6 +84,8 @@ interface AppState {
   // Map
   mapOpen: boolean;
   setMapOpen: (open: boolean) => void;
+  mapColorOverlay: ScoreDimension | null;
+  setMapColorOverlay: (dim: ScoreDimension | null) => void;
   expandedQueueId: string | null;
   setExpandedQueueId: (id: string | null) => void;
 
@@ -261,6 +264,8 @@ export const useStore = create<AppState>((set, get) => ({
   // Map
   mapOpen: false,
   setMapOpen: (open) => set({ mapOpen: open }),
+  mapColorOverlay: null,
+  setMapColorOverlay: (dim) => set({ mapColorOverlay: dim }),
   expandedQueueId: null,
   setExpandedQueueId: (id) => set({ expandedQueueId: id }),
 

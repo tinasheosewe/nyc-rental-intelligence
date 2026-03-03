@@ -43,6 +43,7 @@ export default function MapOverlay() {
   const expandedQueueId = useStore((s) => s.expandedQueueId);
   const addToWatchlist = useStore((s) => s.addToWatchlist);
   const addToShortlist = useStore((s) => s.addToShortlist);
+  const mapColorOverlay = useStore((s) => s.mapColorOverlay);
 
   const [mounted, setMounted] = useState(false);
   const [tilesReady, setTilesReady] = useState(false);
@@ -167,6 +168,7 @@ export default function MapOverlay() {
             listings={displayListings}
             highlightIds={highlightIds}
             focusedId={focusedId}
+            colorBy={mapColorOverlay}
             addToWatchlist={addToWatchlist}
             addToShortlist={addToShortlist}
             onTilesLoaded={handleTilesLoaded}
