@@ -15,9 +15,12 @@ interface ListCardProps {
   listing: Listing;
   selected: boolean;
   onClick: () => void;
+  selectable?: boolean;
+  checked?: boolean;
+  onCheck?: () => void;
 }
 
-export default function ListCard({ listing, selected, onClick }: ListCardProps) {
+export default function ListCard({ listing, selected, onClick, selectable, checked, onCheck }: ListCardProps) {
   const hasPhoto = listing.photos.length > 0;
 
   return (
@@ -28,9 +31,32 @@ export default function ListCard({ listing, selected, onClick }: ListCardProps) 
         "hover:bg-[#F3F0EB] group",
         selected
           ? "bg-amber-50 border border-amber-300 shadow-sm"
-          : "bg-white border border-[#E5E0D8]",
+          : checked
+            ? "bg-amber-50/50 border border-amber-200"
+            : "bg-white border border-[#E5E0D8]",
       )}
     >
+      {/* Checkbox for compare selection */}
+      {selectable && (
+        <div
+          role="checkbox"
+          aria-checked={checked}
+          onClick={(e) => { e.stopPropagation(); onCheck?.(); }}
+          className={clsx(
+            "self-center shrink-0 w-5 h-5 rounded border-2 flex items-center justify-center transition-colors cursor-pointer",
+            checked
+              ? "bg-amber-500 border-amber-500"
+              : "border-gray-300 bg-white hover:border-amber-400",
+          )}
+        >
+          {checked && (
+            <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+            </svg>
+          )}
+        </div>
+      )}
+
       {/* Thumbnail */}
       <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0 bg-gray-100">
         {hasPhoto ? (

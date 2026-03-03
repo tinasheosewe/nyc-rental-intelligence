@@ -38,6 +38,14 @@ export default function ListPanel() {
   const totalListings = useStore((s) => s.totalListings);
   const selectedListingId = useStore((s) => s.selectedListingId);
   const setSelectedListingId = useStore((s) => s.setSelectedListingId);
+  const compareIds = useStore((s) => s.compareIds);
+  const toggleCompareId = useStore((s) => s.toggleCompareId);
+  const setCompareOpen = useStore((s) => s.setCompareOpen);
+
+  const isQueueTab = activeTab === "watchlist" || activeTab === "shortlist";
+  const queueSelectedCount = isQueueTab
+    ? Array.from(compareIds).filter((id) => visible.some((l) => l.id === id)).length
+    : 0;
 
   const counts: Record<QueueTab, number> = {
     explore: 0,
@@ -102,6 +110,27 @@ export default function ListPanel() {
 
         <SortChips />
 
+        {/* Compare toolbar */}
+        {isQueueTab && queueSelectedCount > 0 && (
+          <div className="flex items-center justify-between px-4 py-2 border-b border-[#E5E0D8]">
+            <span className="text-sm text-gray-500">
+              {queueSelectedCount} selected
+            </span>
+            <button
+              onClick={() => setCompareOpen(true)}
+              disabled={queueSelectedCount < 2}
+              className={clsx(
+                "text-xs px-3 py-1.5 rounded-lg font-medium transition-colors",
+                queueSelectedCount >= 2
+                  ? "bg-amber-500 text-white hover:bg-amber-600"
+                  : "bg-[#F3F0EB] text-gray-400 cursor-not-allowed",
+              )}
+            >
+              Compare ({queueSelectedCount})
+            </button>
+          </div>
+        )}
+
         {/* Scrollable list */}
         <div className="flex-1 overflow-y-auto px-3 pb-4">
           {isLoading ? (
@@ -132,6 +161,9 @@ export default function ListPanel() {
                     listing={listing}
                     selected={selectedListingId === listing.id}
                     onClick={() => setSelectedListingId(listing.id)}
+                    selectable={isQueueTab}
+                    checked={compareIds.has(listing.id)}
+                    onCheck={() => toggleCompareId(listing.id)}
                   />
                 ))}
               </div>
