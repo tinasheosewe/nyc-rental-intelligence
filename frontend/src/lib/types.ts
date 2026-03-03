@@ -215,6 +215,55 @@ export interface BuildingInfo {
   hpd_complaints_12mo: number;
 }
 
+// ── New listing-detail models ───────────────────────────────────────
+
+export interface TransitStation {
+  name: string;
+  distance_m: number;
+  routes: string[];
+}
+
+export interface CategorizedAmenities {
+  services: string[];
+  wellness: string[];
+  outdoor: string[];
+  convenience: string[];
+  unit_features: string[];
+}
+
+export interface NeighborhoodInfo {
+  description: string | null;
+  median_rent_1br: number | null;
+  median_rent_2br: number | null;
+}
+
+export interface POI {
+  name: string;
+  category: string;
+  distance_m: number;
+}
+
+export interface OpenHouse {
+  date: string;
+  start_time: string | null;
+  end_time: string | null;
+}
+
+export interface ComparableListing {
+  id: string;
+  address: string;
+  unit: string | null;
+  neighborhood: string;
+  price: number;
+  beds: number;
+  baths: number;
+  sqft: number | null;
+  photo: string | null;
+  composite_score: number;
+  group_scores: Record<string, number>;
+  better_in: string | null;
+}
+
 export interface Listing {
   id: string;
   address: string;
@@ -243,6 +292,17 @@ export interface Listing {
   trends: Trends;
   flags: Flag[];
   building: BuildingInfo;
+
+  // New listing-detail fields
+  pet_policy: string | null;
+  categorized_amenities: CategorizedAmenities;
+  transit_stations: TransitStation[];
+  neighborhood_info: NeighborhoodInfo;
+  nearby_pois: POI[];
+  open_houses: OpenHouse[];
+  nearby_neighborhoods: string[];
+  similar: ComparableListing[];
+  also_consider: ComparableListing[];
 }
 
 export interface ListingsResponse {

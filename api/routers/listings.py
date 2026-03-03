@@ -18,15 +18,26 @@ from fastapi import APIRouter, Depends, Query
 from apthunt.db import get_connection
 from api.models import (
     BuildingInfo,
+    CategorizedAmenities,
+    ComparableListing,
     Flag,
     Listing,
     ListingsResponse,
+    NeighborhoodInfo,
     PriceHistoryEntry,
     Scores,
     Trends,
 )
 from api.flags import generate_flags
-from api.composite import compute_composite, SCORE_KEYS
+from api.composite import compute_composite, compute_group_scores, SCORE_KEYS
+from api.neighborhood import (
+    categorize_amenities,
+    extract_pet_policy,
+    get_nearby_neighborhoods,
+    get_nearby_pois,
+    get_neighborhood_info,
+    get_transit_stations,
+)
 
 router = APIRouter(tags=["listings"])
 
@@ -210,8 +221,14 @@ def _row_to_listing(
     row: dict,
     priorities: list[str] | None = None,
     exclude_schools: bool = False,
+    conn: object | None = None,
+    detail: bool = False,
 ) -> Listing:
-    """Convert a raw DB row dict into a Listing response model."""
+    """Convert a raw DB row dict into a Listing response model.
+
+    When detail=True and conn is provided, includes expensive lookups:
+    transit stations, neighborhood info, POIs, comparable listings, etc.
+    """
     score_vals = _row_to_scores(row)
     composite, data_quality = compute_composite(score_vals, priorities, exclude_schools=exclude_schools)
 
@@ -276,19 +293,56 @@ def _row_to_listing(
         except (json.JSONDecodeError, TypeError, ValueError):
             pass
 
+    # ── New listing-detail fields (detail view only) ──────────────────
+    pet_policy = extract_pet_policy(amenities)
+    cat_amenities = categorize_amenities(amenities)
+    neighborhood_name = row.get("neighborhood") or "Unknown"
+    borough_name = row.get("borough") or "Unknown"
+    lat = float(row.get("lat") or 0)
+    lon = float(row.get("lon") or 0)
+
+    # Expensive lookups only for detail endpoint
+    transit_stations_list = []
+    neighborhood_info_data = None
+    pois = []
+    nearby_nbrs = []
+    similar_listings = []
+    also_consider_listings = []
+
+    if detail and conn is not None:
+        transit_stations_list = get_transit_stations(lat, lon)
+        neighborhood_info_data = get_neighborhood_info(conn, neighborhood_name)
+        pois = get_nearby_pois(row)
+        nearby_nbrs = get_nearby_neighborhoods(conn, neighborhood_name, borough_name, lat, lon)
+
+        # Comparable listings
+        from api.comparables import find_comparable_listings
+        group_scores = compute_group_scores(score_vals, exclude_schools=True)
+        similar_listings, also_consider_listings = find_comparable_listings(
+            conn=conn,
+            listing_id=row["id"],
+            beds=row.get("beds") or 0,
+            neighborhood=neighborhood_name,
+            borough=borough_name,
+            lat=lat,
+            lon=lon,
+            target_group_scores=group_scores,
+            target_composite=composite,
+        )
+
     return Listing(
         id=row["id"],
         address=row.get("address") or "Unknown",
         unit=row.get("unit"),
-        neighborhood=row.get("neighborhood") or "Unknown",
-        borough=row.get("borough") or "Unknown",
+        neighborhood=neighborhood_name,
+        borough=borough_name,
         price=row.get("price") or 0,
         beds=row.get("beds") or 0,
         baths=float(row.get("baths") or 1.0),
         sqft=row.get("sqft"),
         photos=_parse_photos(row.get("photos")),
-        latitude=float(row.get("lat") or 0),
-        longitude=float(row.get("lon") or 0),
+        latitude=lat,
+        longitude=lon,
         url=row.get("url"),
         no_fee=bool(row.get("no_fee")),
         days_on_market=_days_on_market(row.get("first_seen_at")),
@@ -303,6 +357,15 @@ def _row_to_listing(
         trends=trends,
         flags=flags,
         building=building,
+        # New fields
+        pet_policy=pet_policy,
+        categorized_amenities=cat_amenities,
+        transit_stations=transit_stations_list,
+        neighborhood_info=neighborhood_info_data or NeighborhoodInfo(),
+        nearby_pois=pois,
+        nearby_neighborhoods=nearby_nbrs,
+        similar=similar_listings,
+        also_consider=also_consider_listings,
     )
 
 
@@ -494,7 +557,7 @@ def get_listings(
 
 @router.get("/listings/{listing_id}", response_model=Listing)
 def get_listing(listing_id: str) -> Listing:
-    """Single listing detail."""
+    """Single listing detail with full neighborhood data, comparables, and POIs."""
     conn = get_connection()
     try:
         row = conn.execute(
@@ -503,7 +566,7 @@ def get_listing(listing_id: str) -> Listing:
         if not row:
             from fastapi import HTTPException
             raise HTTPException(status_code=404, detail="Listing not found")
-        return _row_to_listing(dict(row))
+        return _row_to_listing(dict(row), conn=conn, detail=True)
     finally:
         conn.close()
 

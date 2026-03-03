@@ -12,6 +12,71 @@ from typing import Any, Optional
 from pydantic import BaseModel
 
 
+# ── Nearby station with route badges ────────────────────────────
+
+class TransitStation(BaseModel):
+    """A subway station with distance and served route letters."""
+    name: str
+    distance_m: int
+    routes: list[str] = []
+
+
+# ── Categorized amenities ───────────────────────────────────────
+
+class CategorizedAmenities(BaseModel):
+    """Building amenities grouped by category."""
+    services: list[str] = []       # doorman, elevator, laundry, etc.
+    wellness: list[str] = []       # gym, pool, etc.
+    outdoor: list[str] = []        # roof deck, garden, courtyard
+    convenience: list[str] = []    # parking, storage, bike room
+    unit_features: list[str] = []  # in-unit washer/dryer, dishwasher, etc.
+
+
+# ── Neighborhood info ───────────────────────────────────────────
+
+class NeighborhoodInfo(BaseModel):
+    """About-the-neighborhood section with description and median prices."""
+    description: Optional[str] = None
+    median_rent_1br: Optional[int] = None
+    median_rent_2br: Optional[int] = None
+
+
+# ── POI (Point of Interest) ─────────────────────────────────────
+
+class POI(BaseModel):
+    """A nearby point of interest with category and distance."""
+    name: str
+    category: str  # "park", "school", "grocery", "pharmacy", "gym", "restaurant", "laundry"
+    distance_m: int
+
+
+# ── Open house ──────────────────────────────────────────────────
+
+class OpenHouse(BaseModel):
+    """An open house event."""
+    date: str
+    start_time: Optional[str] = None
+    end_time: Optional[str] = None
+
+
+# ── Comparable listing (compact) ────────────────────────────────
+
+class ComparableListing(BaseModel):
+    """Compact listing summary for similar/also-consider sections."""
+    id: str
+    address: str
+    unit: Optional[str] = None
+    neighborhood: str
+    price: int
+    beds: int
+    baths: float
+    sqft: Optional[int] = None
+    photo: Optional[str] = None  # first photo URL
+    composite_score: float = 0.0
+    group_scores: dict[str, float] = {}  # value, access, neighborhood, safety, building
+    better_in: Optional[str] = None  # group key where this listing excels (for "also consider")
+
+
 class Scores(BaseModel):
     """All scoring dimensions plus rent-stabilized flag.
 
@@ -102,6 +167,17 @@ class Listing(BaseModel):
     trends: Trends = Trends()
     flags: list[Flag] = []
     building: BuildingInfo = BuildingInfo()
+
+    # ── New listing-detail fields ────────────────────────────────────
+    pet_policy: Optional[str] = None           # e.g. "Cats and dogs allowed"
+    categorized_amenities: CategorizedAmenities = CategorizedAmenities()
+    transit_stations: list[TransitStation] = []  # nearby stations with route badges
+    neighborhood_info: NeighborhoodInfo = NeighborhoodInfo()
+    nearby_pois: list[POI] = []                 # parks, schools, grocery, etc.
+    open_houses: list[OpenHouse] = []
+    nearby_neighborhoods: list[str] = []        # adjacent neighborhood names
+    similar: list[ComparableListing] = []       # 5 similar listings
+    also_consider: list[ComparableListing] = [] # 5 also-consider listings (each better in 1 group)
 
 
 class ListingsResponse(BaseModel):

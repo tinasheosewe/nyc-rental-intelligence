@@ -163,3 +163,58 @@ export function getGroupScore(
   if (vals.length === 0) return null;
   return vals.reduce((a, b) => a + b, 0) / vals.length;
 }
+
+// ── MTA subway route colors ───────────────────────────────────
+// Official MTA brand colors mapped to route letters
+
+const MTA_ROUTE_COLORS: Record<string, string> = {
+  "1": "#EE352E", "2": "#EE352E", "3": "#EE352E",                     // Red (7th Ave)
+  "4": "#00933C", "5": "#00933C", "6": "#00933C", "6X": "#00933C",   // Green (Lex)
+  "7": "#B933AD", "7X": "#B933AD",                                    // Purple (Flushing)
+  A: "#0039A6", C: "#0039A6", E: "#0039A6",                           // Blue (8th Ave)
+  B: "#FF6319", D: "#FF6319", F: "#FF6319", FX: "#FF6319", M: "#FF6319", // Orange
+  G: "#6CBE45",                                                        // Light green
+  J: "#996633", Z: "#996633",                                          // Brown
+  L: "#A7A9AC",                                                        // Gray
+  N: "#FCCC0A", Q: "#FCCC0A", R: "#FCCC0A", W: "#FCCC0A",           // Yellow
+  S: "#808183", FS: "#808183", GS: "#808183", H: "#808183",          // Dark gray (shuttles)
+  SIR: "#0039A6",                                                      // SI Railway
+  Ferry: "#2850AD",
+};
+
+export function mtaRouteColor(route: string): string {
+  return MTA_ROUTE_COLORS[route] ?? "#808183";
+}
+
+// ── POI category icons ────────────────────────────────────────
+
+const POI_ICONS: Record<string, string> = {
+  park: "🌳",
+  school: "🏫",
+  garden: "🌿",
+  grocery: "🛒",
+  pharmacy: "💊",
+  gym: "🏋️",
+  laundry: "🧺",
+  restaurant: "🍽️",
+  museum: "🏛️",
+  college: "🎓",
+};
+
+export function poiIcon(category: string): string {
+  return POI_ICONS[category] ?? "📍";
+}
+
+// ── Score group icons ────────────────────────────────────────
+
+const GROUP_ICONS: Record<string, string> = {
+  value: "💰",
+  access: "🚇",
+  neighborhood: "🌳",
+  safety: "🛡️",
+  building: "🏢",
+};
+
+export function groupIcon(key: string): string {
+  return GROUP_ICONS[key] ?? "📊";
+}
