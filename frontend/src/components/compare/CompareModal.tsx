@@ -86,17 +86,17 @@ export default function CompareModal() {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
-        className="fixed inset-0 z-[60] bg-zinc-950/95 backdrop-blur-sm flex flex-col"
+        className="fixed inset-0 z-[60] bg-[#FAF7F2]/95 backdrop-blur-sm flex flex-col"
         onClick={(e) => { if (e.target === e.currentTarget) handleClose(); }}
       >
         {/* Header */}
-        <div className="flex items-center justify-between px-4 py-3 border-b border-zinc-800">
-          <h2 className="text-sm font-semibold text-white">
+        <div className="flex items-center justify-between px-4 py-3 border-b border-[#E5E0D8]">
+          <h2 className="text-sm font-semibold text-gray-900">
             Compare {listings.length} Listings
           </h2>
           <button
             onClick={handleClose}
-            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+            className="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-[#F3F0EB]"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -109,10 +109,10 @@ export default function CompareModal() {
           <div className="flex-1 flex flex-col items-center justify-center px-4">
             <div className="max-w-md w-full space-y-6">
               <div className="text-center">
-                <h3 className="text-lg font-semibold text-white">
+                <h3 className="text-lg font-semibold text-gray-900">
                   Choose Categories to Compare
                 </h3>
-                <p className="text-sm text-zinc-500 mt-1">
+                <p className="text-sm text-gray-400 mt-1">
                   Select 2–5 score groups ({selectedGroups.size} selected)
                 </p>
               </div>
@@ -125,8 +125,8 @@ export default function CompareModal() {
                     className={clsx(
                       "flex items-center gap-2 px-3 py-2.5 rounded-xl text-sm font-medium transition-all",
                       selectedGroups.has(group.key)
-                        ? "bg-white text-zinc-900"
-                        : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-200",
+                        ? "bg-white text-gray-900"
+                        : "bg-[#F3F0EB] text-gray-500 hover:bg-gray-200 hover:text-gray-700",
                     )}
                   >
                     <span>{group.icon}</span>
@@ -141,8 +141,8 @@ export default function CompareModal() {
                 className={clsx(
                   "w-full py-3 rounded-xl font-medium text-sm transition-all",
                   selectedGroups.size >= 2
-                    ? "bg-white text-zinc-900 hover:bg-zinc-200"
-                    : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
+                    ? "bg-white text-gray-900 hover:bg-gray-100"
+                    : "bg-[#F3F0EB] text-gray-400 cursor-not-allowed",
                 )}
               >
                 Compare →
@@ -153,7 +153,7 @@ export default function CompareModal() {
           /* Step 2: Comparison view */
           <div className="flex-1 flex flex-col overflow-hidden">
             {/* Tabs */}
-            <div className="flex items-center gap-1 px-4 py-2 border-b border-zinc-800">
+            <div className="flex items-center gap-1 px-4 py-2 border-b border-[#E5E0D8]">
               {TABS.map(({ key, label }) => (
                 <button
                   key={key}
@@ -161,8 +161,8 @@ export default function CompareModal() {
                   className={clsx(
                     "px-4 py-1.5 rounded-full text-xs font-medium transition-all",
                     activeTab === key
-                      ? "bg-white text-zinc-900"
-                      : "text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800",
+                      ? "bg-white text-gray-900"
+                      : "text-gray-500 hover:text-gray-700 hover:bg-[#F3F0EB]",
                   )}
                 >
                   {label}
@@ -171,7 +171,7 @@ export default function CompareModal() {
               <div className="flex-1" />
               <button
                 onClick={() => setStep("pick")}
-                className="text-xs text-zinc-500 hover:text-zinc-300"
+                className="text-xs text-gray-400 hover:text-gray-600"
               >
                 Edit metrics
               </button>

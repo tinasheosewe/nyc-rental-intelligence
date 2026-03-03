@@ -27,7 +27,7 @@ interface CompareRadarProps {
   groups: ScoreGroupKey[];
 }
 
-const COLORS = ["#22c55e", "#3b82f6", "#eab308", "#ef4444", "#a855f7"];
+const COLORS = ["#0EA5E9", "#8B5CF6", "#F97316", "#EF4444", "#F59E0B"];
 
 export default function CompareRadar({ listings, groups }: CompareRadarProps) {
   const kidsMode = useStore((s) => s.kidsMode);
@@ -46,7 +46,7 @@ export default function CompareRadar({ listings, groups }: CompareRadarProps) {
   if (listings.length > 3) {
     return (
       <div className="space-y-4">
-        <p className="text-xs text-yellow-400 bg-yellow-500/10 px-3 py-2 rounded-lg">
+        <p className="text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded-lg">
           Radar chart works best with 2-3 listings. Consider using Table or Flags
           view for {listings.length} listings.
         </p>
@@ -69,15 +69,15 @@ function RadarChartInner({
     <div className="w-full h-[400px]">
       <ResponsiveContainer width="100%" height="100%">
         <RadarChart data={data} cx="50%" cy="50%" outerRadius="75%">
-          <PolarGrid stroke="#333" />
+          <PolarGrid stroke="#E5E0D8" />
           <PolarAngleAxis
             dataKey="dimension"
-            tick={{ fill: "#a1a1aa", fontSize: 11 }}
+            tick={{ fill: "#6B7280", fontSize: 11 }}
           />
           <PolarRadiusAxis
             angle={90}
             domain={[0, 100]}
-            tick={{ fill: "#52525b", fontSize: 9 }}
+            tick={{ fill: "#9CA3AF", fontSize: 9 }}
             axisLine={false}
           />
           {listings.map((l, i) => (
@@ -92,12 +92,12 @@ function RadarChartInner({
             />
           ))}
           <Legend
-            wrapperStyle={{ fontSize: 11, color: "#a1a1aa" }}
+            wrapperStyle={{ fontSize: 11, color: "#6B7280" }}
           />
           <Tooltip
             contentStyle={{
-              backgroundColor: "#18181b",
-              border: "1px solid #333",
+              backgroundColor: "#FFFFFF",
+              border: "1px solid #E5E0D8",
               borderRadius: "8px",
               fontSize: 12,
             }}

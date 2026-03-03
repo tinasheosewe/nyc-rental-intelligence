@@ -27,7 +27,7 @@ export default function ScoreBadge({ score, size = "md", label }: ScoreBadgeProp
       <div
         className={clsx(
           "rounded-full flex items-center justify-center font-bold text-center",
-          "ring-2 bg-zinc-900",
+          "ring-2 bg-white",
           scoreRing(score),
           scoreColor(score),
           SIZES[size],
@@ -36,7 +36,7 @@ export default function ScoreBadge({ score, size = "md", label }: ScoreBadgeProp
         {scoreLabel(score)}
       </div>
       {label && (
-        <span className="text-[10px] text-zinc-500 uppercase tracking-wider">
+        <span className="text-[10px] text-gray-400 uppercase tracking-wider">
           {label}
         </span>
       )}

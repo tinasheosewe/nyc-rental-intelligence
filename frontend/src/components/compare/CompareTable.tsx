@@ -47,22 +47,22 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
     <div className="overflow-x-auto">
       <table className="w-full min-w-[500px]">
         <thead>
-          <tr className="border-b border-zinc-800">
-            <th className="text-left text-xs text-zinc-500 py-3 px-2 w-28" />
+          <tr className="border-b border-[#E5E0D8]">
+            <th className="text-left text-xs text-gray-400 py-3 px-2 w-28" />
             {listings.map((l) => (
               <th key={l.id} className="text-center py-3 px-2">
                 <div className="flex flex-col items-center gap-1">
-                  <div className="w-10 h-10 rounded-lg bg-zinc-800 overflow-hidden">
+                  <div className="w-10 h-10 rounded-lg bg-[#F3F0EB] overflow-hidden">
                     {l.photos.length > 0 ? (
                       <img src={l.photos[0]} alt="" className="w-full h-full object-cover" />
                     ) : (
-                      <div className="w-full h-full flex items-center justify-center text-zinc-600 text-xs">📸</div>
+                      <div className="w-full h-full flex items-center justify-center text-gray-400 text-xs">📸</div>
                     )}
                   </div>
-                  <span className="text-xs text-zinc-300 truncate max-w-[120px]">
+                  <span className="text-xs text-gray-600 truncate max-w-[120px]">
                     {l.address}
                   </span>
-                  <span className="text-[10px] text-zinc-500">
+                  <span className="text-[10px] text-gray-400">
                     {formatPrice(l.price)} · {formatBeds(l.beds)}
                   </span>
                 </div>
@@ -74,8 +74,8 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
           {groups.map((gk) => {
             const g = GROUP_BY_KEY[gk];
             return (
-              <tr key={gk} className="border-b border-zinc-800/50">
-                <td className="text-xs text-zinc-400 py-2.5 px-2">
+              <tr key={gk} className="border-b border-[#E5E0D8]">
+                <td className="text-xs text-gray-500 py-2.5 px-2">
                   {g.icon} {g.label}
                 </td>
                 {listings.map((l) => {
@@ -85,7 +85,7 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
                     <td key={l.id} className="text-center py-2.5 px-2">
                       {score !== null ? (
                         <div className="flex items-center justify-center gap-2">
-                          <div className="w-16 h-1.5 bg-zinc-800 rounded-full overflow-hidden">
+                          <div className="w-16 h-1.5 bg-[#F3F0EB] rounded-full overflow-hidden">
                             <div
                               className={clsx("h-full rounded-full", scoreBg(score))}
                               style={{ width: `${score}%` }}
@@ -97,7 +97,7 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
                           <span className="text-xs">{medalIcon(rank)}</span>
                         </div>
                       ) : (
-                        <span className="text-xs text-zinc-600">—</span>
+                        <span className="text-xs text-gray-400">—</span>
                       )}
                     </td>
                   );
@@ -106,8 +106,8 @@ export default function CompareTable({ listings, groups }: CompareTableProps) {
             );
           })}
           {/* Composite row */}
-          <tr className="border-t-2 border-zinc-700">
-            <td className="text-xs font-semibold text-zinc-300 py-3 px-2 uppercase">
+          <tr className="border-t-2 border-[#E5E0D8]">
+            <td className="text-xs font-semibold text-gray-600 py-3 px-2 uppercase">
               Composite
             </td>
             {listings.map((l) => (

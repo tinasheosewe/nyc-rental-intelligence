@@ -59,9 +59,9 @@ export default function ScanCard({
   return (
     <div
       className={clsx(
-        "relative bg-zinc-900 rounded-xl overflow-hidden cursor-pointer",
-        "border transition-all duration-200 hover:border-zinc-600 hover:shadow-lg",
-        selected ? "border-blue-500 ring-1 ring-blue-500" : "border-zinc-800",
+        "relative bg-white rounded-xl overflow-hidden cursor-pointer",
+        "border transition-all duration-200 hover:border-gray-300 hover:shadow-lg",
+        selected ? "border-amber-400 ring-1 ring-amber-400" : "border-[#E5E0D8]",
       )}
       onClick={onClick}
     >
@@ -78,8 +78,8 @@ export default function ScanCard({
             className={clsx(
               "w-5 h-5 rounded border-2 flex items-center justify-center transition-colors",
               selected
-                ? "bg-blue-500 border-blue-500"
-                : "border-zinc-500 bg-zinc-900/80 backdrop-blur",
+                ? "bg-amber-500 border-amber-500"
+                : "border-gray-300 bg-white/80 backdrop-blur",
             )}
           >
             {selected && (
@@ -92,7 +92,7 @@ export default function ScanCard({
       )}
 
       {/* Thumbnail carousel */}
-      <div className="bg-zinc-800">
+      <div className="bg-gray-100">
         {hasPhoto ? (
           <PhotoCarousel
             photos={listing.photos}
@@ -102,7 +102,7 @@ export default function ScanCard({
             maxDots={5}
           />
         ) : (
-          <div className="aspect-[4/3] w-full flex items-center justify-center text-zinc-700">
+          <div className="aspect-[4/3] w-full flex items-center justify-center text-gray-300">
             <svg className="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
             </svg>
@@ -113,12 +113,12 @@ export default function ScanCard({
       {/* Info */}
       <div className="p-3 space-y-1">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-semibold text-white">
+          <span className="text-sm font-semibold text-gray-900">
             {formatPrice(listing.price)}
           </span>
           <div className="flex items-center gap-1.5">
             {sortLabel && sortScore !== null && (
-              <span className="text-[10px] text-zinc-500 font-medium">
+              <span className="text-[10px] text-gray-400 font-medium">
                 {sortLabel}
               </span>
             )}
@@ -127,18 +127,18 @@ export default function ScanCard({
                 "w-12 h-12 rounded-full flex items-center justify-center text-[9px] font-bold leading-tight text-center ring-1",
                 scoreColor(displayScore),
                 scoreRing(displayScore),
-                "bg-zinc-900",
+                "bg-white",
               )}
             >
               {scoreLabel(displayScore)}
             </div>
           </div>
         </div>
-        <p className="text-xs text-zinc-400">
+        <p className="text-xs text-gray-500">
           {formatBeds(listing.beds)} · {neighborhoodAbbr(listing.neighborhood)}
           {listing.sqft ? ` · ${listing.sqft} sf` : ""}
           {listing.days_on_market != null && (
-            <span className="text-zinc-500"> · {formatDaysOnMarket(listing.days_on_market)}</span>
+            <span className="text-gray-400"> · {formatDaysOnMarket(listing.days_on_market)}</span>
           )}
         </p>
         {listing.data_quality && (
@@ -146,8 +146,8 @@ export default function ScanCard({
             className={clsx(
               "text-[9px] font-medium px-1.5 py-0.5 rounded-full w-fit",
               listing.data_quality === "very_limited"
-                ? "bg-red-500/10 text-red-400"
-                : "bg-yellow-500/10 text-yellow-400",
+                ? "bg-red-50 text-red-500"
+                : "bg-amber-50 text-amber-600",
             )}
           >
             {listing.data_quality === "very_limited" ? "Very limited data" : "Limited data"}

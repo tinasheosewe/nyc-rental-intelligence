@@ -154,7 +154,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               aspect="aspect-[16/9]"
             />
           ) : (
-            <div className="w-full aspect-[16/9] bg-zinc-800 flex items-center justify-center text-zinc-600">
+            <div className="w-full aspect-[16/9] bg-gray-100 flex items-center justify-center text-gray-300">
               <svg className="w-16 h-16" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 22V12h6v10" />
@@ -173,24 +173,24 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {/* Address + price */}
           <div className="flex items-start justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-white">
+              <h2 className="text-xl font-semibold text-gray-900">
                 {formatPrice(listing.price)}/mo
               </h2>
-              <p className="text-sm text-zinc-400">
+              <p className="text-sm text-gray-500">
                 {formatBeds(listing.beds)} · {formatBaths(listing.baths)}
                 {listing.sqft ? ` · ${listing.sqft} sqft` : ""}
                 {listing.sqft && listing.price
                   ? ` · $${(listing.price / listing.sqft).toFixed(2)}/sqft`
                   : ""}
               </p>
-              <p className="text-sm text-zinc-500 mt-0.5">
+              <p className="text-sm text-gray-600 mt-0.5">
                 {listing.address}
                 {listing.unit ? `, ${listing.unit}` : ""}
               </p>
-              <p className="text-xs text-zinc-600 mt-0.5">
+              <p className="text-xs text-gray-400 mt-0.5">
                 {listing.neighborhood}, {listing.borough}
                 {listing.days_on_market != null && (
-                  <span className="ml-2 text-zinc-500">
+                  <span className="ml-2 text-gray-400">
                     · {formatDaysOnMarket(listing.days_on_market)}
                   </span>
                 )}
@@ -203,15 +203,15 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                   className={clsx(
                     "text-[10px] font-medium px-2 py-0.5 rounded-full",
                     listing.data_quality === "very_limited"
-                      ? "bg-red-500/10 text-red-400"
-                      : "bg-yellow-500/10 text-yellow-400",
+                      ? "bg-red-50 text-red-500"
+                      : "bg-amber-50 text-amber-600",
                   )}
                 >
                   {listing.data_quality === "very_limited" ? "Very limited data" : "Limited data"}
                 </span>
               )}
               {sortLabel && sortScore !== null && (
-                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-300">
+                <span className="text-xs font-medium px-2 py-0.5 rounded-full bg-[#F3F0EB] text-gray-600">
                   {sortLabel}{" "}
                   <span className={scoreColor(sortScore)}>
                     {scoreLabel(sortScore)}
@@ -240,7 +240,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               );
             })}
             {listing.scores.rent_stabilized && (
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500/20 text-blue-400">
+              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-sky-50 text-sky-600">
                 Rent Stabilized
               </span>
             )}
@@ -250,7 +250,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           <div className="flex items-center gap-3">
             <button
               onClick={handleSkip}
-              className="flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-400 font-medium text-sm hover:bg-zinc-700 transition-colors"
+              className="flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-500 font-medium text-sm hover:bg-gray-200 transition-colors"
             >
               Skip
             </button>
@@ -259,8 +259,8 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               disabled={inWatchlist || inShortlist}
               className={
                 inWatchlist || inShortlist
-                  ? "flex-1 py-2.5 rounded-xl bg-zinc-800 text-zinc-600 font-medium text-sm cursor-not-allowed"
-                  : "flex-1 py-2.5 rounded-xl bg-white text-zinc-900 font-medium text-sm hover:bg-zinc-200 transition-colors"
+                  ? "flex-1 py-2.5 rounded-xl bg-gray-100 text-gray-400 font-medium text-sm cursor-not-allowed"
+                  : "flex-1 py-2.5 rounded-xl bg-amber-500 text-white font-medium text-sm hover:bg-amber-600 transition-colors"
               }
             >
               {inWatchlist ? "In Watchlist" : inShortlist ? "In Shortlist" : "Save"}
@@ -268,7 +268,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             {!inShortlist && (
               <button
                 onClick={() => addToShortlist(listing)}
-                className="p-2.5 rounded-xl bg-zinc-800 text-yellow-400 hover:bg-zinc-700 transition-colors"
+                className="p-2.5 rounded-xl bg-amber-50 text-amber-600 hover:bg-amber-100 transition-colors"
                 title="Add to Shortlist"
               >
                 ★
@@ -277,11 +277,11 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           </div>
 
           {/* Divider */}
-          <div className="border-t border-zinc-800" />
+          <div className="border-t border-[#E5E0D8]" />
 
           {/* Grouped score breakdown */}
           <div className="space-y-1">
-            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider mb-2">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
               Score Breakdown
             </h3>
             {orderedGroups.map((group) => {
@@ -290,27 +290,27 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               const isExpanded = expandedGroups.has(group.key);
 
               return (
-                <div key={group.key} className="rounded-lg border border-zinc-800/50 overflow-hidden">
+                <div key={group.key} className="rounded-lg border border-[#E5E0D8] overflow-hidden">
                   {/* Group header — always visible */}
                   <button
                     onClick={() => toggleGroup(group.key)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-zinc-800/50 transition-colors"
+                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#F3F0EB] transition-colors"
                   >
                     <span className="text-base">{group.icon}</span>
-                    <span className="flex-1 text-left text-sm font-medium text-zinc-300">
+                    <span className="flex-1 text-left text-sm font-medium text-gray-600">
                       {group.label}
                     </span>
                     <span className={clsx("text-sm font-bold", scoreColor(gs))}>
                       {scoreLabel(gs)}
                     </span>
-                    <span className="text-xs text-zinc-600 w-4 text-center select-none">
+                    <span className="text-xs text-gray-400 w-4 text-center select-none">
                       {isExpanded ? "▾" : "▸"}
                     </span>
                   </button>
 
                   {/* Expanded: individual dimension bars */}
                   {isExpanded && (
-                    <div className="px-3 pb-3 pt-1 space-y-2 border-t border-zinc-800/50">
+                    <div className="px-3 pb-3 pt-1 space-y-2 border-t border-[#E5E0D8]">
                       {group.dimensions.map((dim) => {
                         const score = getScore(
                           listing.scores as unknown as Record<string, number | boolean | null>,
@@ -343,12 +343,12 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           </div>
 
           {/* Divider */}
-          <div className="border-t border-zinc-800" />
+          <div className="border-t border-[#E5E0D8]" />
 
           {/* Insights / Flags */}
           {listing.flags.length > 0 && (
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+              <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                 Insights
               </h3>
               <FlagList flags={listing.flags} />
@@ -356,16 +356,16 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           )}
 
           {/* Divider */}
-          <div className="border-t border-zinc-800" />
+          <div className="border-t border-[#E5E0D8]" />
 
           {/* ── Pet Policy ──────────────────────────────────── */}
           {l.pet_policy && (
             <>
               <div className="flex items-center gap-2">
                 <span className="text-base">🐾</span>
-                <span className="text-sm text-zinc-300">{l.pet_policy}</span>
+                <span className="text-sm text-gray-600">{l.pet_policy}</span>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -373,7 +373,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {l.transit_stations && l.transit_stations.length > 0 && (
             <>
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   🚇 Nearby Transit
                 </h3>
                 <div className="space-y-2">
@@ -390,10 +390,10 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                           </span>
                         ))}
                       </div>
-                      <span className="text-sm text-zinc-300 flex-1 truncate">
+                      <span className="text-sm text-gray-600 flex-1 truncate">
                         {station.name}
                       </span>
-                      <span className="text-xs text-zinc-500 shrink-0">
+                      <span className="text-xs text-gray-400 shrink-0">
                         {station.distance_m < 200
                           ? "< 200m"
                           : station.distance_m < 1000
@@ -404,7 +404,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                   ))}
                 </div>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -412,22 +412,22 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {l.nearby_pois && l.nearby_pois.length > 0 && (
             <>
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   📍 Explore {l.neighborhood}
                 </h3>
                 <div className="space-y-1.5">
                   {l.nearby_pois.map((p, i) => (
                     <div key={i} className="flex items-center gap-2 text-sm">
                       <span className="shrink-0">{poiIcon(p.category)}</span>
-                      <span className="text-zinc-300 flex-1">{p.name}</span>
-                      <span className="text-xs text-zinc-500 shrink-0">
+                      <span className="text-gray-600 flex-1">{p.name}</span>
+                      <span className="text-xs text-gray-400 shrink-0">
                         {p.distance_m === 0 ? "nearby" : p.distance_m < 1000 ? `${p.distance_m}m` : `${(p.distance_m / 1609).toFixed(1)} mi`}
                       </span>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -435,14 +435,14 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {listing.description && (
             <>
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Description
                 </h3>
-                <p className="text-sm text-zinc-400 whitespace-pre-line leading-relaxed">
+                <p className="text-sm text-gray-500 whitespace-pre-line leading-relaxed">
                   {listing.description}
                 </p>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -470,19 +470,19 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
               return (
                 <>
                   <div className="space-y-3">
-                    <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                    <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                       Amenities
                     </h3>
                     {sections.map((section) => (
                       <div key={section.key} className="space-y-1">
-                        <p className="text-xs text-zinc-500 font-medium">
+                        <p className="text-xs text-gray-400 font-medium">
                           {section.icon} {section.label}
                         </p>
                         <div className="flex flex-wrap gap-1.5">
                           {section.items.map((a, i) => (
                             <span
                               key={i}
-                              className="px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700"
+                              className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#F3F0EB] text-gray-600 border border-[#E5E0D8]"
                             >
                               {a}
                             </span>
@@ -492,12 +492,12 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                     ))}
                     {uncategorized.length > 0 && (
                       <div className="space-y-1">
-                        <p className="text-xs text-zinc-500 font-medium">Other</p>
+                        <p className="text-xs text-gray-400 font-medium">Other</p>
                         <div className="flex flex-wrap gap-1.5">
                           {uncategorized.map((a, i) => (
                             <span
                               key={i}
-                              className="px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700"
+                              className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#F3F0EB] text-gray-600 border border-[#E5E0D8]"
                             >
                               {a}
                             </span>
@@ -506,7 +506,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                       </div>
                     )}
                   </div>
-                  <div className="border-t border-zinc-800" />
+                  <div className="border-t border-[#E5E0D8]" />
                 </>
               );
             })()
@@ -522,21 +522,21 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           )) && listing.amenities && listing.amenities.length > 0 && (
             <>
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Amenities
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
                   {listing.amenities.map((a, i) => (
                     <span
                       key={i}
-                      className="px-2 py-0.5 rounded-full text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700"
+                      className="px-2 py-0.5 rounded-full text-xs font-medium bg-[#F3F0EB] text-gray-600 border border-[#E5E0D8]"
                     >
                       {a}
                     </span>
                   ))}
                 </div>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -545,7 +545,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
             <>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                     Price History
                   </h3>
                   {listing.relist_count > 1 && (
@@ -560,80 +560,80 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                       key={i}
                       className="flex items-center justify-between text-sm"
                     >
-                      <span className="text-zinc-500">{ph.date}</span>
-                      <span className="text-zinc-400 font-medium">{ph.price}</span>
-                      <span className="text-zinc-500 text-xs truncate max-w-[140px]">{ph.event}</span>
+                      <span className="text-gray-400">{ph.date}</span>
+                      <span className="text-gray-500 font-medium">{ph.price}</span>
+                      <span className="text-gray-400 text-xs truncate max-w-[140px]">{ph.event}</span>
                     </div>
                   ))}
                 </div>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
           {/* ── About the Building ──────────────────────────── */}
           <div className="space-y-2">
-            <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
               🏢 About the Building
             </h3>
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               {listing.building.owner && (
                 <>
-                  <dt className="text-zinc-500">Owner</dt>
-                  <dd className="text-zinc-300">{listing.building.owner}</dd>
+                  <dt className="text-gray-400">Owner</dt>
+                  <dd className="text-gray-600">{listing.building.owner}</dd>
                 </>
               )}
               {listing.building.year_built && (
                 <>
-                  <dt className="text-zinc-500">Year Built</dt>
-                  <dd className="text-zinc-300">{listing.building.year_built}</dd>
+                  <dt className="text-gray-400">Year Built</dt>
+                  <dd className="text-gray-600">{listing.building.year_built}</dd>
                 </>
               )}
               {listing.building.total_units != null && listing.building.total_units > 0 && (
                 <>
-                  <dt className="text-zinc-500">Units</dt>
-                  <dd className="text-zinc-300">{listing.building.total_units}</dd>
+                  <dt className="text-gray-400">Units</dt>
+                  <dd className="text-gray-600">{listing.building.total_units}</dd>
                 </>
               )}
               {listing.building.stories != null && listing.building.stories > 0 && (
                 <>
-                  <dt className="text-zinc-500">Stories</dt>
-                  <dd className="text-zinc-300">{listing.building.stories}</dd>
+                  <dt className="text-gray-400">Stories</dt>
+                  <dd className="text-gray-600">{listing.building.stories}</dd>
                 </>
               )}
-              <dt className="text-zinc-500">Building Violations</dt>
-              <dd className="text-zinc-300">{listing.building.open_violations} open</dd>
-              <dt className="text-zinc-500">HPD Complaints</dt>
-              <dd className="text-zinc-300">{listing.building.hpd_complaints_12mo} (12mo)</dd>
+              <dt className="text-gray-400">Building Violations</dt>
+              <dd className="text-gray-600">{listing.building.open_violations} open</dd>
+              <dt className="text-gray-400">HPD Complaints</dt>
+              <dd className="text-gray-600">{listing.building.hpd_complaints_12mo} (12mo)</dd>
             </dl>
           </div>
 
-          <div className="border-t border-zinc-800" />
+          <div className="border-t border-[#E5E0D8]" />
 
           {/* ── About the Neighborhood ──────────────────────── */}
           {l.neighborhood_info?.description && (
             <>
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   About {l.neighborhood}
                 </h3>
-                <p className="text-sm text-zinc-400 leading-relaxed">
+                <p className="text-sm text-gray-500 leading-relaxed">
                   {l.neighborhood_info.description}
                 </p>
                 {(l.neighborhood_info.median_rent_1br || l.neighborhood_info.median_rent_2br) && (
                   <div className="flex gap-4 mt-1">
                     {l.neighborhood_info.median_rent_1br && (
                       <div>
-                        <p className="text-[10px] text-zinc-500 uppercase">Median 1BR Rent</p>
-                        <p className="text-sm font-medium text-zinc-300">
+                        <p className="text-[10px] text-gray-400 uppercase">Median 1BR Rent</p>
+                        <p className="text-sm font-medium text-gray-600">
                           {formatPrice(l.neighborhood_info.median_rent_1br)}
                         </p>
                       </div>
                     )}
                     {l.neighborhood_info.median_rent_2br && (
                       <div>
-                        <p className="text-[10px] text-zinc-500 uppercase">Median 2BR Rent</p>
-                        <p className="text-sm font-medium text-zinc-300">
+                        <p className="text-[10px] text-gray-400 uppercase">Median 2BR Rent</p>
+                        <p className="text-sm font-medium text-gray-600">
                           {formatPrice(l.neighborhood_info.median_rent_2br)}
                         </p>
                       </div>
@@ -641,7 +641,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                   </div>
                 )}
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -649,21 +649,21 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {l.nearby_neighborhoods && l.nearby_neighborhoods.length > 0 && (
             <>
               <div className="space-y-2">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Nearby Neighborhoods
                 </h3>
                 <div className="flex flex-wrap gap-1.5">
                   {l.nearby_neighborhoods.map((n, i) => (
                     <span
                       key={i}
-                      className="px-2.5 py-1 rounded-full text-xs font-medium bg-zinc-800 text-zinc-300 border border-zinc-700"
+                      className="px-2.5 py-1 rounded-full text-xs font-medium bg-[#F3F0EB] text-gray-600 border border-[#E5E0D8]"
                     >
                       {n}
                     </span>
                   ))}
                 </div>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -671,7 +671,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {l.similar && l.similar.length > 0 && (
             <>
               <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Similar Listings
                 </h3>
                 <div className="space-y-2">
@@ -680,7 +680,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                   ))}
                 </div>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -688,10 +688,10 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
           {l.also_consider && l.also_consider.length > 0 && (
             <>
               <div className="space-y-3">
-                <h3 className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">
+                <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
                   Also Consider
                 </h3>
-                <p className="text-xs text-zinc-500">
+                <p className="text-xs text-gray-400">
                   Similar profile but stronger in one area
                 </p>
                 <div className="space-y-2">
@@ -700,7 +700,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                   ))}
                 </div>
               </div>
-              <div className="border-t border-zinc-800" />
+              <div className="border-t border-[#E5E0D8]" />
             </>
           )}
 
@@ -711,7 +711,7 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
                 href={listing.url}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block text-center text-sm font-medium text-blue-400 hover:text-blue-300 py-2"
+                className="block text-center text-sm font-medium text-amber-600 hover:text-amber-500 py-2"
               >
                 View listing →
               </a>
@@ -731,7 +731,7 @@ function ComparableCard({ comp }: { comp: ComparableListing }) {
   const addToWatchlist = useStore((s) => s.addToWatchlist);
 
   return (
-    <div className="flex items-center gap-3 p-2 rounded-lg bg-zinc-800/50 border border-zinc-800">
+    <div className="flex items-center gap-3 p-2 rounded-lg bg-[#F3F0EB] border border-[#E5E0D8]">
       {/* Photo */}
       {comp.photo ? (
         <img
@@ -740,33 +740,33 @@ function ComparableCard({ comp }: { comp: ComparableListing }) {
           className="w-14 h-14 rounded-lg object-cover shrink-0"
         />
       ) : (
-        <div className="w-14 h-14 rounded-lg bg-zinc-700 flex items-center justify-center shrink-0">
-          <svg className="w-6 h-6 text-zinc-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="w-14 h-14 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
+          <svg className="w-6 h-6 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M3 9l9-7 9 7v11a2 2 0 01-2 2H5a2 2 0 01-2-2V9z" />
           </svg>
         </div>
       )}
       {/* Info */}
       <div className="flex-1 min-w-0">
-        <p className="text-sm font-medium text-zinc-200 truncate">
+        <p className="text-sm font-medium text-gray-700 truncate">
           {formatPrice(comp.price)}/mo
           {comp.better_in && (
             <span className={clsx(
               "ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full",
-              "bg-blue-500/20 text-blue-400"
+              "bg-sky-50 text-sky-600"
             )}>
               {groupIcon(comp.better_in)} Better {GROUP_LABELS[comp.better_in as ScoreGroupKey] ?? comp.better_in}
             </span>
           )}
         </p>
-        <p className="text-xs text-zinc-400 truncate">
+        <p className="text-xs text-gray-500 truncate">
           {comp.address}{comp.unit ? `, ${comp.unit}` : ""}
         </p>
-        <p className="text-xs text-zinc-500">
+        <p className="text-xs text-gray-400">
           {formatBeds(comp.beds)} · {comp.neighborhood}
           {comp.sqft ? ` · ${comp.sqft} sqft` : ""}
           {comp.distance_km != null && (
-            <span className="ml-1 text-zinc-600">
+            <span className="ml-1 text-gray-400">
               · {comp.distance_km < 0.2
                 ? "< 0.1 mi"
                 : `${(comp.distance_km * 0.6214).toFixed(1)} mi`}

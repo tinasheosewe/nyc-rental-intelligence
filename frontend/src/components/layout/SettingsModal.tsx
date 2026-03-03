@@ -23,7 +23,7 @@ function weightIndicator(index: number): string {
 function weightColor(index: number): string {
   if (index < 2) return "text-green-400";
   if (index < 3) return "text-yellow-400";
-  return "text-zinc-600";
+  return "text-gray-400";
 }
 
 export default function SettingsModal() {
@@ -80,15 +80,15 @@ export default function SettingsModal() {
             animate={{ x: 0 }}
             exit={{ x: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-zinc-900 border-l border-zinc-800 overflow-y-auto"
+            className="fixed right-0 top-0 bottom-0 z-50 w-full max-w-md bg-white border-l border-[#E5E0D8] overflow-y-auto"
           >
             <div className="px-5 py-4 space-y-6">
               {/* Header */}
               <div className="flex items-center justify-between">
-                <h2 className="text-lg font-semibold text-white">Preferences</h2>
+                <h2 className="text-lg font-semibold text-gray-900">Preferences</h2>
                 <button
                   onClick={() => setSettingsOpen(false)}
-                  className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800"
+                  className="p-1.5 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-[#F3F0EB]"
                 >
                   <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -99,10 +99,10 @@ export default function SettingsModal() {
               {/* Priority ranking */}
               <div className="space-y-3">
                 <div>
-                  <h3 className="text-sm font-medium text-zinc-300">
+                  <h3 className="text-sm font-medium text-gray-600">
                     Priority Ranking
                   </h3>
-                  <p className="text-xs text-zinc-500 mt-0.5">
+                  <p className="text-xs text-gray-400 mt-0.5">
                     Reorder categories. Top 2 get 3× weight in composite score.
                   </p>
                 </div>
@@ -119,11 +119,11 @@ export default function SettingsModal() {
                             ? "border-green-500/30 bg-green-500/5"
                             : idx < 3
                               ? "border-yellow-500/20 bg-yellow-500/5"
-                              : "border-zinc-800 bg-zinc-800/50",
+                              : "border-[#E5E0D8] bg-[#F3F0EB]",
                         )}
                       >
                         {/* Rank number */}
-                        <span className="text-xs text-zinc-600 w-4 text-right font-mono">
+                        <span className="text-xs text-gray-400 w-4 text-right font-mono">
                           {idx + 1}
                         </span>
 
@@ -132,10 +132,10 @@ export default function SettingsModal() {
 
                         {/* Label + description */}
                         <div className="flex-1 min-w-0">
-                          <span className="text-sm text-zinc-300 font-medium">
+                          <span className="text-sm text-gray-600 font-medium">
                             {group.label}
                           </span>
-                          <p className="text-xs text-zinc-600 truncate">
+                          <p className="text-xs text-gray-400 truncate">
                             {group.description}
                           </p>
                         </div>
@@ -153,8 +153,8 @@ export default function SettingsModal() {
                             className={clsx(
                               "text-xs leading-none px-1",
                               idx === 0
-                                ? "text-zinc-700 cursor-not-allowed"
-                                : "text-zinc-400 hover:text-white",
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-gray-500 hover:text-gray-900",
                             )}
                           >
                             ▲
@@ -165,8 +165,8 @@ export default function SettingsModal() {
                             className={clsx(
                               "text-xs leading-none px-1",
                               idx === draft.length - 1
-                                ? "text-zinc-700 cursor-not-allowed"
-                                : "text-zinc-400 hover:text-white",
+                                ? "text-gray-300 cursor-not-allowed"
+                                : "text-gray-500 hover:text-gray-900",
                             )}
                           >
                             ▼
@@ -181,10 +181,10 @@ export default function SettingsModal() {
               {/* Kids mode toggle */}
               <div className="space-y-3">
                 <div>
-                  <h3 className="text-sm font-medium text-zinc-300">
+                  <h3 className="text-sm font-medium text-gray-600">
                     Kids Mode
                   </h3>
-                  <p className="text-xs text-zinc-500 mt-0.5">
+                  <p className="text-xs text-gray-400 mt-0.5">
                     Include school proximity scores in rankings.
                   </p>
                 </div>
@@ -193,7 +193,7 @@ export default function SettingsModal() {
                   onClick={() => setKidsMode(!kidsMode)}
                   className={clsx(
                     "relative inline-flex h-7 w-12 items-center rounded-full transition-colors",
-                    kidsMode ? "bg-green-500" : "bg-zinc-700",
+                    kidsMode ? "bg-green-500" : "bg-gray-200",
                   )}
                 >
                   <span
@@ -208,7 +208,7 @@ export default function SettingsModal() {
               {/* Save */}
               <button
                 onClick={handleSave}
-                className="w-full py-2.5 rounded-xl text-sm font-medium text-zinc-900 bg-white hover:bg-zinc-200 transition-colors"
+                className="w-full py-2.5 rounded-xl text-sm font-medium text-gray-900 bg-white hover:bg-gray-100 transition-colors"
               >
                 Save Preferences
               </button>

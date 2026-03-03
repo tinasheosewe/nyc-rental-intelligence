@@ -5,35 +5,15 @@
 import type { ScoreDimension, ScoreGroupKey, Scores } from "./types";
 import { GROUP_BY_KEY, getEffectiveGroupByKey, DIMENSION_TIER_LABELS } from "./types";
 
-// ── Score color coding ─────────────────────────────────────────
-
-export function scoreColor(score: number): string {
-  if (score >= 75) return "text-green-400";
-  if (score >= 50) return "text-yellow-400";
-  if (score >= 25) return "text-orange-400";
-  return "text-red-400";
-}
-
-export function scoreBg(score: number): string {
-  if (score >= 75) return "bg-green-500";
-  if (score >= 50) return "bg-yellow-500";
-  if (score >= 25) return "bg-orange-500";
-  return "bg-red-500";
-}
-
-export function scoreBgMuted(score: number): string {
-  if (score >= 75) return "bg-green-500/20";
-  if (score >= 50) return "bg-yellow-500/20";
-  if (score >= 25) return "bg-orange-500/20";
-  return "bg-red-500/20";
-}
-
-export function scoreRing(score: number): string {
-  if (score >= 75) return "ring-green-500";
-  if (score >= 50) return "ring-yellow-500";
-  if (score >= 25) return "ring-orange-500";
-  return "ring-red-500";
-}
+// Re-export score color functions from theme (single source of truth)
+export {
+  scoreColor,
+  scoreBg,
+  scoreBgMuted,
+  scoreRing,
+  scoreHex,
+  trendColor,
+} from "./theme";
 
 // ── Score labels ───────────────────────────────────────────────
 
@@ -82,12 +62,6 @@ export function trendArrow(direction: string): string {
   if (direction === "improving") return "↓";
   if (direction === "worsening") return "↑";
   return "";
-}
-
-export function trendColor(direction: string): string {
-  if (direction === "improving") return "text-green-400";
-  if (direction === "worsening") return "text-red-400";
-  return "text-zinc-500";
 }
 
 // ── Medal icons for compare ────────────────────────────────────

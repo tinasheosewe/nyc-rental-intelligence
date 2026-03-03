@@ -38,10 +38,10 @@ interface PinCluster {
 }
 
 function pinColor(score: number): string {
-  if (score >= 75) return "#22c55e";
-  if (score >= 50) return "#eab308";
-  if (score >= 25) return "#f97316";
-  return "#ef4444";
+  if (score >= 75) return "#0EA5E9";
+  if (score >= 50) return "#8B5CF6";
+  if (score >= 25) return "#F97316";
+  return "#EF4444";
 }
 
 /** Group listings by rounded coordinates (~11 m precision) */
@@ -153,7 +153,7 @@ export default function MapContent({
   return (
     <>
       <TileLayer
-        url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+        url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
         attribution='&copy; <a href="https://carto.com/">CARTO</a>'
       />
       <ZoomControl position="topright" />
@@ -232,7 +232,7 @@ export default function MapContent({
               direction="top"
               offset={[0, -14]}
               permanent
-              className="!bg-zinc-900 !text-white !border-zinc-700 !rounded-lg !text-[10px] !px-2 !py-1 !shadow-lg"
+              className="!bg-white !text-gray-800 !border-[#E5E0D8] !rounded-lg !text-[10px] !px-2 !py-1 !shadow-lg"
             >
               {listing.address.split(",")[0]} ·{" "}
               {scoreLabel(listing.scores.composite)}
@@ -264,23 +264,23 @@ function PinPopup({
 }) {
   return (
     <div className="text-xs space-y-1 min-w-[160px]">
-      <p className="font-semibold text-zinc-900">{listing.address}</p>
-      <p className="text-zinc-600">
+      <p className="font-semibold text-gray-900">{listing.address}</p>
+      <p className="text-gray-500">
         {formatPrice(listing.price)} · {formatBeds(listing.beds)}
       </p>
-      <p className="text-zinc-600">
+      <p className="text-gray-500">
         Score: {scoreLabel(listing.scores.composite)}
       </p>
       <div className="flex gap-1 pt-1">
         <button
           onClick={() => addToWatchlist(listing)}
-          className="text-[10px] px-2 py-0.5 bg-zinc-100 rounded hover:bg-zinc-200"
+          className="text-[10px] px-2 py-0.5 bg-[#F3F0EB] rounded hover:bg-[#E5E0D8]"
         >
           + Watchlist
         </button>
         <button
           onClick={() => addToShortlist(listing)}
-          className="text-[10px] px-2 py-0.5 bg-zinc-100 rounded hover:bg-zinc-200"
+          className="text-[10px] px-2 py-0.5 bg-[#F3F0EB] rounded hover:bg-[#E5E0D8]"
         >
           ★ Shortlist
         </button>
@@ -301,30 +301,30 @@ function ClusterPopup({
 }) {
   return (
     <div className="text-xs min-w-[180px] max-w-[220px]">
-      <p className="font-semibold text-zinc-700 mb-2">
+      <p className="font-semibold text-gray-600 mb-2">
         {cluster.listings.length} apartments here
       </p>
       <div className="space-y-2 max-h-[200px] overflow-y-auto pr-1">
         {cluster.listings.map((listing) => (
           <div
             key={listing.id}
-            className="border-t border-zinc-200 pt-1.5 first:border-0 first:pt-0"
+            className="border-t border-[#E5E0D8] pt-1.5 first:border-0 first:pt-0"
           >
-            <p className="font-medium text-zinc-900">{listing.address}</p>
-            <p className="text-zinc-500">
+            <p className="font-medium text-gray-900">{listing.address}</p>
+            <p className="text-gray-400">
               {formatPrice(listing.price)} · {formatBeds(listing.beds)} ·{" "}
               {scoreLabel(listing.scores.composite)}
             </p>
             <div className="flex gap-1 pt-0.5">
               <button
                 onClick={() => addToWatchlist(listing)}
-                className="text-[10px] px-1.5 py-0.5 bg-zinc-100 rounded hover:bg-zinc-200"
+                className="text-[10px] px-1.5 py-0.5 bg-[#F3F0EB] rounded hover:bg-[#E5E0D8]"
               >
                 + Watch
               </button>
               <button
                 onClick={() => addToShortlist(listing)}
-                className="text-[10px] px-1.5 py-0.5 bg-zinc-100 rounded hover:bg-zinc-200"
+                className="text-[10px] px-1.5 py-0.5 bg-[#F3F0EB] rounded hover:bg-[#E5E0D8]"
               >
                 ★ Short
               </button>

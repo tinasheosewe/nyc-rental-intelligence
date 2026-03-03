@@ -63,17 +63,17 @@ export default function QueueView({ listings, queueType }: QueueViewProps) {
     return (
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Back bar */}
-        <div className="flex items-center justify-between px-4 py-2 border-b border-zinc-800">
+        <div className="flex items-center justify-between px-4 py-2 border-b border-[#E5E0D8]">
           <button
             onClick={() => setExpandedId(null)}
-            className="text-sm text-zinc-400 hover:text-white flex items-center gap-1"
+            className="text-sm text-gray-500 hover:text-gray-900 flex items-center gap-1"
           >
             ← Back to {queueType === "watchlist" ? "Watchlist" : "Shortlist"}
           </button>
           <div className="flex items-center gap-2">
             <button
               onClick={() => handleMove(listing.id)}
-              className="text-xs px-3 py-1.5 rounded-lg bg-zinc-800 text-zinc-300 hover:bg-zinc-700"
+              className="text-xs px-3 py-1.5 rounded-lg bg-[#F3F0EB] text-gray-600 hover:bg-gray-200"
             >
               Move to {queueType === "watchlist" ? "Shortlist" : "Watchlist"}
             </button>
@@ -96,7 +96,7 @@ export default function QueueView({ listings, queueType }: QueueViewProps) {
   // Empty state
   if (listings.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 gap-3">
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">
         <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
         </svg>
@@ -113,8 +113,8 @@ export default function QueueView({ listings, queueType }: QueueViewProps) {
     <div className="flex-1 flex flex-col overflow-hidden">
       {/* Batch toolbar */}
       {selectedCount > 0 && (
-        <div className="flex items-center justify-between px-4 py-2 bg-zinc-900 border-b border-zinc-800">
-          <span className="text-sm text-zinc-400">
+        <div className="flex items-center justify-between px-4 py-2 bg-white border-b border-[#E5E0D8]">
+          <span className="text-sm text-gray-500">
             {selectedCount} selected
           </span>
           <div className="flex items-center gap-2">
@@ -124,8 +124,8 @@ export default function QueueView({ listings, queueType }: QueueViewProps) {
               className={clsx(
                 "text-xs px-3 py-1.5 rounded-lg font-medium",
                 selectedCount >= 2
-                  ? "bg-white text-zinc-900 hover:bg-zinc-200"
-                  : "bg-zinc-800 text-zinc-600 cursor-not-allowed",
+                  ? "bg-white text-gray-900 hover:bg-gray-100"
+                  : "bg-[#F3F0EB] text-gray-400 cursor-not-allowed",
               )}
             >
               Compare ({selectedCount})

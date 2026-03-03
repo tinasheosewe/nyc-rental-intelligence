@@ -112,11 +112,11 @@ export default function MapOverlay() {
   if (!mapOpen || !mounted) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-zinc-950">
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F2]">
       {/* Close button */}
       <button
         onClick={() => setMapOpen(false)}
-        className="absolute top-4 left-4 z-[1000] p-2 rounded-lg bg-zinc-900/80 backdrop-blur text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors shadow-lg"
+        className="absolute top-4 left-4 z-[1000] p-2 rounded-lg bg-white/80 backdrop-blur text-gray-500 hover:text-gray-800 hover:bg-white transition-colors shadow-lg"
         title="Close map"
       >
         <svg
@@ -136,7 +136,7 @@ export default function MapOverlay() {
 
       {/* Context badge */}
       {highlightIds.size > 0 && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] px-3 py-1.5 rounded-lg bg-zinc-900/80 backdrop-blur text-xs text-zinc-300 shadow-lg">
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[1000] px-3 py-1.5 rounded-lg bg-white/90 backdrop-blur text-xs text-gray-600 shadow-lg">
           {compareOpen
             ? `Comparing ${highlightIds.size} listings`
             : "Viewing listing"}
@@ -147,8 +147,8 @@ export default function MapOverlay() {
       {!tilesReady && (
         <div className="absolute inset-0 z-[999] flex items-center justify-center pointer-events-none">
           <div className="flex flex-col items-center gap-3">
-            <div className="w-8 h-8 border-2 border-zinc-700 border-t-zinc-400 rounded-full animate-spin" />
-            <span className="text-xs text-zinc-500">Loading map…</span>
+            <div className="w-8 h-8 border-2 border-gray-200 border-t-amber-500 rounded-full animate-spin" />
+            <span className="text-xs text-gray-400">Loading map…</span>
           </div>
         </div>
       )}
@@ -161,7 +161,7 @@ export default function MapOverlay() {
           zoomControl={false}
           preferCanvas
           className="w-full h-full"
-          style={{ background: "#18181b" }}
+          style={{ background: "#F3F4F6" }}
         >
           <MapContent
             listings={displayListings}

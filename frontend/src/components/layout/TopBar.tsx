@@ -1,10 +1,9 @@
 /**
  * TopBar — Global navigation bar.
  *
- * Contains:
- *   - Logo
- *   - Queue tabs (Explore / Watchlist / Shortlist)
- *   - Action icons (Filter, Settings, Map, View toggle)
+ * Warm cream theme with amber accent.
+ * Desktop: logo + action icons (tabs moved to ListPanel).
+ * Mobile: logo + tabs (pill nav) + action icons.
  */
 
 "use client";
@@ -38,17 +37,18 @@ export default function TopBar() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-zinc-950/90 backdrop-blur-md border-b border-zinc-800">
+    <header className="sticky top-0 z-50 bg-white/90 backdrop-blur-md border-b border-[#E5E0D8]">
       <div className="flex items-center justify-between h-14 px-4 max-w-7xl mx-auto">
         {/* Logo */}
-        <div className="flex items-center gap-2 shrink-0">
-          <span className="text-lg font-bold tracking-tight text-white">
-            🏠 AptHunt
+        <div className="flex items-center gap-1.5 shrink-0">
+          <span className="text-lg font-bold tracking-tight text-gray-900">
+            RESIDE
           </span>
+          <span className="w-2 h-2 rounded-full bg-amber-500 -mt-2" />
         </div>
 
-        {/* Queue tabs */}
-        <nav className="flex items-center gap-1 bg-zinc-900 rounded-full p-1">
+        {/* Mobile-only: Queue tabs */}
+        <nav className="flex items-center gap-1 bg-[#F3F0EB] rounded-full p-1 lg:hidden">
           {TABS.map(({ key, label }) => (
             <button
               key={key}
@@ -56,13 +56,13 @@ export default function TopBar() {
               className={clsx(
                 "px-4 py-1.5 rounded-full text-sm font-medium transition-all duration-200",
                 activeTab === key
-                  ? "bg-zinc-700 text-white shadow-sm"
-                  : "text-zinc-400 hover:text-zinc-200",
+                  ? "bg-white text-gray-900 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700",
               )}
             >
               {label}
               {counts[key] > 0 && (
-                <span className="ml-1.5 text-xs text-zinc-500">
+                <span className="ml-1.5 text-xs text-gray-400">
                   {counts[key]}
                 </span>
               )}
@@ -75,7 +75,7 @@ export default function TopBar() {
           {/* Filter */}
           <button
             onClick={() => setFilterSheetOpen(true)}
-            className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-[#F3F0EB] transition-colors"
             title="Filters"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -86,7 +86,7 @@ export default function TopBar() {
           {/* Settings */}
           <button
             onClick={() => setSettingsOpen(true)}
-            className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+            className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-[#F3F0EB] transition-colors"
             title="Preferences"
           >
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -95,14 +95,14 @@ export default function TopBar() {
             </svg>
           </button>
 
-          {/* Map toggle */}
+          {/* Map toggle — mobile only */}
           <button
             onClick={() => setMapOpen(!mapOpen)}
             className={clsx(
-              "p-2 rounded-lg transition-colors",
+              "p-2 rounded-lg transition-colors lg:hidden",
               mapOpen
-                ? "text-blue-400 bg-blue-500/10"
-                : "text-zinc-400 hover:text-white hover:bg-zinc-800",
+                ? "text-amber-600 bg-amber-500/10"
+                : "text-gray-400 hover:text-gray-700 hover:bg-[#F3F0EB]",
             )}
             title="Map overlay"
           >
@@ -111,11 +111,11 @@ export default function TopBar() {
             </svg>
           </button>
 
-          {/* View toggle (explore only) */}
+          {/* View toggle (explore only, mobile only) */}
           {activeTab === "explore" && (
             <button
               onClick={() => setViewMode(viewMode === "feed" ? "scan" : "feed")}
-              className="p-2 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors"
+              className="p-2 rounded-lg text-gray-400 hover:text-gray-700 hover:bg-[#F3F0EB] transition-colors lg:hidden"
               title={viewMode === "feed" ? "Scan view" : "Feed view"}
             >
               {viewMode === "feed" ? (

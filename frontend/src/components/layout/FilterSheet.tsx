@@ -88,11 +88,11 @@ export default function FilterSheet() {
             animate={{ y: 0 }}
             exit={{ y: "100%" }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="fixed bottom-0 left-0 right-0 z-50 bg-zinc-900 rounded-t-2xl border-t border-zinc-700 max-h-[80vh] overflow-y-auto"
+            className="fixed bottom-0 left-0 right-0 z-50 bg-white rounded-t-2xl border-t border-[#E5E0D8] max-h-[80vh] overflow-y-auto"
           >
             {/* Handle */}
             <div className="flex justify-center pt-3 pb-2">
-              <div className="w-10 h-1 bg-zinc-700 rounded-full" />
+              <div className="w-10 h-1 bg-gray-200 rounded-full" />
             </div>
 
             <div className="px-5 pb-6 space-y-6">
@@ -100,7 +100,7 @@ export default function FilterSheet() {
 
               {/* Price range */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Price Range
                 </label>
                 <div className="flex items-center gap-3">
@@ -114,9 +114,9 @@ export default function FilterSheet() {
                         minPrice: e.target.value ? Number(e.target.value) : null,
                       }))
                     }
-                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                    className="flex-1 bg-[#F3F0EB] border border-[#E5E0D8] rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
-                  <span className="text-zinc-600">—</span>
+                  <span className="text-gray-400">—</span>
                   <input
                     type="number"
                     placeholder="Max"
@@ -127,14 +127,14 @@ export default function FilterSheet() {
                         maxPrice: e.target.value ? Number(e.target.value) : null,
                       }))
                     }
-                    className="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                    className="flex-1 bg-[#F3F0EB] border border-[#E5E0D8] rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
                   />
                 </div>
               </div>
 
               {/* Bedrooms */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Bedrooms
                 </label>
                 <div className="flex items-center gap-2">
@@ -145,8 +145,8 @@ export default function FilterSheet() {
                       className={clsx(
                         "px-4 py-2 rounded-lg text-sm font-medium transition-all",
                         draft.beds.includes(value)
-                          ? "bg-white text-zinc-900"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700",
+                          ? "bg-white text-gray-900"
+                          : "bg-[#F3F0EB] text-gray-500 hover:bg-gray-200",
                       )}
                     >
                       {label}
@@ -157,10 +157,10 @@ export default function FilterSheet() {
 
               {/* Neighborhoods */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Neighborhoods
                   {draft.neighborhoods.length > 0 && (
-                    <span className="ml-1 text-zinc-400">({draft.neighborhoods.length})</span>
+                    <span className="ml-1 text-gray-500">({draft.neighborhoods.length})</span>
                   )}
                 </label>
                 <input
@@ -168,7 +168,7 @@ export default function FilterSheet() {
                   placeholder="Search neighborhoods…"
                   value={nbSearch}
                   onChange={(e) => setNbSearch(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                  className="w-full bg-[#F3F0EB] border border-[#E5E0D8] rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
                 />
                 {/* Selected chips */}
                 {draft.neighborhoods.length > 0 && (
@@ -182,7 +182,7 @@ export default function FilterSheet() {
                             neighborhoods: d.neighborhoods.filter((n) => n !== nb),
                           }))
                         }
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-200"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white text-gray-900 hover:bg-gray-100"
                       >
                         {nb}
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -193,7 +193,7 @@ export default function FilterSheet() {
                   </div>
                 )}
                 {/* Dropdown */}
-                <div className="max-h-36 overflow-y-auto rounded-lg bg-zinc-800 border border-zinc-700">
+                <div className="max-h-36 overflow-y-auto rounded-lg bg-[#F3F0EB] border border-[#E5E0D8]">
                   {allNeighborhoods
                     .filter(
                       (nb) =>
@@ -209,7 +209,7 @@ export default function FilterSheet() {
                             neighborhoods: [...d.neighborhoods, nb],
                           }))
                         }
-                        className="block w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+                        className="block w-full text-left px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 transition-colors"
                       >
                         {nb}
                       </button>
@@ -219,7 +219,7 @@ export default function FilterSheet() {
 
               {/* Rent stabilized */}
               <div className="flex items-center justify-between">
-                <label className="text-sm text-zinc-300">
+                <label className="text-sm text-gray-600">
                   Rent-stabilized only
                 </label>
                 <button
@@ -231,7 +231,7 @@ export default function FilterSheet() {
                   }
                   className={clsx(
                     "w-11 h-6 rounded-full transition-colors relative",
-                    draft.rentStabilized ? "bg-green-500" : "bg-zinc-700",
+                    draft.rentStabilized ? "bg-green-500" : "bg-gray-200",
                   )}
                 >
                   <div
@@ -245,7 +245,7 @@ export default function FilterSheet() {
 
               {/* Min sqft */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Minimum Sqft
                 </label>
                 <input
@@ -258,13 +258,13 @@ export default function FilterSheet() {
                       minSqft: e.target.value ? Number(e.target.value) : null,
                     }))
                   }
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                  className="w-full bg-[#F3F0EB] border border-[#E5E0D8] rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
                 />
               </div>
 
               {/* Available before */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Available By
                 </label>
                 <input
@@ -276,13 +276,13 @@ export default function FilterSheet() {
                       availableBefore: e.target.value || null,
                     }))
                   }
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                  className="w-full bg-[#F3F0EB] border border-[#E5E0D8] rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
                 />
               </div>
 
               {/* Minimum score */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Minimum Composite Score
                 </label>
                 <input
@@ -298,7 +298,7 @@ export default function FilterSheet() {
                   }
                   className="w-full accent-white"
                 />
-                <div className="flex justify-between text-xs text-zinc-500">
+                <div className="flex justify-between text-xs text-gray-400">
                   <span>0</span>
                   <span className="text-white font-medium">
                     {draft.minScore ?? 0}
@@ -309,10 +309,10 @@ export default function FilterSheet() {
 
               {/* Amenities */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Amenities
                   {draft.amenities.length > 0 && (
-                    <span className="ml-1 text-zinc-400">({draft.amenities.length})</span>
+                    <span className="ml-1 text-gray-500">({draft.amenities.length})</span>
                   )}
                 </label>
                 <input
@@ -320,7 +320,7 @@ export default function FilterSheet() {
                   placeholder="Search amenities\u2026"
                   value={amSearch}
                   onChange={(e) => setAmSearch(e.target.value)}
-                  className="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-sm text-white placeholder:text-zinc-600 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+                  className="w-full bg-[#F3F0EB] border border-[#E5E0D8] rounded-lg px-3 py-2 text-sm text-gray-800 placeholder:text-gray-400 focus:outline-none focus:ring-1 focus:ring-amber-400"
                 />
                 {/* Selected chips */}
                 {draft.amenities.length > 0 && (
@@ -334,7 +334,7 @@ export default function FilterSheet() {
                             amenities: d.amenities.filter((a) => a !== am),
                           }))
                         }
-                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white text-zinc-900 hover:bg-zinc-200"
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-white text-gray-900 hover:bg-gray-100"
                       >
                         {am}
                         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -345,7 +345,7 @@ export default function FilterSheet() {
                   </div>
                 )}
                 {/* Dropdown */}
-                <div className="max-h-36 overflow-y-auto rounded-lg bg-zinc-800 border border-zinc-700">
+                <div className="max-h-36 overflow-y-auto rounded-lg bg-[#F3F0EB] border border-[#E5E0D8]">
                   {allAmenities
                     .filter(
                       (am) =>
@@ -361,7 +361,7 @@ export default function FilterSheet() {
                             amenities: [...d.amenities, am],
                           }))
                         }
-                        className="block w-full text-left px-3 py-1.5 text-sm text-zinc-300 hover:bg-zinc-700 transition-colors"
+                        className="block w-full text-left px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-200 transition-colors"
                       >
                         {am}
                       </button>
@@ -371,7 +371,7 @@ export default function FilterSheet() {
 
               {/* Data availability */}
               <div className="space-y-2">
-                <label className="text-xs font-medium text-zinc-500 uppercase tracking-wider">
+                <label className="text-xs font-medium text-gray-400 uppercase tracking-wider">
                   Data Availability
                 </label>
                 <div className="flex items-center gap-2">
@@ -384,8 +384,8 @@ export default function FilterSheet() {
                       className={clsx(
                         "px-4 py-2 rounded-lg text-sm font-medium transition-all",
                         draft.minDataQuality === value
-                          ? "bg-white text-zinc-900"
-                          : "bg-zinc-800 text-zinc-400 hover:bg-zinc-700",
+                          ? "bg-white text-gray-900"
+                          : "bg-[#F3F0EB] text-gray-500 hover:bg-gray-200",
                       )}
                     >
                       {label}
@@ -398,13 +398,13 @@ export default function FilterSheet() {
               <div className="flex items-center gap-3 pt-2">
                 <button
                   onClick={handleReset}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium text-zinc-400 bg-zinc-800 hover:bg-zinc-700"
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-500 bg-[#F3F0EB] hover:bg-gray-200"
                 >
                   Reset
                 </button>
                 <button
                   onClick={handleApply}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-medium text-zinc-900 bg-white hover:bg-zinc-200"
+                  className="flex-1 py-2.5 rounded-xl text-sm font-medium text-gray-900 bg-white hover:bg-gray-100"
                 >
                   Apply
                 </button>

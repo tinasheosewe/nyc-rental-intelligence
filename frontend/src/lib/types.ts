@@ -243,12 +243,6 @@ export interface POI {
   distance_m: number;
 }
 
-export interface OpenHouse {
-  date: string;
-  start_time: string | null;
-  end_time: string | null;
-}
-
 export interface ComparableListing {
   id: string;
   address: string;
@@ -300,7 +294,6 @@ export interface Listing {
   transit_stations: TransitStation[];
   neighborhood_info: NeighborhoodInfo;
   nearby_pois: POI[];
-  open_houses: OpenHouse[];
   nearby_neighborhoods: string[];
   similar: ComparableListing[];
   also_consider: ComparableListing[];

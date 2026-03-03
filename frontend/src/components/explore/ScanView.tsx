@@ -59,14 +59,14 @@ export default function ScanView() {
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-gray-200 border-t-amber-500 rounded-full animate-spin" />
       </div>
     );
   }
 
   if (visible.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 gap-3">
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">
         <p className="text-sm">No listings match your criteria</p>
       </div>
     );
@@ -75,7 +75,7 @@ export default function ScanView() {
   return (
     <div className="flex-1 overflow-y-auto px-4 py-4">
       {/* Count */}
-      <p className="text-xs text-zinc-600 mb-3 text-center">
+      <p className="text-xs text-gray-400 mb-3 text-center">
         Showing {visible.length} of {totalListings}
       </p>
 
@@ -95,13 +95,13 @@ export default function ScanView() {
       {/* Loading more indicator */}
       {isLoadingMore && (
         <div className="flex justify-center py-6">
-          <div className="w-6 h-6 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+          <div className="w-6 h-6 border-2 border-gray-200 border-t-amber-500 rounded-full animate-spin" />
         </div>
       )}
 
       {/* End of results */}
       {!hasMore && visible.length > 0 && (
-        <p className="text-center text-xs text-zinc-600 py-4">
+        <p className="text-center text-xs text-gray-400 py-4">
           All {totalListings} listings loaded
         </p>
       )}

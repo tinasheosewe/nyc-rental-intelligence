@@ -1,0 +1,641 @@
+<html lang="en" vid="0"><head vid="1">
+    <meta charset="UTF-8" vid="2">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" vid="3">
+    <title vid="4">Reside - Data Driven Living</title>
+    <style vid="5">
+        :root {
+            
+            --primary-accent: #FF4D30;
+            --primary-glow: #FF7E69;
+            --bg-deep: #0F0505; 
+            --bg-gradient-start: #2A0F0D;
+            --bg-gradient-end: #050202;
+            
+            --glass-surface: rgba(255, 255, 255, 0.08);
+            --glass-border: rgba(255, 255, 255, 0.12);
+            --glass-highlight: rgba(255, 255, 255, 0.15);
+            --glass-blur: 24px;
+            
+            --text-primary: #FFFFFF;
+            --text-secondary: rgba(255, 255, 255, 0.6);
+            --text-tertiary: rgba(255, 255, 255, 0.4);
+            
+            --radius-lg: 32px;
+            --radius-md: 20px;
+            --radius-sm: 100px; 
+            
+            --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            
+            
+            --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        body {
+            background: linear-gradient(160deg, var(--bg-gradient-start) 0%, var(--bg-gradient-end) 100%);
+            color: var(--text-primary);
+            font-family: var(--font-main);
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        
+        .ambient-glow {
+            position: fixed;
+            top: -20%;
+            left: -10%;
+            width: 50vw;
+            height: 50vw;
+            background: radial-gradient(circle, rgba(255, 77, 48, 0.15) 0%, transparent 70%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        
+        header {
+            height: 80px;
+            padding: 0 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 10;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            backdrop-filter: blur(10px);
+        }
+
+        .logo {
+            font-weight: 700;
+            font-size: 24px;
+            letter-spacing: -0.5px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .logo-mark {
+            width: 12px;
+            height: 12px;
+            background: var(--primary-accent);
+            border-radius: 50%;
+            box-shadow: 0 0 12px var(--primary-accent);
+        }
+
+        .main-container {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 380px 1fr 420px; 
+            height: calc(100vh - 80px);
+            z-index: 1;
+        }
+
+        
+        .panel-list {
+            border-right: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .filters {
+            padding: 24px;
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 24px;
+            scrollbar-width: none;
+        }
+        .filters::-webkit-scrollbar { display: none; }
+
+        .pill {
+            height: 40px;
+            padding: 0 20px;
+            border-radius: var(--radius-sm);
+            background: var(--glass-surface);
+            border: 1px solid var(--glass-border);
+            color: var(--text-secondary);
+            font-size: 13px;
+            font-weight: 500;
+            white-space: nowrap;
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+
+        .pill:hover {
+            background: var(--glass-highlight);
+            color: var(--text-primary);
+        }
+
+        .pill.active {
+            background: var(--primary-accent);
+            border-color: var(--primary-accent);
+            color: white;
+            box-shadow: 0 4px 20px rgba(255, 77, 48, 0.3);
+        }
+
+        .list-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 0 24px 24px 24px;
+        }
+
+        .card {
+            background: var(--glass-surface);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            margin-bottom: 16px;
+            border: 1px solid transparent;
+            cursor: pointer;
+            transition: var(--transition);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card:hover {
+            background: rgba(255, 255, 255, 0.12);
+            border-color: rgba(255, 255, 255, 0.1);
+            transform: translateY(-2px);
+        }
+
+        .card.selected {
+            border-color: var(--primary-accent);
+            background: linear-gradient(145deg, rgba(255,255,255,0.1), rgba(255, 77, 48, 0.05));
+        }
+
+        .card-img {
+            width: 100%;
+            height: 180px;
+            background-color: #333;
+            border-radius: 16px;
+            margin-bottom: 16px;
+            background-size: cover;
+            background-position: center;
+            position: relative;
+        }
+
+        .card-img::after {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 16px;
+            background: linear-gradient(to top, rgba(0,0,0,0.5), transparent);
+        }
+
+        .card-badge {
+            position: absolute;
+            top: 12px;
+            left: 12px;
+            background: rgba(0,0,0,0.4);
+            backdrop-filter: blur(10px);
+            padding: 6px 12px;
+            border-radius: 100px;
+            font-size: 11px;
+            font-weight: 600;
+            color: white;
+            z-index: 2;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 4px;
+            letter-spacing: -0.01em;
+        }
+
+        .card-subtitle {
+            font-size: 13px;
+            color: var(--text-secondary);
+            margin-bottom: 16px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .card-stats {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding-top: 12px;
+            border-top: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .stat {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .stat-val {
+            font-size: 14px;
+            font-weight: 600;
+            font-feature-settings: "tnum";
+        }
+
+        .stat-label {
+            font-size: 11px;
+            color: var(--text-tertiary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        
+        .panel-map {
+            background: #111;
+            position: relative;
+            
+            background-image: radial-gradient(#333 1px, transparent 1px);
+            background-size: 20px 20px;
+        }
+        
+        
+        .map-control {
+            position: absolute;
+            bottom: 32px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(15, 5, 5, 0.85);
+            backdrop-filter: blur(var(--glass-blur));
+            padding: 8px;
+            border-radius: 100px;
+            display: flex;
+            gap: 8px;
+            border: 1px solid var(--glass-border);
+        }
+
+        .icon-btn {
+            width: 44px;
+            height: 44px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: transparent;
+            border: none;
+            color: white;
+            cursor: pointer;
+            transition: var(--transition);
+        }
+        .icon-btn:hover { background: rgba(255,255,255,0.1); }
+        .icon-btn.active { background: var(--primary-accent); color: white; }
+
+        
+        .panel-detail {
+            border-left: 1px solid rgba(255,255,255,0.05);
+            background: rgba(0,0,0,0.2);
+            padding: 32px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 32px;
+        }
+
+        .detail-header h2 {
+            font-size: 32px;
+            font-weight: 500;
+            letter-spacing: -0.03em;
+            margin-bottom: 8px;
+            
+            background: linear-gradient(to right, #fff, rgba(255,255,255,0.7));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .score-ring-container {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 10px;
+        }
+
+        
+        .score-circle {
+            width: 90px;
+            height: 90px;
+            border-radius: 50%;
+            background: var(--glass-surface);
+            border: 1px solid var(--glass-border);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+        }
+
+        
+        .score-circle svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            transform: rotate(-90deg);
+        }
+
+        .score-circle circle {
+            fill: none;
+            stroke-width: 3;
+            stroke-linecap: round;
+        }
+
+        .score-bg { stroke: rgba(255,255,255,0.05); }
+        .score-val-stroke { stroke: var(--primary-accent); }
+
+        .score-num { font-size: 20px; font-weight: 600; }
+        .score-label { font-size: 10px; color: var(--text-tertiary); margin-top: 2px; text-transform: uppercase;}
+
+        
+        .data-slider {
+            margin-top: 12px;
+        }
+
+        .slider-track {
+            height: 48px;
+            background: var(--glass-surface);
+            border-radius: 24px; 
+            position: relative;
+            overflow: hidden;
+            border: 1px solid var(--glass-border);
+        }
+
+        .slider-fill {
+            position: absolute;
+            left: 0;
+            top: 0;
+            bottom: 0;
+            width: 70%;
+            background: linear-gradient(90deg, rgba(255, 77, 48, 0.2), rgba(255, 77, 48, 0.5));
+            border-radius: 24px 0 0 24px;
+        }
+        
+        .slider-marker {
+            position: absolute;
+            left: 70%;
+            top: 8px;
+            bottom: 8px;
+            width: 4px;
+            background: #fff;
+            border-radius: 4px;
+            box-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+
+        .slider-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 8px;
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+
+        .insight-section {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        
+        .insight-title {
+            font-size: 14px;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        
+        .insight-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 16px;
+            background: rgba(255,255,255,0.03);
+            border-radius: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.02);
+        }
+
+        .insight-label { color: var(--text-secondary); font-size: 14px; }
+        .insight-value { font-weight: 600; color: #fff; }
+
+        
+        .display-num {
+            font-family: 'Inter', monospace; 
+            letter-spacing: -0.5px;
+        }
+    </style>
+</head>
+<body vid="6">
+
+    <div class="ambient-glow" vid="7"></div>
+
+    <header vid="8">
+        <div class="logo" vid="9">
+            <div class="logo-mark" vid="10"></div>
+            RESIDE
+        </div>
+        <div style="display: flex; gap: 24px; align-items: center;" vid="11">
+            <div class="pill" vid="12">Saved (3)</div>
+            <div style="width: 32px; height: 32px; background: #333; border-radius: 50%;" vid="13"></div>
+        </div>
+    </header>
+
+    <div class="main-container" vid="14">
+        
+        
+        <div class="panel-list" vid="15">
+            <div class="filters" vid="16">
+                <div class="pill active" vid="17">All</div>
+                <div class="pill" vid="18">Under $3k</div>
+                <div class="pill" vid="19">2+ Bed</div>
+                <div class="pill" vid="20">Pet Friendly</div>
+                <div class="pill" vid="21">Gym</div>
+                <div class="pill" vid="22">Pool</div>
+            </div>
+
+            <div class="list-content" vid="23">
+                
+                <div class="card selected" vid="24">
+                    <div class="card-badge" vid="25">Match: 98%</div>
+                    <div class="card-img" style="background-image: url('https://images.unsplash.com/photo-1502672260266-1c1ef2d93688?q=80&amp;w=800&amp;auto=format&amp;fit=crop');" vid="26"></div>
+                    <h3 class="card-title" vid="27">The Meridian Loft</h3>
+                    <div class="card-subtitle" vid="28">
+                        <span style="opacity: 0.7" vid="29">Downtown</span> • <span vid="30">0.2mi from transit</span>
+                    </div>
+                    <div class="card-stats" vid="31">
+                        <div class="stat" vid="32">
+                            <span class="stat-val" vid="33">$2,850</span>
+                            <span class="stat-label" vid="34">Monthly</span>
+                        </div>
+                        <div class="stat" vid="35">
+                            <span class="stat-val" vid="36">840</span>
+                            <span class="stat-label" vid="37">Sq Ft</span>
+                        </div>
+                        <div class="stat" vid="38">
+                            <span class="stat-val" vid="39">1 bd</span>
+                            <span class="stat-label" vid="40">Layout</span>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div class="card" vid="41">
+                    <div class="card-badge" style="background: rgba(255,255,255,0.1)" vid="42">Match: 85%</div>
+                    <div class="card-img" style="background-image: url('https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?q=80&amp;w=800&amp;auto=format&amp;fit=crop');" vid="43"></div>
+                    <h3 class="card-title" vid="44">Harborview Point</h3>
+                    <div class="card-subtitle" vid="45">
+                        <span style="opacity: 0.7" vid="46">Waterfront</span> • <span vid="47">Quiet Zone</span>
+                    </div>
+                    <div class="card-stats" vid="48">
+                        <div class="stat" vid="49">
+                            <span class="stat-val" vid="50">$3,200</span>
+                            <span class="stat-label" vid="51">Monthly</span>
+                        </div>
+                        <div class="stat" vid="52">
+                            <span class="stat-val" vid="53">950</span>
+                            <span class="stat-label" vid="54">Sq Ft</span>
+                        </div>
+                        <div class="stat" vid="55">
+                            <span class="stat-val" vid="56">Studio</span>
+                            <span class="stat-label" vid="57">Layout</span>
+                        </div>
+                    </div>
+                </div>
+
+                
+                <div class="card" vid="58">
+                    <div class="card-img" style="background-image: url('https://images.unsplash.com/photo-1493809842364-78817add7ffb?q=80&amp;w=800&amp;auto=format&amp;fit=crop');" vid="59"></div>
+                    <h3 class="card-title" vid="60">Metro Heights</h3>
+                    <div class="card-subtitle" vid="61">
+                        <span style="opacity: 0.7" vid="62">Midtown</span> • <span vid="63">New Build</span>
+                    </div>
+                    <div class="card-stats" vid="64">
+                        <div class="stat" vid="65">
+                            <span class="stat-val" vid="66">$2,400</span>
+                            <span class="stat-label" vid="67">Monthly</span>
+                        </div>
+                        <div class="stat" vid="68">
+                            <span class="stat-val" vid="69">700</span>
+                            <span class="stat-label" vid="70">Sq Ft</span>
+                        </div>
+                        <div class="stat" vid="71">
+                            <span class="stat-val" vid="72">1 bd</span>
+                            <span class="stat-label" vid="73">Layout</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        
+        <div class="panel-map" vid="74">
+            
+            <div style="position: absolute; top: 40%; left: 45%; transform: translate(-50%, -50%);" vid="75">
+                <div style="width: 16px; height: 16px; background: var(--primary-accent); border-radius: 50%; box-shadow: 0 0 20px var(--primary-accent); border: 2px solid white;" vid="76"></div>
+                <div style="position: absolute; top: -40px; left: 50%; transform: translateX(-50%); background: white; color: black; padding: 4px 8px; border-radius: 8px; font-weight: 600; font-size: 12px; white-space: nowrap;" vid="77">$2,850</div>
+            </div>
+
+            <div style="position: absolute; top: 60%; left: 30%; opacity: 0.6;" vid="78">
+                <div style="width: 12px; height: 12px; background: #666; border-radius: 50%; border: 2px solid white;" vid="79"></div>
+            </div>
+            
+            <div style="position: absolute; top: 25%; left: 60%; opacity: 0.6;" vid="80">
+                <div style="width: 12px; height: 12px; background: #666; border-radius: 50%; border: 2px solid white;" vid="81"></div>
+            </div>
+
+            <div class="map-control" vid="82">
+                <button class="icon-btn active" vid="83">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" vid="84"><path d="M1 1h4l2.68 13.39a2 2 0 002 1.61h9.72a2 2 0 002-1.61L23 6H6" vid="85"></path></svg>
+                </button>
+                <button class="icon-btn" vid="86">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" vid="87"><circle cx="12" cy="12" r="10" vid="88"></circle><path d="M12 8v4l3 3" vid="89"></path></svg>
+                </button>
+                <button class="icon-btn" vid="90">
+                    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" vid="91"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" vid="92"></path></svg>
+                </button>
+            </div>
+        </div>
+
+        
+        <div class="panel-detail" vid="93">
+            <div class="detail-header" vid="94">
+                <h2 vid="95">The Meridian Loft</h2>
+                <div style="color: var(--text-secondary); font-size: 14px; margin-bottom: 24px;" vid="96">Updated 2 hours ago</div>
+                
+                <div class="insight-section" vid="97">
+                    <div class="insight-title" vid="98">Livability Scores</div>
+                    <div class="score-ring-container" vid="99">
+                        <div class="score-circle" vid="100">
+                            <svg viewBox="0 0 36 36" vid="101">
+                                <path class="score-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" vid="102"></path>
+                                <path class="score-val-stroke" stroke-dasharray="98, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" vid="103"></path>
+                            </svg>
+                            <span class="score-num" vid="104">98</span>
+                            <span class="score-label" vid="105">Walk</span>
+                        </div>
+                        <div class="score-circle" vid="106">
+                            <svg viewBox="0 0 36 36" vid="107">
+                                <path class="score-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" vid="108"></path>
+                                <path class="score-val-stroke" stroke-dasharray="85, 100" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" vid="109"></path>
+                            </svg>
+                            <span class="score-num" vid="110">85</span>
+                            <span class="score-label" vid="111">Sun</span>
+                        </div>
+                        <div class="score-circle" vid="112">
+                            <svg viewBox="0 0 36 36" vid="113">
+                                <path class="score-bg" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" vid="114"></path>
+                                <path class="score-val-stroke" stroke-dasharray="40, 100" stroke="orange" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" vid="115"></path>
+                            </svg>
+                            <span class="score-num" vid="116">40</span>
+                            <span class="score-label" vid="117">Noise</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="insight-section" vid="118">
+                <div class="insight-title" vid="119">Price History</div>
+                <div class="data-slider" vid="120">
+                    <div class="slider-track" vid="121">
+                        <div class="slider-fill" vid="122"></div>
+                        <div class="slider-marker" vid="123"></div>
+                    </div>
+                    <div class="slider-labels" vid="124">
+                        <span vid="125">Low Demand</span>
+                        <span vid="126">$2,850 avg</span>
+                        <span vid="127">Peak</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="insight-section" vid="128">
+                <div class="insight-title" vid="129">Unit Features</div>
+                <div class="insight-row" vid="130">
+                    <span class="insight-label" vid="131">Natural Light</span>
+                    <span class="insight-value" vid="132">Direct South</span>
+                </div>
+                <div class="insight-row" vid="133">
+                    <span class="insight-label" vid="134">Noise Level</span>
+                    <span class="insight-value" vid="135">45dB (Library)</span>
+                </div>
+                <div class="insight-row" vid="136">
+                    <span class="insight-label" vid="137">Internet</span>
+                    <span class="insight-value" vid="138">Fiber Ready</span>
+                </div>
+                <div class="insight-row" vid="139">
+                    <span class="insight-label" vid="140">Year Built</span>
+                    <span class="insight-value" vid="141">2021</span>
+                </div>
+            </div>
+
+            <button style="margin-top: auto; height: 56px; background: var(--primary-accent); border: none; border-radius: 100px; color: white; font-weight: 600; font-size: 16px; cursor: pointer; box-shadow: 0 10px 30px rgba(255, 77, 48, 0.4);" vid="142">
+                Schedule Viewing
+            </button>
+        </div>
+
+    </div>
+
+
+</body></html>

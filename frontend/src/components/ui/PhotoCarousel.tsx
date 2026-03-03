@@ -62,7 +62,7 @@ export default function PhotoCarousel({
 
   return (
     <div
-      className={clsx("relative w-full bg-zinc-800 group overflow-hidden", aspect)}
+      className={clsx("relative w-full bg-gray-100 group overflow-hidden", aspect)}
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >

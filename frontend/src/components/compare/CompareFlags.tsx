@@ -130,14 +130,14 @@ export default function CompareFlags({ listings, groups }: CompareFlagsProps) {
               "rounded-xl border p-4 space-y-3",
               isWinner
                 ? "border-green-500/50 bg-green-500/5"
-                : "border-zinc-800 bg-zinc-900",
+                : "border-[#E5E0D8] bg-white",
             )}
           >
             {/* Header */}
             <div className="flex items-start justify-between">
               <div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-sm font-semibold text-white">
+                  <h3 className="text-sm font-semibold text-gray-900">
                     {listing.address}
                   </h3>
                   {isWinner && (
@@ -146,7 +146,7 @@ export default function CompareFlags({ listings, groups }: CompareFlagsProps) {
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-zinc-500 mt-0.5">
+                <p className="text-xs text-gray-400 mt-0.5">
                   {formatPrice(listing.price)} · {formatBeds(listing.beds)} ·{" "}
                   {listing.neighborhood}
                 </p>
@@ -160,7 +160,7 @@ export default function CompareFlags({ listings, groups }: CompareFlagsProps) {
             />
 
             {/* Summary */}
-            <p className="text-xs text-zinc-500 italic border-t border-zinc-800 pt-2">
+            <p className="text-xs text-gray-400 italic border-t border-[#E5E0D8] pt-2">
               {summary}
             </p>
           </div>

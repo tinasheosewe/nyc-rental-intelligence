@@ -50,15 +50,6 @@ class POI(BaseModel):
     distance_m: int
 
 
-# ── Open house ──────────────────────────────────────────────────
-
-class OpenHouse(BaseModel):
-    """An open house event."""
-    date: str
-    start_time: Optional[str] = None
-    end_time: Optional[str] = None
-
-
 # ── Comparable listing (compact) ────────────────────────────────
 
 class ComparableListing(BaseModel):
@@ -175,7 +166,6 @@ class Listing(BaseModel):
     transit_stations: list[TransitStation] = []  # nearby stations with route badges
     neighborhood_info: NeighborhoodInfo = NeighborhoodInfo()
     nearby_pois: list[POI] = []                 # parks, schools, grocery, etc.
-    open_houses: list[OpenHouse] = []
     nearby_neighborhoods: list[str] = []        # adjacent neighborhood names
     similar: list[ComparableListing] = []       # 5 similar listings
     also_consider: list[ComparableListing] = [] # 5 also-consider listings (each better in 1 group)

@@ -8,9 +8,9 @@ import type { Flag } from "@/lib/types";
 import clsx from "clsx";
 
 const FLAG_STYLES: Record<string, string> = {
-  green: "text-green-400",
-  red: "text-red-400",
-  yellow: "text-yellow-400",
+  green: "text-emerald-600",
+  red: "text-red-500",
+  yellow: "text-amber-600",
 };
 
 const FLAG_ICONS: Record<string, string> = {

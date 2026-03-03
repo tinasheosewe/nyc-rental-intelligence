@@ -86,6 +86,10 @@ interface AppState {
   expandedQueueId: string | null;
   setExpandedQueueId: (id: string | null) => void;
 
+  // Detail panel (3-panel layout)
+  selectedListingId: string | null;
+  setSelectedListingId: (id: string | null) => void;
+
   // Preferences
   priorities: ScoreGroupKey[];
   setPriorities: (p: ScoreGroupKey[]) => void;
@@ -259,6 +263,10 @@ export const useStore = create<AppState>((set, get) => ({
   setMapOpen: (open) => set({ mapOpen: open }),
   expandedQueueId: null,
   setExpandedQueueId: (id) => set({ expandedQueueId: id }),
+
+  // Detail panel (3-panel layout)
+  selectedListingId: null,
+  setSelectedListingId: (id) => set({ selectedListingId: id }),
 
   // Preferences
   priorities: [...DEFAULT_GROUP_PRIORITIES],

@@ -74,14 +74,14 @@ export default function FeedView() {
   if (isLoading) {
     return (
       <div className="flex-1 flex items-center justify-center">
-        <div className="w-8 h-8 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+        <div className="w-8 h-8 border-2 border-gray-200 border-t-amber-500 rounded-full animate-spin" />
       </div>
     );
   }
 
   if (visible.length === 0) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center text-zinc-500 gap-3">
+      <div className="flex-1 flex flex-col items-center justify-center text-gray-400 gap-3">
         <svg className="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
         </svg>
@@ -100,7 +100,7 @@ export default function FeedView() {
       {currentIndex > 0 && (
         <button
           onClick={() => goTo(-1)}
-          className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-zinc-900/80 backdrop-blur text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+          className="absolute left-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/80 backdrop-blur text-gray-400 hover:text-gray-800 flex items-center justify-center transition-colors"
         >
           ‹
         </button>
@@ -108,14 +108,14 @@ export default function FeedView() {
       {currentIndex < visible.length - 1 && (
         <button
           onClick={() => goTo(1)}
-          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-zinc-900/80 backdrop-blur text-zinc-400 hover:text-white flex items-center justify-center transition-colors"
+          className="absolute right-2 top-1/2 -translate-y-1/2 z-10 w-10 h-10 rounded-full bg-white/80 backdrop-blur text-gray-400 hover:text-gray-800 flex items-center justify-center transition-colors"
         >
           ›
         </button>
       )}
 
       {/* Position indicator */}
-      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 text-xs text-zinc-600">
+      <div className="absolute top-3 left-1/2 -translate-x-1/2 z-10 text-xs text-gray-400">
         {currentIndex + 1} / {totalListings}
       </div>
 
@@ -125,7 +125,7 @@ export default function FeedView() {
       {/* Loading more indicator */}
       {isLoadingMore && (
         <div className="absolute bottom-28 left-1/2 -translate-x-1/2 z-10">
-          <div className="w-5 h-5 border-2 border-zinc-700 border-t-white rounded-full animate-spin" />
+          <div className="w-5 h-5 border-2 border-gray-200 border-t-amber-500 rounded-full animate-spin" />
         </div>
       )}
     </div>

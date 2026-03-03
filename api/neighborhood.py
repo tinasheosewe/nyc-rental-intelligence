@@ -22,7 +22,6 @@ from typing import Optional
 from api.models import (
     CategorizedAmenities,
     NeighborhoodInfo,
-    OpenHouse,
     POI,
     TransitStation,
 )
