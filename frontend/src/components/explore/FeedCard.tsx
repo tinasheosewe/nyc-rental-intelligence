@@ -765,6 +765,13 @@ function ComparableCard({ comp }: { comp: ComparableListing }) {
         <p className="text-xs text-zinc-500">
           {formatBeds(comp.beds)} · {comp.neighborhood}
           {comp.sqft ? ` · ${comp.sqft} sqft` : ""}
+          {comp.distance_km != null && (
+            <span className="ml-1 text-zinc-600">
+              · {comp.distance_km < 0.2
+                ? "< 0.1 mi"
+                : `${(comp.distance_km * 0.6214).toFixed(1)} mi`}
+            </span>
+          )}
         </p>
       </div>
       {/* Score */}

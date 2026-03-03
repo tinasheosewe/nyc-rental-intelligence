@@ -6,12 +6,13 @@ using the 13-dimension scoring engine.
 
 Similar (5):
     Same beds, nearby (same neighborhood with borough fallback),
-    closest in overall score profile (cosine similarity on the
-    5 group-score vector).
+    ranked by a blend of cosine similarity and geographic proximity
+    so results are as close as possible to the viewed listing.
 
 Also Consider (5):
     Same constraints, but each listing is similar on 4 groups
     yet *better* on a different 5th group. One per score group.
+    Among qualifying candidates, picks the closest one.
 """
 
 from __future__ import annotations
@@ -42,6 +43,20 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     if mag_a == 0 or mag_b == 0:
         return 0.0
     return dot / (mag_a * mag_b)
+
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Haversine distance between two lat/lon points in kilometres."""
+    R = 6371.0  # Earth radius km
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat1))
+        * math.cos(math.radians(lat2))
+        * math.sin(dlon / 2) ** 2
+    )
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
 # ── Grade curve (duplicated to avoid circular import) ───────────
@@ -84,6 +99,7 @@ def _row_to_comparable(
     group_scores: dict[str, float | None],
     composite: float,
     better_in: str | None = None,
+    distance_km: float | None = None,
     photo_prefix: str = "https://photos.example.com/",
 ) -> ComparableListing:
     """Convert a DB row to a ComparableListing."""
@@ -115,6 +131,7 @@ def _row_to_comparable(
         composite_score=composite,
         group_scores={k: round(v, 1) for k, v in group_scores.items() if v is not None},
         better_in=better_in,
+        distance_km=round(distance_km, 2) if distance_km is not None else None,
     )
 
 
@@ -134,48 +151,62 @@ def find_comparable_listings(
     """
     Find similar and also-consider listings.
 
+    Rankings blend cosine similarity with geographic proximity so that
+    results are as close to the viewed listing as possible while still
+    being meaningfully comparable.
+
     Returns (similar, also_consider).
     """
-    # Fetch candidates: same beds, nearby, active, not self
-    # Try neighborhood first, fall back to borough if not enough candidates
     candidates = _fetch_candidates(conn, listing_id, beds, neighborhood, borough, lat, lon)
 
     if len(candidates) < 3:
         return [], []
 
-    # Compute group scores for each candidate
-    scored_candidates: list[tuple[dict, dict[str, float | None], float]] = []
+    # Compute group scores & haversine distance for each candidate
+    scored: list[tuple[dict, dict[str, float | None], float, float]] = []
     for row in candidates:
         gs = _row_to_group_scores(row)
-        # Compute a simple composite from group scores
         vals = [v for v in gs.values() if v is not None]
         comp = sum(vals) / len(vals) if vals else 0.0
-        scored_candidates.append((row, gs, round(comp, 1)))
+        dist = _haversine_km(lat, lon, float(row["lat"]), float(row["lon"]))
+        scored.append((row, gs, round(comp, 1), dist))
 
     target_vec = _group_vector(target_group_scores, GROUP_KEYS)
 
-    # ── Similar: rank by cosine similarity ──────────────────────
-    similarities: list[tuple[float, int]] = []
-    for i, (row, gs, comp) in enumerate(scored_candidates):
+    # ── Similar: rank by proximity-weighted cosine similarity ───
+    #
+    # combined = cosine_sim * proximity_weight
+    # proximity_weight = 1 / (1 + dist_km * 3)
+    #
+    # This strongly favours nearby listings: at 0 km → weight 1.0,
+    # 0.3 km → 0.53, 1 km → 0.25, 2 km → 0.14.  Among listings
+    # at comparable distances, the higher cosine sim wins.
+    ranked: list[tuple[float, int]] = []
+    for i, (row, gs, comp, dist) in enumerate(scored):
         vec = _group_vector(gs, GROUP_KEYS)
-        sim = _cosine_similarity(target_vec, vec)
-        similarities.append((sim, i))
+        cos = _cosine_similarity(target_vec, vec)
+        proximity_w = 1.0 / (1.0 + dist * 3.0)
+        combined = cos * proximity_w
+        ranked.append((combined, i))
 
-    similarities.sort(key=lambda x: x[0], reverse=True)
+    ranked.sort(key=lambda x: x[0], reverse=True)
     similar = [
-        _row_to_comparable(scored_candidates[idx][0], scored_candidates[idx][1], scored_candidates[idx][2])
-        for _, idx in similarities[:n_similar]
+        _row_to_comparable(
+            scored[idx][0], scored[idx][1], scored[idx][2],
+            distance_km=scored[idx][3],
+        )
+        for _, idx in ranked[:n_similar]
     ]
 
-    # ── Also Consider: one per group, better in that group ──────
+    # ── Also Consider: one per group, pick closest qualifying ───
     used_ids = {s.id for s in similar}
     also_consider: list[ComparableListing] = []
 
     for group_key in GROUP_KEYS:
         target_group_val = target_group_scores.get(group_key) or 50.0
-        best_candidate: tuple[float, int] | None = None
+        best_candidate: tuple[float, int] | None = None  # (dist, idx)
 
-        for i, (row, gs, comp) in enumerate(scored_candidates):
+        for i, (row, gs, comp, dist) in enumerate(scored):
             if row["id"] in used_ids:
                 continue
 
@@ -193,15 +224,15 @@ def find_comparable_listings(
             if other_sim < 0.85:
                 continue
 
-            improvement = cand_group_val - target_group_val
-            if best_candidate is None or improvement > best_candidate[0]:
-                best_candidate = (improvement, i)
+            # Among qualifying candidates, pick the closest
+            if best_candidate is None or dist < best_candidate[0]:
+                best_candidate = (dist, i)
 
         if best_candidate is not None:
             idx = best_candidate[1]
-            row, gs, comp = scored_candidates[idx]
+            row, gs, comp, dist = scored[idx]
             also_consider.append(
-                _row_to_comparable(row, gs, comp, better_in=group_key)
+                _row_to_comparable(row, gs, comp, better_in=group_key, distance_km=dist)
             )
             used_ids.add(row["id"])
 

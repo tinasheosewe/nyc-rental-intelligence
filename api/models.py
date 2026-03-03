@@ -75,6 +75,7 @@ class ComparableListing(BaseModel):
     composite_score: float = 0.0
     group_scores: dict[str, float] = {}  # value, access, neighborhood, safety, building
     better_in: Optional[str] = None  # group key where this listing excels (for "also consider")
+    distance_km: Optional[float] = None  # distance from the viewed listing
 
 
 class Scores(BaseModel):

@@ -262,6 +262,7 @@ export interface ComparableListing {
   composite_score: number;
   group_scores: Record<string, number>;
   better_in: string | null;
+  distance_km: number | null;
 }
 
 export interface Listing {
