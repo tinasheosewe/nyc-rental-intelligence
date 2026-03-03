@@ -9,6 +9,7 @@ import SettingsModal from "@/components/layout/SettingsModal";
 import PinnedTray from "@/components/layout/PinnedTray";
 import CompareModal from "@/components/compare/CompareModal";
 import MapOverlay from "@/components/map/MapOverlay";
+import MapPill from "@/components/map/MapPill";
 import ListPanel from "@/components/layout/ListPanel";
 import DetailPanel from "@/components/layout/DetailPanel";
 import dynamic from "next/dynamic";
@@ -93,6 +94,7 @@ export default function HomePage() {
               />
             </MapContainer>
           )}
+          <MapPill />
         </div>
 
         {/* Right panel — detail */}
