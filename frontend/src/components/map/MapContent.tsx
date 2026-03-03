@@ -10,7 +10,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   TileLayer,
-  Circle,
   CircleMarker,
   Popup,
   Tooltip,
@@ -19,6 +18,7 @@ import {
 } from "react-leaflet";
 import type { Listing, ScoreDimension } from "@/lib/types";
 import { formatPrice, formatBeds, scoreLabel } from "@/lib/utils";
+import HeatmapLayer from "./HeatmapLayer";
 
 interface MapContentProps {
   listings: Listing[];
@@ -44,13 +44,6 @@ function pinColor(score: number): string {
   if (score >= 50) return "#8B5CF6";
   if (score >= 25) return "#F97316";
   return "#EF4444";
-}
-
-function heatColor(score: number): string {
-  if (score >= 75) return "#22c55e"; // green-500
-  if (score >= 50) return "#eab308"; // yellow-500
-  if (score >= 25) return "#f97316"; // orange-500
-  return "#ef4444"; // red-500
 }
 
 /** Group listings by rounded coordinates (~11 m precision) */
@@ -168,25 +161,8 @@ export default function MapContent({
       />
       <ZoomControl position="topright" />
 
-      {/* ── Heatmap area overlay ──────────────────────────────── */}
-      {colorBy &&
-        listings.map((listing) => {
-          const score = listing.scores[colorBy] ?? 50;
-          return (
-            <Circle
-              key={`heat-${listing.id}`}
-              center={[listing.latitude, listing.longitude]}
-              radius={350}
-              pathOptions={{
-                color: "transparent",
-                fillColor: heatColor(score),
-                fillOpacity: 0.25,
-                weight: 0,
-              }}
-              interactive={false}
-            />
-          );
-        })}
+      {/* ── IDW heatmap overlay ───────────────────────────────── */}
+      {colorBy && <HeatmapLayer listings={listings} dimension={colorBy} />}
 
       {/* ── Non-highlighted pins (clustered) ─────────────────── */}
       {clusters.map((cluster) =>
