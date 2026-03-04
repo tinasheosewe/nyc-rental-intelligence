@@ -142,6 +142,57 @@ def percentile_rank(
     return out
 
 
+def median_inverse_grid(
+    grid: np.ndarray,
+    land: np.ndarray,
+    *,
+    reference_median: float | None = None,
+) -> np.ndarray:
+    """Median-inverse normalisation (vectorized) — matches per-listing scoring.
+
+    Scale (lower raw = better):
+        raw = 0        → score = 100
+        raw = median    → score = 50
+        raw ≥ 2×median → score = 0
+
+    This is the same formula used by CrimeScorer / NoiseScorer
+    (apthunt.scoring.utils.median_inverse_scores), so heatmap colors
+    align with per-listing labels.
+
+    Args:
+        reference_median: Use this as the median instead of computing
+            from the grid.  Pass the listing-based median so the heatmap
+            is calibrated against the same population as per-listing
+            scores (listings are in dense urban areas; the grid covers
+            the whole bounding box including empty suburbs).
+
+    Only land cells are scored; water/void cells get NaN.
+    """
+    vals = grid[land]
+    n = len(vals)
+    if n == 0:
+        return np.full_like(grid, np.nan)
+
+    if reference_median is not None:
+        median = reference_median
+    else:
+        median = float(np.median(vals))
+    if median <= 0:
+        median = 1.0
+
+    below = vals <= median
+    scores = np.where(
+        below,
+        100.0 - 50.0 * (vals / median),
+        np.maximum(0.0, 50.0 - 50.0 * ((vals - median) / median)),
+    )
+    scores = np.round(scores, 1)
+
+    out = np.full_like(grid, np.nan)
+    out[land] = scores
+    return out
+
+
 def save_grid(name: str, grid: np.ndarray) -> None:
     """Write grid as compact JSON (NaN → null)."""
     scores = []
@@ -717,19 +768,37 @@ def main() -> None:
 
     print(f"\nWater mask: {water.sum():,} water, {land.sum():,} land")
 
-    # ── Step 3: Percentile-rank and save ─────────────────────────
+    # ── Step 2b: Listing-based reference medians ─────────────────
+    # Per-listing scorers normalise against the median across listings
+    # (urban neighbourhoods only).  We sample the raw grid at listing
+    # locations so the heatmap uses the same reference population.
+    listing_locs = conn.execute(
+        "SELECT lat, lon FROM listings WHERE lat IS NOT NULL AND lon IS NOT NULL"
+    ).fetchall()
+    l_ri = np.rint((MAX_LAT - np.array([r["lat"] for r in listing_locs], dtype=np.float64)) / LAT_STEP).astype(np.intp)
+    l_ci = np.rint((np.array([r["lon"] for r in listing_locs], dtype=np.float64) - MIN_LNG) / LNG_STEP).astype(np.intp)
+    valid_l = (l_ri >= 0) & (l_ri < ROWS) & (l_ci >= 0) & (l_ci < COLS)
+    l_ri, l_ci = l_ri[valid_l], l_ci[valid_l]
 
-    # Crime (reverse: lower = better)
-    print("\n[crime] Percentile-ranking (reverse)...")
-    crime_pct = percentile_rank(crime_raw, land, reverse=True)
-    save_grid("crime", crime_pct)
-    print_dist(crime_pct, land)
+    ref_crime  = float(np.median(crime_raw[l_ri, l_ci]))
+    ref_noise  = float(np.median(noise_raw[l_ri, l_ci]))
+    ref_pest   = float(np.median(pest_raw[l_ri, l_ci]))
+    print(f"\nReference medians (at listing locations):")
+    print(f"  crime={ref_crime:.1f}  noise={ref_noise:.1f}  pest={ref_pest:.1f}")
 
-    # Noise (reverse: lower = better)
-    print("\n[noise] Percentile-ranking (reverse)...")
-    noise_pct = percentile_rank(noise_raw, land, reverse=True)
-    save_grid("noise", noise_pct)
-    print_dist(noise_pct, land)
+    # ── Step 3: Normalise and save ───────────────────────────────
+
+    # Crime (median-inverse: 0 complaints → 100, median → 50, ≥2× → 0)
+    print("\n[crime] Median-inverse scoring...")
+    crime_scored = median_inverse_grid(crime_raw, land, reference_median=ref_crime)
+    save_grid("crime", crime_scored)
+    print_dist(crime_scored, land)
+
+    # Noise (median-inverse: same logic)
+    print("\n[noise] Median-inverse scoring...")
+    noise_scored = median_inverse_grid(noise_raw, land, reference_median=ref_noise)
+    save_grid("noise", noise_scored)
+    print_dist(noise_scored, land)
 
     # Transit (direct: higher = better)
     print("\n[transit] Percentile-ranking...")
@@ -753,11 +822,11 @@ def main() -> None:
     save_grid("convenience", conv_pct)
     print_dist(conv_pct, land)
 
-    # Pest (reverse: lower = better)
-    print("\n[pest] Percentile-ranking (reverse)...")
-    pest_pct = percentile_rank(pest_raw, land, reverse=True)
-    save_grid("pest", pest_pct)
-    print_dist(pest_pct, land)
+    # Pest (median-inverse: same logic)
+    print("\n[pest] Median-inverse scoring...")
+    pest_scored = median_inverse_grid(pest_raw, land, reference_median=ref_pest)
+    save_grid("pest", pest_scored)
+    print_dist(pest_scored, land)
 
     conn.close()
     elapsed = time.time() - t_total
