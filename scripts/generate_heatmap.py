@@ -398,8 +398,13 @@ def compute_parks(conn, grid_m: np.ndarray) -> np.ndarray:
                 clon < MIN_LNG - margin or clon > MAX_LNG + margin):
             continue
 
-        # Build mini KD-tree from this park's vertices
-        v_m = np.column_stack((v_lat * LAT_M, v_lon * LNG_M))
+        # Build mini KD-tree from this park's DENSIFIED vertices
+        # Densifying ensures the nearest-vertex distance closely matches
+        # the true nearest-edge distance (fixes cells near straight edges).
+        densified = _densify_coords(vertices, max_spacing_m=50.0)
+        d_arr = np.array(densified, dtype=np.float64)
+        d_lat, d_lon = d_arr[:, 1], d_arr[:, 0]
+        v_m = np.column_stack((d_lat * LAT_M, d_lon * LNG_M))
         tree = cKDTree(v_m)
 
         # Nearest-vertex distance for ALL grid cells at once
@@ -568,6 +573,33 @@ def compute_pest(conn, grid_m: np.ndarray) -> np.ndarray:
 
 
 # ── Park geometry helpers ────────────────────────────────────────
+
+def _densify_coords(vertices: list[list[float]], max_spacing_m: float = 50.0) -> list[list[float]]:
+    """Interpolate extra vertices so no edge is longer than max_spacing_m.
+
+    This ensures the KD-tree distance to nearest vertex closely
+    approximates the true distance to the nearest edge — critical for
+    cells near straight polygon edges (e.g. Central Park's east side).
+    """
+    result: list[list[float]] = []
+    n = len(vertices)
+    for i in range(n):
+        p1 = vertices[i]
+        p2 = vertices[(i + 1) % n]
+        result.append(p1)
+        dx = (p2[0] - p1[0]) * LNG_M
+        dy = (p2[1] - p1[1]) * LAT_M
+        edge_len = math.sqrt(dx * dx + dy * dy)
+        if edge_len > max_spacing_m:
+            n_seg = int(math.ceil(edge_len / max_spacing_m))
+            for j in range(1, n_seg):
+                t = j / n_seg
+                result.append([
+                    p1[0] + (p2[0] - p1[0]) * t,
+                    p1[1] + (p2[1] - p1[1]) * t,
+                ])
+    return result
+
 
 def _extract_coords(geom: dict) -> list[list[float]]:
     """All [lon, lat] vertices from a GeoJSON Polygon / MultiPolygon."""
