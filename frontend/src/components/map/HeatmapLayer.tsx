@@ -75,7 +75,7 @@ function scoreToRgb(score: number): RGB {
 
 const TILE_SIZE = 256;
 const PIXEL_STEP = 4; // Render every Nth pixel then upscale for perf
-const OPACITY = 0.30;
+const OPACITY = 0.50;
 
 // ── Bilinear interpolation on the grid ──────────────────────────
 
@@ -220,7 +220,7 @@ async function fetchGrid(dimension: ScoreDimension): Promise<GridData | null> {
   if (gridCache.has(fileName)) return gridCache.get(fileName)!;
 
   try {
-    const res = await fetch(`/heatmap/${fileName}.json`);
+    const res = await fetch(`/heatmap/${fileName}.json`, { cache: "no-store" });
     if (!res.ok) return null;
     const data: GridData = await res.json();
     gridCache.set(fileName, data);

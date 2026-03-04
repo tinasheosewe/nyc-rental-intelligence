@@ -301,11 +301,49 @@ def compute_transit(grid_m: np.ndarray) -> np.ndarray:
     return scores.reshape(ROWS, COLS)
 
 
+def _points_in_polygon(pts_xy: np.ndarray, ring: np.ndarray) -> np.ndarray:
+    """Vectorized ray-casting point-in-polygon test.
+
+    pts_xy : (N, 2) test points  [x, y]  (lon, lat)
+    ring   : (M, 2) polygon ring [x, y]  (lon, lat)
+    Returns: (N,) bool array — True if point is inside the ring.
+    """
+    px, py = pts_xy[:, 0], pts_xy[:, 1]
+    n = len(ring)
+    inside = np.zeros(len(pts_xy), dtype=bool)
+    j = n - 1
+    for i in range(n):
+        xi, yi = ring[i, 0], ring[i, 1]
+        xj, yj = ring[j, 0], ring[j, 1]
+        if yi != yj:  # skip horizontal edges
+            cond = ((yi > py) != (yj > py)) & (
+                px < (xj - xi) * (py - yi) / (yj - yi) + xi
+            )
+            inside ^= cond
+        j = i
+    return inside
+
+
+def _extract_outer_rings(geom: dict) -> list[np.ndarray]:
+    """Return outer rings of a GeoJSON Polygon/MultiPolygon as numpy arrays."""
+    gtype = geom.get("type", "")
+    raw = geom.get("coordinates", [])
+    rings = []
+    if gtype == "MultiPolygon":
+        for poly in raw:
+            if poly and len(poly[0]) >= 3:
+                rings.append(np.array(poly[0], dtype=np.float64))
+    elif gtype == "Polygon":
+        if raw and len(raw[0]) >= 3:
+            rings.append(np.array(raw[0], dtype=np.float64))
+    return rings
+
+
 def compute_parks(conn, grid_m: np.ndarray) -> np.ndarray:
     """Parks score: max(proximity × quality × 100) across all nearby parks.
 
-    Per-park KD-tree on boundary vertices; vectorized query of all grid
-    cells at once.
+    Uses point-in-polygon to give park interiors max score, plus KD-tree
+    proximity decay for cells outside the boundary but within reach.
     """
     TIERS = [
         (100.0, 1.00, 2000),
@@ -320,6 +358,12 @@ def compute_parks(conn, grid_m: np.ndarray) -> np.ndarray:
     ).fetchall()
 
     best = np.zeros(ROWS * COLS, dtype=np.float64)
+
+    # Build grid lon/lat array for point-in-polygon tests (computed once)
+    g_lats = MAX_LAT - np.arange(ROWS) * LAT_STEP
+    g_lons = MIN_LNG + np.arange(COLS) * LNG_STEP
+    lat2d, lon2d = np.meshgrid(g_lats, g_lons, indexing="ij")
+    grid_lonlat = np.column_stack((lon2d.ravel(), lat2d.ravel()))  # (N, 2)
 
     for row in park_rows:
         mp_raw = row["multipolygon"]
@@ -362,9 +406,16 @@ def compute_parks(conn, grid_m: np.ndarray) -> np.ndarray:
         dists, _ = tree.query(grid_m)
 
         within = dists < reach
-        proximity = np.where(within, 1.0 - dists / reach, 0.0)
-        effective = proximity * quality * 100.0
+        # Quadratic decay for cells outside boundary but within reach
+        proximity = np.where(within, 1.0 - (dists / reach) ** 2, 0.0)
 
+        # Point-in-polygon: cells INSIDE the park get proximity = 1.0
+        outer_rings = _extract_outer_rings(geom)
+        for ring in outer_rings:
+            interior = _points_in_polygon(grid_lonlat, ring)
+            proximity = np.where(interior, 1.0, proximity)
+
+        effective = proximity * quality * 100.0
         np.maximum(best, effective, out=best)
 
     return best.reshape(ROWS, COLS)
