@@ -1,0 +1,46 @@
+# render.yaml — Render Blueprint (Infrastructure as Code)
+# Docs: https://docs.render.com/blueprint-spec
+#
+# Deploys two services:
+#   1. apthunt-api    — Python / FastAPI backend
+#   2. apthunt-web    — Next.js frontend
+#
+# Usage:
+#   Push this repo to GitHub, then go to https://dashboard.render.com
+#   → New → Blueprint → connect the repo → Render reads this file.
+
+services:
+  # ── Backend (FastAPI) ──────────────────────────────────────────
+  - type: web
+    name: apthunt-api
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12"
+      - key: CORS_ORIGINS
+        fromService:
+          name: apthunt-web
+          type: web
+          property: url
+
+  # ── Frontend (Next.js) ────────────────────────────────────────
+  - type: web
+    name: apthunt-web
+    runtime: node
+    plan: free
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    startCommand: npm run start -- -p $PORT
+    envVars:
+      - key: NODE_VERSION
+        value: "20"
+      # Used by next.config.ts rewrites to proxy /api/* to the backend
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          name: apthunt-api
+          type: web
+          property: url

@@ -7,7 +7,9 @@
 
 import type { Listing, ListingsResponse, FilterState } from "./types";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api";
+// In production, requests to /api are proxied by Next.js rewrites
+// (see next.config.ts) to the backend service.
+const API_BASE = "/api";
 
 // ── Generic fetch helper ───────────────────────────────────────
 
