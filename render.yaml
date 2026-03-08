@@ -25,7 +25,7 @@ services:
         fromService:
           name: apthunt-web
           type: web
-          property: url
+          envVarKey: RENDER_EXTERNAL_URL
 
   # ── Frontend (Next.js) ────────────────────────────────────────
   - type: web
@@ -43,4 +43,4 @@ services:
         fromService:
           name: apthunt-api
           type: web
-          property: url
+          envVarKey: RENDER_EXTERNAL_URL
