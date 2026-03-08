@@ -20,7 +20,7 @@ services:
     healthCheckPath: /api/health
     envVars:
       - key: PYTHON_VERSION
-        value: "3.12"
+        value: "3.12.8"
       - key: CORS_ORIGINS
         fromService:
           name: apthunt-web
