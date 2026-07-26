@@ -15,6 +15,7 @@
  */
 
 import { create } from "zustand";
+import { persist, createJSONStorage } from "zustand/middleware";
 import type {
   Listing,
   QueueTab,
@@ -23,7 +24,7 @@ import type {
   ScoreGroupKey,
   ScoreDimension,
 } from "./types";
-import { DEFAULT_FILTERS, DEFAULT_GROUP_PRIORITIES } from "./types";
+import { DEFAULT_FILTERS, DEFAULT_GROUP_PRIORITIES, boostsToPriorities } from "./types";
 import { fetchListings } from "./api";
 
 // ── State shape ────────────────────────────────────────────────
@@ -86,6 +87,9 @@ interface AppState {
   setMapOpen: (open: boolean) => void;
   mapColorOverlay: ScoreDimension | null;
   setMapColorOverlay: (dim: ScoreDimension | null) => void;
+  /** Heatmap ramp renormalized to the scores currently in view (vs citywide absolute). */
+  heatmapRelative: boolean;
+  setHeatmapRelative: (on: boolean) => void;
   expandedQueueId: string | null;
   setExpandedQueueId: (id: string | null) => void;
 
@@ -94,17 +98,42 @@ interface AppState {
   setSelectedListingId: (id: string | null) => void;
 
   // Preferences
+  /** Groups the user boosted (×2 weight), max 2. Source of truth. */
+  boosts: ScoreGroupKey[];
+  /** Dimensions excluded from the composite entirely. */
+  ignoredDims: ScoreDimension[];
+  /** Full 5-group ordering DERIVED from boosts (boosted first, then
+   *  default order). Read-only display state for rings/pills/ordering. */
   priorities: ScoreGroupKey[];
-  setPriorities: (p: ScoreGroupKey[]) => void;
+  /** Apply boost + ignore selections in one shot (single reload). */
+  setScoringPrefs: (boosts: ScoreGroupKey[], ignoredDims: ScoreDimension[]) => void;
   kidsMode: boolean;
   setKidsMode: (on: boolean) => void;
   settingsOpen: boolean;
   setSettingsOpen: (open: boolean) => void;
 }
 
+// ── Persistence helpers ────────────────────────────────────────
+// Sets are not JSON-serializable, so persisted Sets are encoded as
+// { __set: [...] } on write and revived back to Sets on read.
+
+interface SerializedSet {
+  __set: string[];
+}
+
+function isSerializedSet(value: unknown): value is SerializedSet {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    Array.isArray((value as SerializedSet).__set)
+  );
+}
+
 // ── Store ──────────────────────────────────────────────────────
 
-export const useStore = create<AppState>((set, get) => ({
+export const useStore = create<AppState>()(
+  persist(
+    (set, get) => ({
   // Navigation
   activeTab: "explore",
   setActiveTab: (tab) => set({ activeTab: tab, expandedQueueId: null }),
@@ -129,9 +158,10 @@ export const useStore = create<AppState>((set, get) => ({
   loadListings: async () => {
     set({ isLoading: true, listings: [], currentPage: 0, hasMore: true, feedIndex: 0 });
     try {
-      const { filters, sortBy, viewMode, priorities, kidsMode } = get();
+      const { filters, sortBy, viewMode, boosts, ignoredDims, kidsMode } = get();
       const pageSize = viewMode === "feed" ? 10 : 24;
-      const res = await fetchListings(filters, sortBy, 1, pageSize, priorities, kidsMode);
+      // Backward compat: the backend maps the top-2 "priorities" to boosts.
+      const res = await fetchListings(filters, sortBy, 1, pageSize, boosts, kidsMode, ignoredDims);
       set({
         listings: res.listings,
         totalListings: res.total,
@@ -146,13 +176,13 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   loadMore: async () => {
-    const { isLoadingMore, hasMore, currentPage, filters, sortBy, listings, viewMode, priorities, kidsMode } = get();
+    const { isLoadingMore, hasMore, currentPage, filters, sortBy, listings, viewMode, boosts, ignoredDims, kidsMode } = get();
     if (isLoadingMore || !hasMore) return;
     set({ isLoadingMore: true });
     try {
       const pageSize = viewMode === "feed" ? 10 : 24;
       const nextPage = currentPage + 1;
-      const res = await fetchListings(filters, sortBy, nextPage, pageSize, priorities, kidsMode);
+      const res = await fetchListings(filters, sortBy, nextPage, pageSize, boosts, kidsMode, ignoredDims);
       const merged = [...listings, ...res.listings];
       set({
         listings: merged,
@@ -266,6 +296,8 @@ export const useStore = create<AppState>((set, get) => ({
   setMapOpen: (open) => set({ mapOpen: open }),
   mapColorOverlay: null,
   setMapColorOverlay: (dim) => set({ mapColorOverlay: dim }),
+  heatmapRelative: false,
+  setHeatmapRelative: (on) => set({ heatmapRelative: on }),
   expandedQueueId: null,
   setExpandedQueueId: (id) => set({ expandedQueueId: id }),
 
@@ -274,9 +306,12 @@ export const useStore = create<AppState>((set, get) => ({
   setSelectedListingId: (id) => set({ selectedListingId: id }),
 
   // Preferences
+  boosts: [],
+  ignoredDims: [],
   priorities: [...DEFAULT_GROUP_PRIORITIES],
-  setPriorities: (p) => {
-    set({ priorities: p });
+  setScoringPrefs: (boosts, ignoredDims) => {
+    const b = boosts.slice(0, 2);
+    set({ boosts: b, ignoredDims, priorities: boostsToPriorities(b) });
     get().loadListings();
   },
   kidsMode: false,
@@ -286,4 +321,36 @@ export const useStore = create<AppState>((set, get) => ({
   },
   settingsOpen: false,
   setSettingsOpen: (open) => set({ settingsOpen: open }),
-}));
+    }),
+    {
+      name: "apthunt-user-v1",
+      // Persist ONLY user-curated data (queues + scoring preferences).
+      // Listings/filters/sort and all transient UI state (open sheets,
+      // indices, loading flags) are deliberately excluded and rebuilt
+      // fresh on each load.
+      partialize: (s) => ({
+        watchlist: s.watchlist,
+        shortlist: s.shortlist,
+        skipped: s.skipped,
+        compareIds: s.compareIds,
+        boosts: s.boosts,
+        ignoredDims: s.ignoredDims,
+      }),
+      // `priorities` is derived from boosts, not persisted — rebuild it
+      // after rehydration so display ordering matches the stored boosts.
+      merge: (persisted, current) => {
+        const merged = { ...current, ...(persisted as Partial<AppState>) };
+        return { ...merged, priorities: boostsToPriorities(merged.boosts ?? []) };
+      },
+      // createJSONStorage defers the localStorage access until it is
+      // actually used (and no-ops when unavailable), so this stays
+      // SSR-safe under Next.js.
+      storage: createJSONStorage(() => localStorage, {
+        replacer: (_key, value) =>
+          value instanceof Set ? { __set: Array.from(value) as string[] } : value,
+        reviver: (_key, value) =>
+          isSerializedSet(value) ? new Set(value.__set) : value,
+      }),
+    },
+  ),
+);

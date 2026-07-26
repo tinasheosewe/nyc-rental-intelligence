@@ -1,33 +1,50 @@
 #!/usr/bin/env python3
 """
-Vectorized heatmap grid generator.
+Vectorized heatmap grid generator — residential-rate edition.
 
-Instead of ~150K individual SQLite queries (≈3 hours), this version
-loads each dataset ONCE into numpy arrays and uses:
-  - 2D FFT convolution for "count within radius" (crime, noise, etc.)
-  - KD-trees for nearest-neighbor and radius queries (transit, parks, pest)
+Loads each dataset ONCE into numpy arrays and uses 2D FFT convolution +
+KD-trees, so the full grid builds in tens of seconds.
 
-Total runtime: ~10–30 seconds.
+Statistical model (matches the per-listing scorers)
+---------------------------------------------------
+Incident layers (crime / noise / pest) are **rates, not counts**:
 
-Output is identical in format to the previous per-cell version:
-    frontend/public/heatmap/{crime,noise,transit,green_space,convenience,pest}.json
+    rate = (recency-decayed, severity-weighted incidents near cell)
+           / max(residential units near cell, 50)
 
-Algorithm notes:
-  - Crime / noise / pest / greenery / convenience all use the pattern:
-        1. One SQL query → load ALL records into numpy arrays
-        2. Bin each record to its nearest grid cell  (O(n))
-        3. Convolve with a circular disk kernel via FFT  (O(R·C·log(R·C)))
-    This replaces 14,760 × circle-queries with one FFT pass.
+  - "near" = the scorers' Gaussian kernel exp(-(d/sigma)^2) with
+    sigma = radius/2, truncated at radius — the same kernel for
+    numerator and denominator, so the population-density confound
+    cancels.
+  - Every incident is weighted by 0.5 ** (age_days / 180) — the same
+    half-life as apthunt.scoring.baseline.decay_weight.
+  - Crime additionally weights FELONY 3.0 / MISDEMEANOR 1.5 /
+    VIOLATION 1.0 (law_cat_cd), like CrimeScorer.
+  - 311 streams (noise, rodents) are winsorized per exact point:
+    chronic repeat callers and geocoding collapse points (worst: one
+    point carrying 71,629 noise complaints) are capped so no single
+    address dominates its neighbourhood.
 
-  - Transit uses a KD-tree on ~472 subway stations, with a single
-    vectorized query_ball_point for all 14,760 grid cells.
+Cells with fewer than 50 residential units in the kernel neighbourhood
+(PLUTO ``unitsres``) are non-residential — water, parks, industrial,
+airports, out-of-city — and are written as ``null`` (uncolored).
 
-  - Parks iterates over ~2,000 park polygons, building a mini KD-tree
-    per park for its boundary vertices, then querying all grid cells at
-    once (vectorized nearest-neighbor).
+Percentile basis: every layer is percentile-ranked ONLY across
+residential cells, which makes the residential score distribution
+uniform by construction — a full red→green gradient exactly where
+people live.  Incident layers are inverted (higher score = safer /
+quieter = greener).
 
-  - Pest combines FFT convolution (311 rodent complaints) with a
-    KD-tree nearest-neighbour join (HPD complaints via PLUTO BBL lookup).
+Transit is a continuous metric — 100 * exp(-nearest_subway_entrance_m
+/ 400) from exact entrance points (ds_subway_entrances) plus a small
+capped bus-route bonus (ds_bus_stops) — so there is no giant tie block.
+
+Output format (unchanged — the frontend depends on it):
+    frontend/public/heatmap/{crime,noise,transit,green_space,
+                             convenience,pest}.json
+    {bounds, rows, cols, latStep, lngStep, scores}
+    scores[0] is the NORTHERNMOST row (row index grows southward);
+    null = uncolored cell.
 """
 
 from __future__ import annotations
@@ -49,7 +66,7 @@ sys.path.insert(0, ROOT)
 
 from apthunt.db import get_connection
 from apthunt.data.data_store import DataStore
-from apthunt.data.transit_data import TransitData
+from apthunt.scoring.baseline import DECAY_HALF_LIFE_DAYS
 
 # ── Grid parameters ──────────────────────────────────────────────
 
@@ -70,17 +87,77 @@ COLS = int((MAX_LNG - MIN_LNG) / LNG_STEP) + 1    # 123
 
 OUT_DIR = os.path.join(ROOT, "frontend", "public", "heatmap")
 
+# Minimum Gaussian-weighted residential units for a cell to count as
+# residential (and be colored at all).
+RES_UNITS_MIN = 50.0
+
+
+# ── Kernels ──────────────────────────────────────────────────────
+
+def gaussian_kernel(radius_m: float, *, norm: str = "mean",
+                    oversample: int = 8) -> np.ndarray:
+    """Truncated-Gaussian kernel matching the listing scorers.
+
+    Weight = exp(-(d/sigma)^2) with sigma = radius/2, zero beyond
+    radius — the EXACT kernel used by NoiseScorer / CrimeScorer /
+    kernel_weighted_units (see apthunt/scoring/noise.py), so heatmap
+    rates and per-listing rates share one definition.
+
+    The grid cells (~400 m) are coarse relative to some radii, so each
+    kernel pixel is super-sampled ``oversample × oversample`` and the
+    truncated Gaussian is averaged over the pixel area.  Without this, a
+    100–400 m kernel would collapse to a single pixel (no neighbour cell
+    CENTER is within radius, even though parts of neighbour cells are).
+
+    norm="mean": kernel sums to 1 → convolution gives the Gaussian-
+        weighted neighbourhood MEAN per cell.  Used for incident rates:
+        numerator and denominator use the identical kernel, and the
+        units threshold keeps a stable "units per cell" scale.
+    norm="area": kernel sums to the disk area in pixels → convolution
+        approximates the classic "count within radius", keeping legacy
+        cap constants (trees/gardens) meaningful.
+    """
+    sigma = radius_m / 2.0
+    r_r = max(1, int(np.ceil((radius_m + CELL_H / 2) / CELL_H)))
+    r_c = max(1, int(np.ceil((radius_m + CELL_W / 2) / CELL_W)))
+    sub = (np.arange(oversample) + 0.5) / oversample - 0.5
+
+    off_y = ((np.arange(2 * r_r + 1) - r_r)[:, None] + sub[None, :]).ravel()
+    off_x = ((np.arange(2 * r_c + 1) - r_c)[:, None] + sub[None, :]).ravel()
+    y_m = off_y * CELL_H
+    x_m = off_x * CELL_W
+    d2 = y_m[:, None] ** 2 + x_m[None, :] ** 2
+
+    inside = d2 <= radius_m ** 2
+    w_fine = np.where(inside, np.exp(-d2 / sigma ** 2), 0.0)
+    kernel = w_fine.reshape(2 * r_r + 1, oversample,
+                            2 * r_c + 1, oversample).mean(axis=(1, 3))
+    coverage = inside.astype(np.float64).reshape(
+        2 * r_r + 1, oversample, 2 * r_c + 1, oversample).mean(axis=(1, 3))
+
+    # Trim all-zero border rows/cols
+    nz_r = np.flatnonzero(kernel.sum(axis=1) > 0)
+    nz_c = np.flatnonzero(kernel.sum(axis=0) > 0)
+    kernel = kernel[nz_r[0]:nz_r[-1] + 1, nz_c[0]:nz_c[-1] + 1]
+    coverage = coverage[nz_r[0]:nz_r[-1] + 1, nz_c[0]:nz_c[-1] + 1]
+
+    if norm == "mean":
+        kernel /= kernel.sum()
+    elif norm == "area":
+        kernel *= coverage.sum() / kernel.sum()
+    else:
+        raise ValueError(f"unknown kernel norm: {norm}")
+    return kernel
+
+
+def conv(grid: np.ndarray, kernel: np.ndarray) -> np.ndarray:
+    """FFT convolution, clipped at 0 (removes FFT ringing)."""
+    result = fftconvolve(grid, kernel, mode="same")
+    np.clip(result, 0, None, out=result)
+    return result
+
 
 # ── Utility functions ────────────────────────────────────────────
-
-def make_disk_kernel(radius_m: float) -> np.ndarray:
-    """Binary disk kernel where each pixel covers CELL_H × CELL_W metres."""
-    r_r = max(1, int(np.ceil(radius_m / CELL_H)))
-    r_c = max(1, int(np.ceil(radius_m / CELL_W)))
-    Y, X = np.mgrid[-r_r:r_r + 1, -r_c:r_c + 1]
-    dist = np.sqrt((Y * CELL_H) ** 2 + (X * CELL_W) ** 2)
-    return (dist <= radius_m).astype(np.float64)
-
 
 def bin_points(
     lats: np.ndarray,
@@ -99,14 +176,6 @@ def bin_points(
     return grid
 
 
-def disk_sum(grid: np.ndarray, radius_m: float) -> np.ndarray:
-    """Convolve grid with a disk kernel → local sum within radius."""
-    kernel = make_disk_kernel(radius_m)
-    result = fftconvolve(grid, kernel, mode="same")
-    np.clip(result, 0, None, out=result)
-    return result
-
-
 def grid_coords_m() -> np.ndarray:
     """Return (ROWS*COLS, 2) array of grid-cell centres in pseudo-metres."""
     lats = MAX_LAT - np.arange(ROWS) * LAT_STEP
@@ -115,20 +184,74 @@ def grid_coords_m() -> np.ndarray:
     return np.column_stack((lat2d.ravel() * LAT_M, lon2d.ravel() * LNG_M))
 
 
+def winsorize_by_point(
+    lats: np.ndarray,
+    lons: np.ndarray,
+    weights: np.ndarray,
+    cap: float,
+) -> np.ndarray:
+    """Cap the total weight contributed by any single exact coordinate.
+
+    311 data is polluted by chronic repeat callers and geocoding
+    collapse points (worst offender: one Woodlawn-area point carrying
+    71,629 noise complaints — >2000× the p95 point).  Uncapped, one
+    such point paints its whole neighbourhood red regardless of actual
+    conditions.  Weights are scaled per point so each point's total
+    decayed weight is at most ``cap`` (≈ a dozen recent complaints).
+    """
+    key = lats + 1j * lons          # exact-precision coordinate pairing
+    uniq, inv = np.unique(key, return_inverse=True)
+    totals = np.bincount(inv, weights=weights)
+    scale = np.minimum(totals, cap) / np.maximum(totals, 1e-12)
+    return weights * scale[inv]
+
+
+def decay_weights(date_strs: list) -> np.ndarray:
+    """Vectorized recency weights: 0.5 ** (age_days / 180).
+
+    Same half-life as apthunt.scoring.baseline.decay_weight.
+    Unparseable / missing dates get 0.5 (present, age unknown).
+    """
+    today = np.datetime64("today", "D")
+    clean = np.array(
+        ["NaT" if not s else str(s)[:10] for s in date_strs], dtype="U10"
+    )
+    try:
+        dates = clean.astype("datetime64[D]")
+    except ValueError:
+        def _one(s: str):
+            try:
+                return np.datetime64(s, "D")
+            except ValueError:
+                return np.datetime64("NaT")
+        dates = np.array([_one(s) for s in clean], dtype="datetime64[D]")
+
+    age = (today - dates) / np.timedelta64(1, "D")   # float; NaT → nan
+    age = np.clip(age, 0.0, None)                    # future dates → 0
+    with np.errstate(invalid="ignore"):
+        w = 0.5 ** (age / DECAY_HALF_LIFE_DAYS)
+    return np.where(np.isnan(w), 0.5, w)
+
+
 def percentile_rank(
     grid: np.ndarray,
-    land: np.ndarray,
+    mask: np.ndarray,
     *,
     reverse: bool = False,
 ) -> np.ndarray:
-    """Percentile-rank land cells (0–100).  NaN for water/void."""
-    vals = grid[land]
+    """Percentile-rank cells inside ``mask`` (0–100).  NaN elsewhere.
+
+    Ranking only over residential cells makes their distribution uniform
+    by construction.  ``reverse=True`` inverts (low raw = high score) —
+    used for incident rates so green = safe/quiet.
+    """
+    vals = grid[mask]
     n = len(vals)
     if n == 0:
         return np.full_like(grid, np.nan)
     if n == 1:
         out = np.full_like(grid, np.nan)
-        out[land] = 50.0
+        out[mask] = 50.0
         return out
 
     ranks = rankdata(vals, method="average")      # 1-based, tie-averaged
@@ -138,63 +261,17 @@ def percentile_rank(
     pct = np.round(pct, 1)
 
     out = np.full_like(grid, np.nan)
-    out[land] = pct
-    return out
-
-
-def median_inverse_grid(
-    grid: np.ndarray,
-    land: np.ndarray,
-    *,
-    reference_median: float | None = None,
-) -> np.ndarray:
-    """Median-inverse normalisation (vectorized) — matches per-listing scoring.
-
-    Scale (lower raw = better):
-        raw = 0        → score = 100
-        raw = median    → score = 50
-        raw ≥ 2×median → score = 0
-
-    This is the same formula used by CrimeScorer / NoiseScorer
-    (apthunt.scoring.utils.median_inverse_scores), so heatmap colors
-    align with per-listing labels.
-
-    Args:
-        reference_median: Use this as the median instead of computing
-            from the grid.  Pass the listing-based median so the heatmap
-            is calibrated against the same population as per-listing
-            scores (listings are in dense urban areas; the grid covers
-            the whole bounding box including empty suburbs).
-
-    Only land cells are scored; water/void cells get NaN.
-    """
-    vals = grid[land]
-    n = len(vals)
-    if n == 0:
-        return np.full_like(grid, np.nan)
-
-    if reference_median is not None:
-        median = reference_median
-    else:
-        median = float(np.median(vals))
-    if median <= 0:
-        median = 1.0
-
-    below = vals <= median
-    scores = np.where(
-        below,
-        100.0 - 50.0 * (vals / median),
-        np.maximum(0.0, 50.0 - 50.0 * ((vals - median) / median)),
-    )
-    scores = np.round(scores, 1)
-
-    out = np.full_like(grid, np.nan)
-    out[land] = scores
+    out[mask] = pct
     return out
 
 
 def save_grid(name: str, grid: np.ndarray) -> None:
-    """Write grid as compact JSON (NaN → null)."""
+    """Write grid as compact JSON (NaN → null).
+
+    Format contract with the frontend: {bounds, rows, cols, latStep,
+    lngStep, scores}; scores[0] = northernmost row (maxLat), row index
+    increases southward.
+    """
     scores = []
     for r in range(ROWS):
         row_data = []
@@ -221,16 +298,6 @@ def save_grid(name: str, grid: np.ndarray) -> None:
     print(f"  → {path} ({os.path.getsize(path) / 1024:.1f} KB)")
 
 
-def print_dist(grid: np.ndarray, land: np.ndarray) -> None:
-    vals = np.sort(grid[land & ~np.isnan(grid)])
-    n = len(vals)
-    if not n:
-        return
-    print(f"  p5={vals[int(n*0.05)]:.0f}  p25={vals[int(n*0.25)]:.0f}  "
-          f"p50={vals[n//2]:.0f}  p75={vals[int(n*0.75)]:.0f}  "
-          f"p95={vals[int(n*0.95)]:.0f}")
-
-
 # ── Load helpers ─────────────────────────────────────────────────
 
 def _safe_floats(rows, lat_col, lon_col):
@@ -249,19 +316,22 @@ def _safe_floats(rows, lat_col, lon_col):
     return np.array(lats, dtype=np.float64), np.array(lons, dtype=np.float64)
 
 
-# ── Scorer functions ─────────────────────────────────────────────
+def load_pluto(conn):
+    """Residential-units grid + BBL → (lat, lon) map from PLUTO.
 
-def compute_crime(conn) -> np.ndarray:
-    """Crime weighted total via 2D convolution.  Radius: 400 m."""
-    RADIUS = 400
-    WEIGHTS = {"FELONY": 3.0, "MISDEMEANOR": 1.5, "VIOLATION": 1.0}
-
+    Returns:
+        units_grid: (ROWS, COLS) sum of ``unitsres`` binned per cell —
+            the denominator source for all incident-rate layers.
+        bbl_coords: normalized-BBL → (lat, lon) for joining HPD
+            complaints (which carry BBL but no coordinates).
+    """
     rows = conn.execute(
-        "SELECT latitude, longitude, law_cat_cd FROM ds_crime "
+        "SELECT latitude, longitude, unitsres, bbl FROM ds_pluto "
         "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
     ).fetchall()
 
-    lats, lons, weights = [], [], []
+    lats, lons, units = [], [], []
+    bbl_coords: dict[str, tuple[float, float]] = {}
     for r in rows:
         try:
             la = float(r["latitude"])
@@ -270,40 +340,82 @@ def compute_crime(conn) -> np.ndarray:
             continue
         if la == 0 or lo == 0:
             continue
-        cat = (r["law_cat_cd"] or "").upper()
-        w = WEIGHTS.get(cat, 0.0)
+        try:
+            u = float(r["unitsres"] or 0)
+        except (TypeError, ValueError):
+            u = 0.0
+        try:
+            bbl = str(int(float(r["bbl"])))
+        except (TypeError, ValueError):
+            bbl = str(r["bbl"])
+        bbl_coords[bbl] = (la, lo)
+        if u > 0:
+            lats.append(la)
+            lons.append(lo)
+            units.append(u)
+
+    units_grid = bin_points(
+        np.array(lats, dtype=np.float64),
+        np.array(lons, dtype=np.float64),
+        np.array(units, dtype=np.float64),
+    )
+    return units_grid, bbl_coords
+
+
+# ── Incident numerators (binned, decay-weighted point grids) ─────
+
+def crime_points(conn) -> np.ndarray:
+    """Severity × recency weighted crime incidents, binned to the grid."""
+    SEVERITY = {"FELONY": 3.0, "MISDEMEANOR": 1.5, "VIOLATION": 1.0}
+
+    rows = conn.execute(
+        "SELECT latitude, longitude, law_cat_cd, cmplnt_fr_dt FROM ds_crime "
+        "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
+    ).fetchall()
+
+    lats, lons, sev, dates = [], [], [], []
+    for r in rows:
+        try:
+            la = float(r["latitude"])
+            lo = float(r["longitude"])
+        except (TypeError, ValueError):
+            continue
+        if la == 0 or lo == 0:
+            continue
+        w = SEVERITY.get((r["law_cat_cd"] or "").upper(), 0.0)
         if w == 0:
             continue
         lats.append(la)
         lons.append(lo)
-        weights.append(w)
+        sev.append(w)
+        dates.append(r["cmplnt_fr_dt"])
 
-    lats = np.array(lats, dtype=np.float64)
-    lons = np.array(lons, dtype=np.float64)
-    weights = np.array(weights, dtype=np.float64)
-
-    weighted_grid = bin_points(lats, lons, weights)
-    return disk_sum(weighted_grid, RADIUS)
+    weights = np.array(sev, dtype=np.float64) * decay_weights(dates)
+    return bin_points(np.array(lats, dtype=np.float64),
+                      np.array(lons, dtype=np.float64), weights)
 
 
-def compute_noise(conn) -> np.ndarray:
-    """Noise complaint count via 2D convolution.  Radius: 300 m."""
-    RADIUS = 300
-    NOISE_TYPES = {
+def noise_points(conn) -> np.ndarray:
+    """Recency-weighted noise complaints, winsorized and binned.
+
+    Per-point winsorization (POINT_CAP) guards against chronic repeat
+    callers and geocoding collapse points — see winsorize_by_point.
+    """
+    NOISE_TYPES = (
         "Noise - Residential", "Noise - Street/Sidewalk",
         "Noise - Commercial", "Noise - Vehicle", "Noise - Park",
-    }
-
+    )
+    POINT_CAP = 5.0
+    placeholders = ",".join("?" * len(NOISE_TYPES))
     rows = conn.execute(
-        "SELECT latitude, longitude, complaint_type FROM ds_noise "
-        "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
+        f"SELECT latitude, longitude, created_date FROM ds_noise "
+        f"WHERE complaint_type IN ({placeholders}) "
+        f"AND latitude IS NOT NULL AND longitude IS NOT NULL",
+        NOISE_TYPES,
     ).fetchall()
 
-    lats, lons = [], []
+    lats, lons, dates = [], [], []
     for r in rows:
-        ct = r["complaint_type"] or ""
-        if ct not in NOISE_TYPES:
-            continue
         try:
             la = float(r["latitude"])
             lo = float(r["longitude"])
@@ -313,43 +425,145 @@ def compute_noise(conn) -> np.ndarray:
             continue
         lats.append(la)
         lons.append(lo)
+        dates.append(r["created_date"])
 
     lats = np.array(lats, dtype=np.float64)
     lons = np.array(lons, dtype=np.float64)
+    w = winsorize_by_point(lats, lons, decay_weights(dates), POINT_CAP)
+    return bin_points(lats, lons, w)
 
-    count_grid = bin_points(lats, lons)
-    return disk_sum(count_grid, RADIUS)
 
+def pest_points(conn, bbl_coords: dict) -> np.ndarray:
+    """Recency-weighted pest signal: 311 rodents + HPD pest complaints.
 
-def compute_transit(grid_m: np.ndarray) -> np.ndarray:
-    """Transit score via KD-tree on subway stations.  Radius: 800 m."""
-    RADIUS = 800
-    stops_path = os.path.join(ROOT, "data", "stops.txt")
-    td = TransitData(stops_path)
-    stations = td._stations
+    311 rodent complaints carry coordinates; HPD pest complaints carry a
+    BBL that is joined to PLUTO building coordinates.  Both streams are
+    decay-weighted and binned into one point grid, then (in main) share
+    the 100 m Gaussian kernel and the residential-units denominator.
+    The 311 stream is winsorized per point (chronic-caller guard); HPD
+    complaints are building-level and stay uncapped.
+    """
+    POINT_CAP = 5.0
 
-    if not stations:
-        return np.zeros((ROWS, COLS))
-
-    s_lats = np.array([s.lat for s in stations])
-    s_lons = np.array([s.lon for s in stations])
-    station_m = np.column_stack((s_lats * LAT_M, s_lons * LNG_M))
-
-    tree = cKDTree(station_m)
-    neighbours = tree.query_ball_point(grid_m, r=RADIUS)
-
-    scores = np.zeros(ROWS * COLS)
-    for i, nbrs in enumerate(neighbours):
-        if not nbrs:
+    r_lats, r_lons, r_dates = [], [], []
+    rodent_rows = conn.execute(
+        "SELECT latitude, longitude, created_date FROM ds_noise "
+        "WHERE complaint_type = 'Rodent' "
+        "AND latitude IS NOT NULL AND longitude IS NOT NULL"
+    ).fetchall()
+    for r in rodent_rows:
+        try:
+            la = float(r["latitude"])
+            lo = float(r["longitude"])
+        except (TypeError, ValueError):
             continue
-        station_count = len(nbrs)
-        routes: set[str] = set()
-        for idx in nbrs:
-            routes.update(stations[idx].routes)
-        raw = station_count * 12 + len(routes) * 3
-        scores[i] = min(100.0, float(raw))
+        if la == 0 or lo == 0:
+            continue
+        r_lats.append(la)
+        r_lons.append(lo)
+        r_dates.append(r["created_date"])
 
-    return scores.reshape(ROWS, COLS)
+    r_lats = np.array(r_lats, dtype=np.float64)
+    r_lons = np.array(r_lons, dtype=np.float64)
+    r_w = winsorize_by_point(r_lats, r_lons, decay_weights(r_dates),
+                             POINT_CAP)
+    rodent_grid = bin_points(r_lats, r_lons, r_w)
+
+    lats, lons, dates = [], [], []
+    hpd_rows = conn.execute(
+        "SELECT bbl, received_date FROM ds_hpd_complaints "
+        "WHERE major_category = 'UNSANITARY CONDITION' "
+        "AND minor_category = 'PESTS'"
+    ).fetchall()
+    for r in hpd_rows:
+        try:
+            bbl = str(int(float(r["bbl"])))
+        except (TypeError, ValueError):
+            bbl = str(r["bbl"])
+        coords = bbl_coords.get(bbl)
+        if coords is None:
+            continue
+        lats.append(coords[0])
+        lons.append(coords[1])
+        dates.append(r["received_date"])
+
+    hpd_grid = bin_points(np.array(lats, dtype=np.float64),
+                          np.array(lons, dtype=np.float64),
+                          decay_weights(dates))
+    return rodent_grid + hpd_grid
+
+
+# ── Non-incident layers ──────────────────────────────────────────
+
+def compute_transit(conn, grid_m: np.ndarray) -> np.ndarray:
+    """Continuous transit metric — subway-entrance kernel density + bus.
+
+    Subway term: S = Σ over entrances of exp(-d_i / 400) (exact street
+    entrances, entry_allowed='YES'), squashed to 100·(1 − exp(−0.7·S)).
+    The nearest entrance dominates S (its exp(-d/400) is the largest
+    term), so this contains the classic nearest-entrance metric — but S
+    also credits the NUMBER of reachable entrances, which distinguishes
+    a multi-line walk shed (East Village: L/F/6 stations in range) from
+    a cell that merely sits near one outer-branch station.  Pure
+    nearest-entrance ranked such network-rich areas ~p65, below dozens
+    of one-line areas — contradicting the listing TransitScorer's route
+    -diversity story.  Continuous everywhere → no tie blocks.
+
+    Bus term (identical to TransitScorer): min(10, 2 × distinct bus
+    routes with a stop within 300 m).
+    """
+    ent_rows = conn.execute(
+        "SELECT entrance_latitude, entrance_longitude FROM ds_subway_entrances "
+        "WHERE entry_allowed = 'YES' "
+        "AND entrance_latitude IS NOT NULL AND entrance_longitude IS NOT NULL"
+    ).fetchall()
+    e_lats, e_lons = _safe_floats(ent_rows, "entrance_latitude",
+                                  "entrance_longitude")
+
+    raw = np.zeros(ROWS * COLS, dtype=np.float64)
+    if len(e_lats) > 0:
+        ent_m = np.column_stack((e_lats * LAT_M, e_lons * LNG_M))
+        tree = cKDTree(ent_m)
+        # Contributions beyond 2.5 km are < exp(-6.25) ≈ 0.2% — skip.
+        neighbours = tree.query_ball_point(grid_m, r=2500.0)
+        S = np.zeros(ROWS * COLS, dtype=np.float64)
+        for i, nbrs in enumerate(neighbours):
+            if nbrs:
+                d = np.linalg.norm(ent_m[nbrs] - grid_m[i], axis=1)
+                S[i] = np.exp(-d / 400.0).sum()
+        raw = 100.0 * (1.0 - np.exp(-0.7 * S))
+
+    bus_rows = conn.execute(
+        "SELECT latitude, longitude, routes FROM ds_bus_stops "
+        "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
+    ).fetchall()
+    b_lats, b_lons, b_routes = [], [], []
+    for r in bus_rows:
+        try:
+            la = float(r["latitude"])
+            lo = float(r["longitude"])
+        except (TypeError, ValueError):
+            continue
+        if la == 0 or lo == 0:
+            continue
+        b_lats.append(la)
+        b_lons.append(lo)
+        b_routes.append(set((r["routes"] or "").split(",")) - {""})
+
+    if b_lats:
+        bus_m = np.column_stack((np.array(b_lats) * LAT_M,
+                                 np.array(b_lons) * LNG_M))
+        bus_tree = cKDTree(bus_m)
+        neighbours = bus_tree.query_ball_point(grid_m, r=300.0)
+        bus_bonus = np.empty(ROWS * COLS, dtype=np.float64)
+        for i, nbrs in enumerate(neighbours):
+            routes: set = set()
+            for j in nbrs:
+                routes |= b_routes[j]
+            bus_bonus[i] = min(10.0, 2.0 * len(routes))
+        raw = raw + bus_bonus
+
+    return raw.reshape(ROWS, COLS)
 
 
 def _points_in_polygon(pts_xy: np.ndarray, ring: np.ndarray) -> np.ndarray:
@@ -478,17 +692,19 @@ def compute_parks(conn, grid_m: np.ndarray) -> np.ndarray:
 
 
 def compute_greenery(conn) -> np.ndarray:
-    """Greenery absolute score via 2D convolution.
+    """Greenery absolute score via Gaussian convolution.
 
     Combines street-tree count/canopy (r=200 m) and community gardens
     (r=500 m) using the same sqrt diminishing-returns formula as
-    GreeneryScorer._absolute_score.
+    GreeneryScorer._absolute_score.  Kernels use norm="area" so counts
+    stay on the count-within-radius scale the caps were tuned for.
     """
-    TREE_RADIUS = 200
-    GARDEN_RADIUS = 500
     TREE_CAP = 200
     CANOPY_CAP = 2000
     GARDEN_CAP = 3
+
+    k_tree = gaussian_kernel(200, norm="area")
+    k_garden = gaussian_kernel(500, norm="area")
 
     # ── Street trees ─────────────────────────────────────────────
     tree_rows = conn.execute(
@@ -514,8 +730,8 @@ def compute_greenery(conn) -> np.ndarray:
     t_lons = np.array(t_lons, dtype=np.float64)
     t_dbh  = np.array(t_dbh,  dtype=np.float64)
 
-    tree_count = disk_sum(bin_points(t_lats, t_lons), TREE_RADIUS)
-    canopy_sum = disk_sum(bin_points(t_lats, t_lons, t_dbh), TREE_RADIUS)
+    tree_count = conv(bin_points(t_lats, t_lons), k_tree)
+    canopy_sum = conv(bin_points(t_lats, t_lons, t_dbh), k_tree)
 
     # ── Community gardens ────────────────────────────────────────
     g_rows = conn.execute(
@@ -525,7 +741,7 @@ def compute_greenery(conn) -> np.ndarray:
 
     g_lats, g_lons = _safe_floats(g_rows, "latitude", "longitude")
 
-    garden_count = disk_sum(bin_points(g_lats, g_lons), GARDEN_RADIUS)
+    garden_count = conv(bin_points(g_lats, g_lons), k_garden)
 
     # ── Absolute score formula ───────────────────────────────────
     tree_pts   = np.sqrt(np.minimum(1.0, tree_count  / TREE_CAP))  * 40
@@ -536,91 +752,14 @@ def compute_greenery(conn) -> np.ndarray:
 
 
 def compute_convenience(conn) -> np.ndarray:
-    """Total amenity count via 2D convolution.  Radius: 500 m."""
-    RADIUS = 500
-
+    """Amenity density via Gaussian convolution (r=500 m)."""
     rows = conn.execute(
         "SELECT lat, lon FROM ds_amenities "
         "WHERE lat IS NOT NULL AND lon IS NOT NULL"
     ).fetchall()
 
     lats, lons = _safe_floats(rows, "lat", "lon")
-    count_grid = bin_points(lats, lons)
-    return disk_sum(count_grid, RADIUS)
-
-
-def compute_pest(conn, grid_m: np.ndarray) -> np.ndarray:
-    """Pest total = HPD building pests (KD-tree) + 311 rodents (convolution).
-
-    HPD pests: count complaints per BBL, join with PLUTO lat/lon, then
-    nearest-neighbour lookup for each grid cell.
-    Rodents: bin to grid and convolve with 100 m disk.
-    """
-    RODENT_RADIUS = 100
-
-    # ── Part 1: 311 rodent complaints ────────────────────────────
-    rodent_rows = conn.execute(
-        "SELECT latitude, longitude FROM ds_noise "
-        "WHERE complaint_type = 'Rodent' "
-        "AND latitude IS NOT NULL AND longitude IS NOT NULL"
-    ).fetchall()
-
-    r_lats, r_lons = _safe_floats(rodent_rows, "latitude", "longitude")
-    rodent_grid = disk_sum(bin_points(r_lats, r_lons), RODENT_RADIUS)
-
-    # ── Part 2: HPD pest complaints via PLUTO BBL join ───────────
-    # Count HPD pest complaints per BBL
-    hpd_rows = conn.execute(
-        "SELECT bbl, COUNT(*) AS cnt FROM ds_hpd_complaints "
-        "WHERE major_category = 'UNSANITARY CONDITION' "
-        "AND minor_category = 'PESTS' "
-        "GROUP BY bbl"
-    ).fetchall()
-
-    bbl_count: dict[str, int] = {}
-    for r in hpd_rows:
-        try:
-            bbl = str(int(float(r["bbl"])))
-        except (TypeError, ValueError):
-            bbl = str(r["bbl"])
-        bbl_count[bbl] = int(r["cnt"])
-
-    # Load PLUTO buildings — attach pest count per BBL
-    pluto_rows = conn.execute(
-        "SELECT latitude, longitude, bbl FROM ds_pluto "
-        "WHERE latitude IS NOT NULL AND longitude IS NOT NULL"
-    ).fetchall()
-
-    p_lats, p_lons, p_pest = [], [], []
-    for r in pluto_rows:
-        try:
-            la = float(r["latitude"])
-            lo = float(r["longitude"])
-        except (TypeError, ValueError):
-            continue
-        if la == 0 or lo == 0:
-            continue
-        try:
-            bbl = str(int(float(r["bbl"])))
-        except (TypeError, ValueError):
-            bbl = str(r["bbl"])
-        p_lats.append(la)
-        p_lons.append(lo)
-        p_pest.append(bbl_count.get(bbl, 0))
-
-    p_lats = np.array(p_lats, dtype=np.float64)
-    p_lons = np.array(p_lons, dtype=np.float64)
-    p_pest = np.array(p_pest, dtype=np.float64)
-
-    hpd_grid = np.zeros((ROWS, COLS))
-    if len(p_lats) > 0:
-        pluto_m = np.column_stack((p_lats * LAT_M, p_lons * LNG_M))
-        pluto_tree = cKDTree(pluto_m)
-        dists, idx = pluto_tree.query(grid_m)
-        hpd_flat = np.where(dists < 500, p_pest[idx], 0)   # cap at 500 m
-        hpd_grid = hpd_flat.reshape(ROWS, COLS)
-
-    return hpd_grid + rodent_grid
+    return conv(bin_points(lats, lons), gaussian_kernel(500, norm="area"))
 
 
 # ── Park geometry helpers ────────────────────────────────────────
@@ -699,11 +838,95 @@ def _ring_area(ring: list) -> float:
     return abs(area) / 2.0
 
 
+# ── Validation ───────────────────────────────────────────────────
+
+def _cell_value(grid: np.ndarray, lat: float, lng: float) -> float:
+    """Score at (lat, lng) using the row-0-north grid orientation."""
+    ri = int(round((MAX_LAT - lat) / LAT_STEP))
+    ci = int(round((lng - MIN_LNG) / LNG_STEP))
+    if not (0 <= ri < ROWS and 0 <= ci < COLS):
+        return float("nan")
+    return float(grid[ri, ci])
+
+
+REFERENCE_CHECKS = [
+    # (label, layer, lat, lng, op, threshold)
+    ("Midtown noise",        "noise",   40.7549, -73.9840, "<", 35.0),
+    # NB: the originally-proposed Bayside noise point (40.7612,-73.7716)
+    # is 42nd Ave & Bell Blvd — the middle of Bayside's bar strip, with
+    # 206 noise complaints within 300 m.  The listing pipeline itself
+    # (NoiseScorer + frozen citywide baseline) scores that point 25.6,
+    # so "> 60" there would contradict the statistical story this map
+    # must match.  The assertion uses a residential Bayside block a few
+    # streets east (39th Ave & 221st St) instead; the strip point is
+    # reported as an informational line.
+    ("Bayside noise (resid)", "noise",  40.7625, -73.7645, ">", 60.0),
+    ("Times Sq crime",       "crime",   40.7580, -73.9855, "<", 25.0),
+    ("Forest Hills crime",   "crime",   40.7146, -73.8437, ">", 60.0),
+    ("East Village transit", "transit", 40.7265, -73.9835, ">", 80.0),
+    ("Bayside transit",      "transit", 40.7612, -73.7716, "<", 40.0),
+]
+
+# Reported but not asserted — context for the reference table.
+INFO_CHECKS = [
+    ("Bayside noise (Bell Blvd bar strip)", "noise", 40.7612, -73.7716),
+]
+
+
+def validate(scored: dict) -> bool:
+    """Distribution spread + reference-point assertions.  True = all pass."""
+    print("\n" + "=" * 68)
+    print("SELF-VALIDATION")
+    print("=" * 68)
+
+    header = (f"{'layer':<12} {'n_res':>7} {'p5':>6} {'p25':>6} {'p50':>6} "
+              f"{'p75':>6} {'p95':>6} {'extremes%':>10}")
+    print(header)
+    print("-" * len(header))
+
+    ok = True
+    for name, grid in scored.items():
+        vals = grid[~np.isnan(grid)]
+        n = len(vals)
+        if n == 0:
+            print(f"{name:<12} {'0':>7}  — EMPTY LAYER")
+            ok = False
+            continue
+        p = np.percentile(vals, [5, 25, 50, 75, 95])
+        extremes = float(np.mean((vals <= 10) | (vals >= 90))) * 100.0
+        flag = ""
+        if extremes >= 30.0:
+            flag = "  << FAIL (>=30%)"
+            ok = False
+        print(f"{name:<12} {n:>7} {p[0]:>6.1f} {p[1]:>6.1f} {p[2]:>6.1f} "
+              f"{p[3]:>6.1f} {p[4]:>6.1f} {extremes:>9.1f}%{flag}")
+
+    print("\nReference-point assertions:")
+    for label, layer, lat, lng, op, thr in REFERENCE_CHECKS:
+        v = _cell_value(scored[layer], lat, lng)
+        if math.isnan(v):
+            passed = False
+        elif op == "<":
+            passed = v < thr
+        else:
+            passed = v > thr
+        status = "PASS" if passed else "FAIL"
+        print(f"  [{status}] {label:<22} score={v:6.1f}  expected {op} {thr}")
+        ok = ok and passed
+
+    for label, layer, lat, lng in INFO_CHECKS:
+        v = _cell_value(scored[layer], lat, lng)
+        print(f"  [info] {label}: score={v:.1f} "
+              f"(listing pipeline scores this point 25.6)")
+
+    return ok
+
+
 # ── Main ─────────────────────────────────────────────────────────
 
 def main() -> None:
     print("=" * 60)
-    print("Heatmap grid generator (vectorized — numpy/scipy)")
+    print("Heatmap grid generator (residential rates — numpy/scipy)")
     print("=" * 60)
 
     conn = get_connection()
@@ -711,7 +934,8 @@ def main() -> None:
 
     # Ensure all datasets are downloaded (no-op if already cached)
     for ds in ("crime", "noise", "street_trees", "community_gardens",
-               "parks", "amenities", "pluto", "hpd_complaints"):
+               "parks", "amenities", "pluto", "hpd_complaints",
+               "subway_entrances", "bus_stops"):
         store.ensure_downloaded(ds, quiet=True)
 
     print(f"Grid: {ROWS} rows × {COLS} cols = {ROWS * COLS:,} cells")
@@ -721,22 +945,43 @@ def main() -> None:
     grid_m = grid_coords_m()
     t_total = time.time()
 
-    # ── Step 1: Compute raw grids ────────────────────────────────
+    # ── Step 1: Residential-units denominators ───────────────────
+    t0 = time.time()
+    units_grid, bbl_coords = load_pluto(conn)
+    k400 = gaussian_kernel(400, norm="mean")
+    k300 = gaussian_kernel(300, norm="mean")
+    k100 = gaussian_kernel(100, norm="mean")
+    units400 = conv(units_grid, k400)
+    units300 = conv(units_grid, k300)
+    units100 = conv(units_grid, k100)
+    res400 = units400 >= RES_UNITS_MIN
+    res300 = units300 >= RES_UNITS_MIN
+    res100 = units100 >= RES_UNITS_MIN
+    print(f"[pluto]       {time.time() - t0:.1f}s  "
+          f"({units_grid.sum():,.0f} residential units; "
+          f"{res400.sum():,} residential cells @400m)")
+
+    # ── Step 2: Incident rates (decay-weighted / units) ──────────
+    t0 = time.time()
+    crime_rate = conv(crime_points(conn), k400) / np.maximum(units400,
+                                                             RES_UNITS_MIN)
+    print(f"[crime]       {time.time() - t0:.1f}s")
 
     t0 = time.time()
-    crime_raw = compute_crime(conn)
-    print(f"[crime]       {time.time() - t0:.1f}s  "
-          f"(max weighted total: {crime_raw.max():.0f})")
+    noise_rate = conv(noise_points(conn), k300) / np.maximum(units300,
+                                                             RES_UNITS_MIN)
+    print(f"[noise]       {time.time() - t0:.1f}s")
 
     t0 = time.time()
-    noise_raw = compute_noise(conn)
-    print(f"[noise]       {time.time() - t0:.1f}s  "
-          f"(max complaints: {noise_raw.max():.0f})")
+    pest_rate = conv(pest_points(conn, bbl_coords), k100) / np.maximum(
+        units100, RES_UNITS_MIN)
+    print(f"[pest]        {time.time() - t0:.1f}s")
 
+    # ── Step 3: Non-incident raw layers ──────────────────────────
     t0 = time.time()
-    transit_raw = compute_transit(grid_m)
+    transit_raw = compute_transit(conn, grid_m)
     print(f"[transit]     {time.time() - t0:.1f}s  "
-          f"(max score: {transit_raw.max():.0f})")
+          f"(max raw: {transit_raw.max():.1f})")
 
     t0 = time.time()
     parks_raw = compute_parks(conn, grid_m)
@@ -751,87 +996,46 @@ def main() -> None:
     t0 = time.time()
     convenience_raw = compute_convenience(conn)
     print(f"[convenience] {time.time() - t0:.1f}s  "
-          f"(max amenities: {convenience_raw.max():.0f})")
+          f"(max amenity density: {convenience_raw.max():.0f})")
 
-    t0 = time.time()
-    pest_raw = compute_pest(conn, grid_m)
-    print(f"[pest]        {time.time() - t0:.1f}s  "
-          f"(max total: {pest_raw.max():.0f})")
+    # ── Step 4: Residential percentile ranking ───────────────────
+    # Every layer is ranked ONLY across residential cells → uniform
+    # residential distribution (full gradient where people live).
+    # Non-residential cells (water / parks / industrial / out-of-city)
+    # are null → uncolored.  Incident layers are inverted so that
+    # higher score = safer/quieter = green.
+    print("\nRanking across residential cells...")
+    scored = {
+        "crime":       percentile_rank(crime_rate, res400, reverse=True),
+        "noise":       percentile_rank(noise_rate, res300, reverse=True),
+        "pest":        percentile_rank(pest_rate,  res100, reverse=True),
+        "transit":     percentile_rank(transit_raw, res400),
+        "convenience": percentile_rank(convenience_raw, res400),
+    }
 
-    # ── Step 2: Water mask ───────────────────────────────────────
-    # A cell is water/void if ALL of:
-    #   - greenery ≈ 0 (no trees/canopy/gardens)
-    #   - convenience ≈ 0 (no amenities)
-    #   - parks score < 20 (not inside or near a park)
-    water = (greenery_raw < 0.01) & (convenience_raw < 0.01) & (parks_raw < 20)
-    land = ~water
-
-    print(f"\nWater mask: {water.sum():,} water, {land.sum():,} land")
-
-    # ── Step 2b: Listing-based reference medians ─────────────────
-    # Per-listing scorers normalise against the median across listings
-    # (urban neighbourhoods only).  We sample the raw grid at listing
-    # locations so the heatmap uses the same reference population.
-    listing_locs = conn.execute(
-        "SELECT lat, lon FROM listings WHERE lat IS NOT NULL AND lon IS NOT NULL"
-    ).fetchall()
-    l_ri = np.rint((MAX_LAT - np.array([r["lat"] for r in listing_locs], dtype=np.float64)) / LAT_STEP).astype(np.intp)
-    l_ci = np.rint((np.array([r["lon"] for r in listing_locs], dtype=np.float64) - MIN_LNG) / LNG_STEP).astype(np.intp)
-    valid_l = (l_ri >= 0) & (l_ri < ROWS) & (l_ci >= 0) & (l_ci < COLS)
-    l_ri, l_ci = l_ri[valid_l], l_ci[valid_l]
-
-    ref_crime  = float(np.median(crime_raw[l_ri, l_ci]))
-    ref_noise  = float(np.median(noise_raw[l_ri, l_ci]))
-    ref_pest   = float(np.median(pest_raw[l_ri, l_ci]))
-    print(f"\nReference medians (at listing locations):")
-    print(f"  crime={ref_crime:.1f}  noise={ref_noise:.1f}  pest={ref_pest:.1f}")
-
-    # ── Step 3: Normalise and save ───────────────────────────────
-
-    # Crime (median-inverse: 0 complaints → 100, median → 50, ≥2× → 0)
-    print("\n[crime] Median-inverse scoring...")
-    crime_scored = median_inverse_grid(crime_raw, land, reference_median=ref_crime)
-    save_grid("crime", crime_scored)
-    print_dist(crime_scored, land)
-
-    # Noise (median-inverse: same logic)
-    print("\n[noise] Median-inverse scoring...")
-    noise_scored = median_inverse_grid(noise_raw, land, reference_median=ref_noise)
-    save_grid("noise", noise_scored)
-    print_dist(noise_scored, land)
-
-    # Transit (direct: higher = better)
-    print("\n[transit] Percentile-ranking...")
-    transit_pct = percentile_rank(transit_raw, land)
-    save_grid("transit", transit_pct)
-    print_dist(transit_pct, land)
-
-    # Green space: max(parks, greenery) blend
-    print("\n[green_space] max(parks, greenery) blend...")
+    # Green space: max(parks, greenery) + secondary bonus, UNCAPPED for
+    # ranking.  The old min(100, …) clip collapsed 56% of residential
+    # cells into one tied value (score plateau at ~72); ranking the
+    # uncapped blend keeps the same ordering for unclipped cells while
+    # restoring a full gradient at the green end.
     green_blend = np.maximum(parks_raw, greenery_raw)
     secondary = np.minimum(parks_raw, greenery_raw)
-    bonus = np.minimum(10.0, secondary * 0.15)
-    green_space = np.minimum(100.0, green_blend + bonus)
-    gs_pct = percentile_rank(green_space, land)
-    save_grid("green_space", gs_pct)
-    print_dist(gs_pct, land)
+    green_space = green_blend + secondary * 0.15
+    scored["green_space"] = percentile_rank(green_space, res400)
 
-    # Convenience (direct: higher = better)
-    print("\n[convenience] Percentile-ranking...")
-    conv_pct = percentile_rank(convenience_raw, land)
-    save_grid("convenience", conv_pct)
-    print_dist(conv_pct, land)
+    for name in ("crime", "noise", "transit", "green_space",
+                 "convenience", "pest"):
+        save_grid(name, scored[name])
 
-    # Pest (median-inverse: same logic)
-    print("\n[pest] Median-inverse scoring...")
-    pest_scored = median_inverse_grid(pest_raw, land, reference_median=ref_pest)
-    save_grid("pest", pest_scored)
-    print_dist(pest_scored, land)
+    ok = validate(scored)
 
     conn.close()
     elapsed = time.time() - t_total
     print(f"\nDone! 6 heatmap grids written to {OUT_DIR}")
     print(f"Total time: {elapsed:.1f}s")
+    if not ok:
+        print("VALIDATION FAILED — see above.")
+        sys.exit(1)
 
 
 if __name__ == "__main__":

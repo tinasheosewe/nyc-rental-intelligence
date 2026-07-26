@@ -14,7 +14,7 @@ const API_BASE = "/api";
 // ── Generic fetch helper ───────────────────────────────────────
 
 async function apiFetch<T>(path: string, params?: Record<string, string>): Promise<T> {
-  const url = new URL(`${API_BASE}${path}`);
+  const url = new URL(`${API_BASE}${path}`, window.location.origin);
   if (params) {
     Object.entries(params).forEach(([key, val]) => {
       if (val !== "" && val !== undefined) {
@@ -39,6 +39,7 @@ export async function fetchListings(
   pageSize: number = 50,
   priorities?: string[],
   kidsMode?: boolean,
+  ignore?: string[],
 ): Promise<ListingsResponse> {
   const params: Record<string, string> = {
     page: String(page),
@@ -46,8 +47,15 @@ export async function fetchListings(
     sort,
   };
 
+  // Backward compat: [boost1, boost2] — the backend maps the top-2
+  // priorities to boost weights.
   if (priorities && priorities.length > 0) {
     params.priorities = priorities.join(",");
+  }
+
+  // Dimensions to exclude from the composite entirely.
+  if (ignore && ignore.length > 0) {
+    params.ignore = ignore.join(",");
   }
 
   if (kidsMode !== undefined) {

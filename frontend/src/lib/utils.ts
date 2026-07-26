@@ -17,12 +17,18 @@ export {
 
 // ── Score labels ───────────────────────────────────────────────
 
-/** Map a 0–100 score to a tier index: 0 = best, 4 = worst. */
+/** Map a 0–100 score to a tier index: 0 = best, 4 = worst.
+ *
+ * Scores are honest citywide percentiles (median listing ≈ 50), so the
+ * bands are centered accordingly: 40–59 is the MIDDLE tier — a 55 must
+ * not read as "Pricey"/"Fair". (The old 90/75/60/40 cutoffs assumed the
+ * inflated grade-curve scores where the median displayed as ~76.)
+ */
 function scoreTier(score: number): number {
-  if (score >= 90) return 0;
-  if (score >= 75) return 1;
-  if (score >= 60) return 2;
-  if (score >= 40) return 3;
+  if (score >= 80) return 0;
+  if (score >= 60) return 1;
+  if (score >= 40) return 2;
+  if (score >= 20) return 3;
   return 4;
 }
 

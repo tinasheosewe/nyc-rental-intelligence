@@ -19,14 +19,14 @@ import { useStore } from "@/lib/store";
 import { fetchListing } from "@/lib/api";
 import type {
   Listing,
-  ScoreDimension,
   ScoreGroupKey,
   ComparableListing,
+  PeerContextEntry,
 } from "@/lib/types";
 import {
   DIMENSION_LABELS,
   DIMENSION_BREAKOUT,
-  SCORE_GROUP_KEYS,
+  DETAIL_DIMENSION_SECTIONS,
   GROUP_LABELS,
   getEffectiveGroups,
 } from "@/lib/types";
@@ -85,16 +85,6 @@ export default function DetailPanel() {
   }, [selectedListingId]);
 
   const l = detail ?? listing;
-
-  // Expanded score groups
-  const [expandedGroups, setExpandedGroups] = useState<Set<ScoreGroupKey>>(new Set());
-  const toggleGroup = (key: ScoreGroupKey) => {
-    setExpandedGroups((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key); else next.add(key);
-      return next;
-    });
-  };
 
   // Queue membership
   const inWatchlist = watchlist.some((w) => w.id === selectedListingId);
@@ -253,62 +243,70 @@ export default function DetailPanel() {
 
           <div className="border-t border-[#E5E0D8]" />
 
-          {/* Score breakdown */}
-          <div className="space-y-1">
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">
+          {/* Score breakdown — organized by physical scope:
+              this unit / this building / this block / getting around */}
+          <div className="space-y-4">
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">
               Score Breakdown
             </h3>
-            {orderedGroups.map((group) => {
-              const gs = getGroupScore(listing.scores, group.key, kidsMode);
-              if (gs === null) return null;
-              const isExpanded = expandedGroups.has(group.key);
+            {DETAIL_DIMENSION_SECTIONS.map((section) => {
+              const dims = section.dimensions.filter((dim) => {
+                if (dim === "schools" && !kidsMode) return false;
+                return (
+                  getScore(
+                    l.scores as unknown as Record<string, number | boolean | null>,
+                    dim,
+                  ) !== null
+                );
+              });
+              if (dims.length === 0) return null;
 
               return (
-                <div key={group.key} className="rounded-lg border border-[#E5E0D8] overflow-hidden">
-                  <button
-                    onClick={() => toggleGroup(group.key)}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 hover:bg-[#F3F0EB] transition-colors"
-                  >
-                    <span className="text-base">{group.icon}</span>
-                    <span className="flex-1 text-left text-sm font-medium text-gray-700">
-                      {group.label}
-                    </span>
-                    <span className={clsx("text-sm font-bold", scoreColor(gs))}>
-                      {scoreLabel(gs)}
-                    </span>
-                    <span className="text-xs text-gray-400 w-4 text-center select-none">
-                      {isExpanded ? "▾" : "▸"}
-                    </span>
-                  </button>
-
-                  {isExpanded && (
-                    <div className="px-3 pb-3 pt-1 space-y-2 border-t border-[#E5E0D8]">
-                      {group.dimensions.map((dim) => {
-                        const score = getScore(
-                          listing.scores as unknown as Record<string, number | boolean | null>,
-                          dim,
-                        );
-                        if (score === null) return null;
-                        const trend =
-                          dim === "crime"
-                            ? listing.trends.crime_direction
-                            : dim === "noise"
-                              ? listing.trends.noise_direction
-                              : undefined;
-                        return (
-                          <ScoreBar
-                            key={dim}
-                            label={DIMENSION_LABELS[dim]}
-                            score={score}
-                            trend={trend}
-                            dim={dim}
-                            breakout={DIMENSION_BREAKOUT[dim]}
-                            componentValues={listing.score_components?.[dim]}
-                          />
-                        );
-                      })}
-                    </div>
-                  )}
+                <div key={section.title} className="space-y-2.5">
+                  <h4 className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider border-b border-[#E5E0D8] pb-1">
+                    {section.title}
+                  </h4>
+                  {dims.map((dim) => {
+                    const score = getScore(
+                      l.scores as unknown as Record<string, number | boolean | null>,
+                      dim,
+                    )!;
+                    const trend =
+                      dim === "crime"
+                        ? l.trends.crime_direction
+                        : dim === "noise"
+                          ? l.trends.noise_direction
+                          : undefined;
+                    const explanation = l.score_explanations?.[dim];
+                    const peer = l.peer_context?.[dim];
+                    const chip = peer ? peerChipText(peer, l.neighborhood) : null;
+                    return (
+                      <div key={dim}>
+                        <ScoreBar
+                          label={DIMENSION_LABELS[dim]}
+                          score={score}
+                          trend={trend}
+                          dim={dim}
+                          breakout={DIMENSION_BREAKOUT[dim]}
+                          componentValues={l.score_components?.[dim]}
+                        />
+                        {(explanation || chip) && (
+                          <div className="ml-[calc(7rem+12px)] mt-1 space-y-1">
+                            {explanation && (
+                              <p className="text-xs text-gray-400 leading-snug">
+                                {explanation}
+                              </p>
+                            )}
+                            {chip && (
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-medium bg-[#F3F0EB] text-gray-500 border border-[#E5E0D8]">
+                                {chip}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               );
             })}
@@ -603,6 +601,21 @@ export default function DetailPanel() {
       </div>
     </div>
   );
+}
+
+// ── Peer-context chip ───────────────────────────────────────
+
+/**
+ * Compact neighborhood-standing chip, e.g. "top 25% in Williamsburg".
+ * Suppressed when the peer set is too small to be meaningful.
+ */
+function peerChipText(peer: PeerContextEntry, neighborhood: string): string | null {
+  if (peer.n_peers < 20) return null;
+  const pct = Math.round(peer.nbhd_percentile);
+  if (pct >= 50) {
+    return `top ${Math.max(100 - pct, 1)}% in ${neighborhood}`;
+  }
+  return `bottom ${Math.max(pct, 1)}% in ${neighborhood}`;
 }
 
 // ── Comparable mini-card ────────────────────────────────────

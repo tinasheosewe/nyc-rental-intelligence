@@ -9,7 +9,7 @@
  *   Filters:     &beds=0,1,2&min=1500&max=3000&hoods=Williamsburg,DUMBO
  *                &rs=1&score=60&sqft=400&before=2026-04-01
  *                &amenities=dishwasher,laundry&quality=good
- *   Preferences: &kids=1&pri=safety,value,building,neighborhood,access
+ *   Preferences: &kids=1&boost=safety,value&ignore=noise,schools
  *
  * Defaults are omitted to keep URLs clean.
  *
@@ -24,8 +24,13 @@
 
 import { useEffect, useRef } from "react";
 import { useStore } from "./store";
-import type { QueueTab, ViewMode, FilterState, ScoreGroupKey } from "./types";
-import { DEFAULT_FILTERS, DEFAULT_GROUP_PRIORITIES } from "./types";
+import type { QueueTab, ViewMode, FilterState, ScoreGroupKey, ScoreDimension } from "./types";
+import {
+  DEFAULT_FILTERS,
+  SCORE_GROUP_KEYS,
+  SCORE_DIMENSIONS,
+  boostsToPriorities,
+} from "./types";
 
 // ── Sentinel to prevent feedback loops ────────────────────────
 let suppressPopstate = false;
@@ -36,7 +41,6 @@ const DEF_TAB: QueueTab = "explore";
 const DEF_VIEW: ViewMode = "scan";
 const DEF_SORT = "composite";
 const DEF_QUALITY = "limited";
-const DEF_PRI = DEFAULT_GROUP_PRIORITIES.join(",");
 
 // ── Helpers ───────────────────────────────────────────────────
 
@@ -82,8 +86,8 @@ function stateToParams(): URLSearchParams {
 
   // Preferences
   if (s.kidsMode) sp.set("kids", "1");
-  const pri = s.priorities.join(",");
-  if (pri !== DEF_PRI) sp.set("pri", pri);
+  if (s.boosts.length > 0) sp.set("boost", s.boosts.join(","));
+  if (s.ignoredDims.length > 0) sp.set("ignore", s.ignoredDims.join(","));
 
   return sp;
 }
@@ -96,7 +100,9 @@ function paramsToState(sp: URLSearchParams): {
   sortBy: string;
   filters: FilterState;
   kidsMode: boolean;
-  priorities: ScoreGroupKey[];
+  /** null = param absent from URL (fall back to persisted store value). */
+  boosts: ScoreGroupKey[] | null;
+  ignoredDims: ScoreDimension[] | null;
 } {
   const tab = (sp.get("tab") as QueueTab) || DEF_TAB;
   const view = (sp.get("view") as ViewMode) || DEF_VIEW;
@@ -122,9 +128,16 @@ function paramsToState(sp: URLSearchParams): {
   const minDataQuality = sp.get("quality") || DEF_QUALITY;
 
   const kidsMode = sp.get("kids") === "1";
-  const priorities = sp.get("pri")
-    ? (sp.get("pri")!.split(",") as ScoreGroupKey[])
-    : [...DEFAULT_GROUP_PRIORITIES];
+  const boosts = sp.has("boost")
+    ? (sp.get("boost")!.split(",").filter((g) =>
+        (SCORE_GROUP_KEYS as readonly string[]).includes(g),
+      ) as ScoreGroupKey[]).slice(0, 2)
+    : null;
+  const ignoredDims = sp.has("ignore")
+    ? (sp.get("ignore")!.split(",").filter((d) =>
+        (SCORE_DIMENSIONS as readonly string[]).includes(d),
+      ) as ScoreDimension[])
+    : null;
 
   return {
     activeTab: tab,
@@ -144,7 +157,8 @@ function paramsToState(sp: URLSearchParams): {
       minDataQuality,
     },
     kidsMode,
-    priorities,
+    boosts,
+    ignoredDims,
   };
 }
 
@@ -172,6 +186,13 @@ function hydrateFromUrl() {
   const sp = new URLSearchParams(window.location.search);
   const state = paramsToState(sp);
 
+  // Preferences absent from the URL fall back to the persisted store
+  // values (rehydrated by zustand/persist before this runs) — a bare
+  // URL must not clobber saved boost/ignore preferences.
+  const cur = useStore.getState();
+  const boosts = state.boosts ?? cur.boosts;
+  const ignoredDims = state.ignoredDims ?? cur.ignoredDims;
+
   // Batch-set into Zustand without triggering per-setter loadListings()
   suppressUrlWrite = true;
   useStore.setState({
@@ -180,7 +201,9 @@ function hydrateFromUrl() {
     sortBy: state.sortBy,
     filters: state.filters,
     kidsMode: state.kidsMode,
-    priorities: state.priorities,
+    boosts,
+    ignoredDims,
+    priorities: boostsToPriorities(boosts),
   });
   suppressUrlWrite = false;
 
@@ -205,7 +228,8 @@ export function useUrlState() {
   const sortBy = useStore((s) => s.sortBy);
   const filters = useStore((s) => s.filters);
   const kidsMode = useStore((s) => s.kidsMode);
-  const priorities = useStore((s) => s.priorities);
+  const boosts = useStore((s) => s.boosts);
+  const ignoredDims = useStore((s) => s.ignoredDims);
   const isLoading = useStore((s) => s.isLoading);
   const setActiveTab = useStore((s) => s.setActiveTab);
   const setViewMode = useStore((s) => s.setViewMode);
@@ -242,7 +266,8 @@ export function useUrlState() {
     sortBy,
     filters,
     kidsMode,
-    priorities,
+    boosts,
+    ignoredDims,
     listings,
   ]);
 
@@ -255,11 +280,14 @@ export function useUrlState() {
 
       // Check if data-affecting params changed BEFORE setting state
       const prev = useStore.getState();
+      const boosts = state.boosts ?? prev.boosts;
+      const ignoredDims = state.ignoredDims ?? prev.ignoredDims;
       const needsReload =
         prev.sortBy !== state.sortBy ||
         JSON.stringify(prev.filters) !== JSON.stringify(state.filters) ||
         prev.kidsMode !== state.kidsMode ||
-        !arraysEqual(prev.priorities, state.priorities);
+        !arraysEqual(prev.boosts, boosts) ||
+        !arraysEqual(prev.ignoredDims, ignoredDims);
 
       // Batch-set state
       suppressUrlWrite = true;
@@ -269,7 +297,9 @@ export function useUrlState() {
         sortBy: state.sortBy,
         filters: state.filters,
         kidsMode: state.kidsMode,
-        priorities: state.priorities,
+        boosts,
+        ignoredDims,
+        priorities: boostsToPriorities(boosts),
       });
       suppressUrlWrite = false;
 

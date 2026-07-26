@@ -12,6 +12,11 @@
  * listing locations.
  *
  * Color scale: green (≥75) → yellow (≥50) → orange (≥25) → red (<25).
+ *
+ * "Relative to view" mode (store.heatmapRelative): the ramp is
+ * renormalized to the p5–p95 score range of the cells currently in
+ * view, so locally-flat areas regain contrast. Recomputed on
+ * moveend/zoomend (debounced). Null cells stay uncolored either way.
  */
 
 "use client";
@@ -19,6 +24,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useMap } from "react-leaflet";
 import type { ScoreDimension } from "@/lib/types";
+import { useStore } from "@/lib/store";
 import L from "leaflet";
 
 interface HeatmapLayerProps {
@@ -69,6 +75,59 @@ function scoreToRgb(score: number): RGB {
   if (s >= 50) return lerpColor(ORANGE, YELLOW, (s - 50) / 25);
   if (s >= 25) return lerpColor(RED, ORANGE, (s - 25) / 25);
   return RED;
+}
+
+// ── Relative-to-view normalization ──────────────────────────────
+
+interface NormRange {
+  lo: number;
+  hi: number;
+}
+
+const RELATIVE_DEBOUNCE_MS = 250;
+
+/**
+ * Collect non-null grid values inside the current map bounds and
+ * return their p5–p95 range (robust to outliers). Returns null when
+ * there is too little data or spread to stretch meaningfully — the
+ * caller then falls back to absolute citywide colors.
+ */
+function computeViewRange(
+  grid: GridData,
+  bounds: L.LatLngBounds,
+): NormRange | null {
+  const { bounds: gb, rows, cols, scores } = grid;
+  const south = bounds.getSouth();
+  const north = bounds.getNorth();
+  const west = bounds.getWest();
+  const east = bounds.getEast();
+
+  // Grid node r,c sits at (maxLat - r*latStep, minLng + c*lngStep)
+  // — same convention as sampleGrid. Restrict the scan to the
+  // row/col window overlapping the view.
+  const rMin = Math.max(0, Math.floor((gb.maxLat - north) / grid.latStep));
+  const rMax = Math.min(rows - 1, Math.ceil((gb.maxLat - south) / grid.latStep));
+  const cMin = Math.max(0, Math.floor((west - gb.minLng) / grid.lngStep));
+  const cMax = Math.min(cols - 1, Math.ceil((east - gb.minLng) / grid.lngStep));
+
+  const vals: number[] = [];
+  for (let r = rMin; r <= rMax; r++) {
+    const row = scores[r];
+    if (!row) continue;
+    for (let c = cMin; c <= cMax; c++) {
+      const v = row[c];
+      if (v !== null && v !== undefined) vals.push(v);
+    }
+  }
+
+  if (vals.length < 4) return null;
+
+  vals.sort((a, b) => a - b);
+  const lo = vals[Math.floor(0.05 * (vals.length - 1))];
+  const hi = vals[Math.ceil(0.95 * (vals.length - 1))];
+  if (hi - lo < 1e-6) return null; // Uniform view — nothing to stretch
+
+  return { lo, hi };
 }
 
 // ── Tile rendering constants ────────────────────────────────────
@@ -124,7 +183,10 @@ function sampleGrid(grid: GridData, lat: number, lng: number): number | null {
 
 // ── L.GridLayer factory ─────────────────────────────────────────
 
-function createHeatmapGridLayer(grid: GridData) {
+function createHeatmapGridLayer(
+  grid: GridData,
+  normRef: { current: NormRange | null },
+) {
   const HeatmapGrid = L.GridLayer.extend({
     createTile(coords: L.Coords) {
       const tile = document.createElement("canvas");
@@ -163,6 +225,10 @@ function createHeatmapGridLayer(grid: GridData) {
 
       let hasAnyPixel = false;
 
+      // Relative-to-view: stretch [lo, hi] onto the full 0–100 ramp.
+      // Read once per tile; layer.redraw() re-renders when it changes.
+      const norm = normRef.current;
+
       for (let sy = 0; sy < sh; sy++) {
         const py = sy * PIXEL_STEP + PIXEL_STEP / 2;
         for (let sx = 0; sx < sw; sx++) {
@@ -174,10 +240,13 @@ function createHeatmapGridLayer(grid: GridData) {
 
           // Sample the pre-computed grid with bilinear interpolation
           const score = sampleGrid(grid, latlng.lat, latlng.lng);
-          if (score === null) continue;
+          if (score === null) continue; // Null cells stay uncolored in both modes
 
           hasAnyPixel = true;
-          const [r, g, b] = scoreToRgb(score);
+          const display = norm
+            ? ((score - norm.lo) / (norm.hi - norm.lo)) * 100
+            : score;
+          const [r, g, b] = scoreToRgb(display); // scoreToRgb clamps to [0,100]
           const idx = (sy * sw + sx) * 4;
           pixels[idx] = r;
           pixels[idx + 1] = g;
@@ -235,7 +304,9 @@ async function fetchGrid(dimension: ScoreDimension): Promise<GridData | null> {
 
 export default function HeatmapLayer({ dimension }: HeatmapLayerProps) {
   const map = useMap();
+  const relative = useStore((s) => s.heatmapRelative);
   const layerRef = useRef<L.GridLayer | null>(null);
+  const normRef = useRef<NormRange | null>(null);
   const [grid, setGrid] = useState<GridData | null>(null);
 
   // Fetch grid data when dimension changes
@@ -257,7 +328,7 @@ export default function HeatmapLayer({ dimension }: HeatmapLayerProps) {
 
     if (!grid) return;
 
-    const layer = createHeatmapGridLayer(grid);
+    const layer = createHeatmapGridLayer(grid, normRef);
     layer.addTo(map);
     layerRef.current = layer;
 
@@ -268,6 +339,40 @@ export default function HeatmapLayer({ dimension }: HeatmapLayerProps) {
       }
     };
   }, [map, grid]);
+
+  // Relative-to-view normalization: recompute the visible-score range
+  // on toggle and on map moveend/zoomend (debounced), then redraw.
+  useEffect(() => {
+    if (!grid) return;
+
+    const apply = () => {
+      normRef.current = computeViewRange(grid, map.getBounds());
+      layerRef.current?.redraw();
+    };
+
+    if (!relative) {
+      // Back to absolute citywide colors
+      if (normRef.current !== null) {
+        normRef.current = null;
+        layerRef.current?.redraw();
+      }
+      return;
+    }
+
+    apply(); // Immediate on toggle-on / grid load
+
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const debounced = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(apply, RELATIVE_DEBOUNCE_MS);
+    };
+    map.on("moveend zoomend", debounced);
+
+    return () => {
+      if (timer) clearTimeout(timer);
+      map.off("moveend zoomend", debounced);
+    };
+  }, [map, grid, relative]);
 
   return null;
 }

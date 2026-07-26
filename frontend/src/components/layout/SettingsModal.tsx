@@ -1,63 +1,66 @@
 /**
  * SettingsModal — Preferences panel.
  *
- * Contains the drag-to-reorder priority ranking for score groups.
- * Top 2 get heaviest weight in composite calculation.
+ * Scoring preferences:
+ *   - "What matters most?" — boost up to TWO score groups (×2 weight)
+ *   - "Ignore signals"     — exclude individual dimensions entirely
+ *   - Kids Mode            — include school proximity in scoring
+ *
+ * The old drag-to-rank priority control is gone: every group matters
+ * equally by default; boosts are the only weighting knob.
  */
 
 "use client";
 
-import { useState, useCallback } from "react";
+import { useEffect, useState } from "react";
 import { useStore } from "@/lib/store";
-import type { ScoreGroupKey } from "@/lib/types";
-import { GROUP_BY_KEY } from "@/lib/types";
+import type { ScoreDimension, ScoreGroupKey } from "@/lib/types";
+import {
+  GROUP_BY_KEY,
+  SCORE_GROUP_KEYS,
+  IGNORABLE_DIMENSIONS,
+  DIMENSION_LABELS,
+  MAX_BOOSTS,
+} from "@/lib/types";
 import { motion, AnimatePresence } from "framer-motion";
 import clsx from "clsx";
-
-function weightIndicator(index: number): string {
-  if (index < 2) return "●●●";
-  if (index < 3) return "●●";
-  return "●";
-}
-
-function weightColor(index: number): string {
-  if (index < 2) return "text-green-400";
-  if (index < 3) return "text-yellow-400";
-  return "text-gray-400";
-}
 
 export default function SettingsModal() {
   const settingsOpen = useStore((s) => s.settingsOpen);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
-  const priorities = useStore((s) => s.priorities);
-  const setPriorities = useStore((s) => s.setPriorities);
+  const boosts = useStore((s) => s.boosts);
+  const ignoredDims = useStore((s) => s.ignoredDims);
+  const setScoringPrefs = useStore((s) => s.setScoringPrefs);
   const kidsMode = useStore((s) => s.kidsMode);
   const setKidsMode = useStore((s) => s.setKidsMode);
 
-  const [draft, setDraft] = useState<ScoreGroupKey[]>(priorities);
+  const [draftBoosts, setDraftBoosts] = useState<ScoreGroupKey[]>(boosts);
+  const [draftIgnored, setDraftIgnored] = useState<ScoreDimension[]>(ignoredDims);
 
-  const moveUp = useCallback(
-    (idx: number) => {
-      if (idx === 0) return;
-      const next = [...draft];
-      [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
-      setDraft(next);
-    },
-    [draft],
-  );
+  // Re-seed drafts from the store each time the panel opens.
+  useEffect(() => {
+    if (settingsOpen) {
+      setDraftBoosts(useStore.getState().boosts);
+      setDraftIgnored(useStore.getState().ignoredDims);
+    }
+  }, [settingsOpen]);
 
-  const moveDown = useCallback(
-    (idx: number) => {
-      if (idx >= draft.length - 1) return;
-      const next = [...draft];
-      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
-      setDraft(next);
-    },
-    [draft],
-  );
+  const toggleBoost = (gk: ScoreGroupKey) => {
+    setDraftBoosts((prev) => {
+      if (prev.includes(gk)) return prev.filter((g) => g !== gk);
+      if (prev.length >= MAX_BOOSTS) return prev;
+      return [...prev, gk];
+    });
+  };
+
+  const toggleIgnore = (dim: ScoreDimension) => {
+    setDraftIgnored((prev) =>
+      prev.includes(dim) ? prev.filter((d) => d !== dim) : [...prev, dim],
+    );
+  };
 
   const handleSave = () => {
-    setPriorities(draft);
+    setScoringPrefs(draftBoosts, draftIgnored);
     setSettingsOpen(false);
   };
 
@@ -96,41 +99,38 @@ export default function SettingsModal() {
                 </button>
               </div>
 
-              {/* Priority ranking */}
+              {/* What matters most? — boost toggles */}
               <div className="space-y-3">
                 <div>
                   <h3 className="text-sm font-medium text-gray-600">
-                    Priority Ranking
+                    What matters most?
                   </h3>
                   <p className="text-xs text-gray-400 mt-0.5">
-                    Reorder categories. Top 2 get 3× weight in composite score.
+                    Boost up to two categories — they count double in the
+                    overall score. Everything else still counts.
                   </p>
                 </div>
 
                 <div className="space-y-1">
-                  {draft.map((gk, idx) => {
+                  {SCORE_GROUP_KEYS.map((gk) => {
                     const group = GROUP_BY_KEY[gk];
+                    const selected = draftBoosts.includes(gk);
+                    const atLimit = !selected && draftBoosts.length >= MAX_BOOSTS;
                     return (
-                      <div
+                      <button
                         key={gk}
+                        onClick={() => toggleBoost(gk)}
+                        disabled={atLimit}
                         className={clsx(
-                          "flex items-center gap-3 px-3 py-3 rounded-lg border transition-all",
-                          idx < 2
-                            ? "border-green-500/30 bg-green-500/5"
-                            : idx < 3
-                              ? "border-yellow-500/20 bg-yellow-500/5"
-                              : "border-[#E5E0D8] bg-[#F3F0EB]",
+                          "w-full flex items-center gap-3 px-3 py-3 rounded-lg border text-left transition-all",
+                          selected
+                            ? "border-green-500/40 bg-green-500/10"
+                            : atLimit
+                              ? "border-[#E5E0D8] bg-[#F3F0EB] opacity-50 cursor-not-allowed"
+                              : "border-[#E5E0D8] bg-[#F3F0EB] hover:border-gray-300",
                         )}
                       >
-                        {/* Rank number */}
-                        <span className="text-xs text-gray-400 w-4 text-right font-mono">
-                          {idx + 1}
-                        </span>
-
-                        {/* Icon */}
                         <span className="text-base">{group.icon}</span>
-
-                        {/* Label + description */}
                         <div className="flex-1 min-w-0">
                           <span className="text-sm text-gray-600 font-medium">
                             {group.label}
@@ -139,40 +139,55 @@ export default function SettingsModal() {
                             {group.description}
                           </p>
                         </div>
-
-                        {/* Weight indicator */}
-                        <span className={clsx("text-xs font-mono", weightColor(idx))}>
-                          {weightIndicator(idx)}
+                        <span
+                          className={clsx(
+                            "text-xs font-mono shrink-0",
+                            selected ? "text-green-500" : "text-gray-300",
+                          )}
+                        >
+                          {selected ? "×2" : "×1"}
                         </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
 
-                        {/* Move buttons */}
-                        <div className="flex flex-col gap-0.5">
-                          <button
-                            onClick={() => moveUp(idx)}
-                            disabled={idx === 0}
-                            className={clsx(
-                              "text-xs leading-none px-1",
-                              idx === 0
-                                ? "text-gray-300 cursor-not-allowed"
-                                : "text-gray-500 hover:text-gray-900",
-                            )}
-                          >
-                            ▲
-                          </button>
-                          <button
-                            onClick={() => moveDown(idx)}
-                            disabled={idx === draft.length - 1}
-                            className={clsx(
-                              "text-xs leading-none px-1",
-                              idx === draft.length - 1
-                                ? "text-gray-300 cursor-not-allowed"
-                                : "text-gray-500 hover:text-gray-900",
-                            )}
-                          >
-                            ▼
-                          </button>
-                        </div>
-                      </div>
+              {/* Ignore signals — per-dimension exclusion */}
+              <div className="space-y-3">
+                <div>
+                  <h3 className="text-sm font-medium text-gray-600">
+                    Ignore signals
+                  </h3>
+                  <p className="text-xs text-gray-400 mt-0.5">
+                    Signals you don&apos;t care about are excluded from
+                    scoring entirely.
+                  </p>
+                </div>
+
+                <div className="space-y-1">
+                  {IGNORABLE_DIMENSIONS.map((dim) => {
+                    const checked = draftIgnored.includes(dim);
+                    return (
+                      <label
+                        key={dim}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-lg border border-[#E5E0D8] bg-[#F3F0EB] cursor-pointer hover:border-gray-300 transition-all"
+                      >
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleIgnore(dim)}
+                          className="w-4 h-4 rounded border-gray-300 accent-amber-500"
+                        />
+                        <span
+                          className={clsx(
+                            "text-sm font-medium",
+                            checked ? "text-gray-400 line-through" : "text-gray-600",
+                          )}
+                        >
+                          {DIMENSION_LABELS[dim]}
+                        </span>
+                      </label>
                     );
                   })}
                 </div>

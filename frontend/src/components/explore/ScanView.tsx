@@ -48,7 +48,10 @@ export default function ScanView() {
   }, [hasMore, isLoadingMore, loadMore, isLoading]);
 
   const handleCardClick = (listingId: string) => {
-    const idx = listings.findIndex((l) => l.id === listingId);
+    // feedIndex is interpreted by Feed mode as an index into the *visible*
+    // (non-skipped) list, so it must be written in that same index space —
+    // indexing into the full `listings` array drifts once anything is skipped.
+    const idx = visible.findIndex((l) => l.id === listingId);
     if (idx >= 0) {
       setFeedIndex(idx);
       setViewMode("feed");

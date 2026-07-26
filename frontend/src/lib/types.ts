@@ -21,6 +21,10 @@ export const SCORE_DIMENSIONS = [
   "shelter",
   "pest",
   "greenery",
+  "bedbug",
+  "street_danger",
+  "air_quality",
+  "road_exposure",
 ] as const;
 
 export type ScoreDimension = (typeof SCORE_DIMENSIONS)[number];
@@ -39,6 +43,10 @@ export const DIMENSION_LABELS: Record<ScoreDimension, string> = {
   shelter: "Shelters & Projects",
   pest: "Pests",
   greenery: "Greenery",
+  bedbug: "Bedbugs",
+  street_danger: "Street Safety",
+  air_quality: "Air Quality",
+  road_exposure: "Street Traffic",
 };
 
 // ── Dimension-specific score tier labels ───────────────────────
@@ -60,6 +68,10 @@ export const DIMENSION_TIER_LABELS: Record<ScoreDimension, ScoreTierLabels> = {
   shelter:             ["Very Low Presence", "Low Presence",    "Some Presence",   "Notable Presence", "High Presence"],
   pest:                ["No Issues",        "Minimal Issues",   "Some Reports",    "Pest Concerns",    "Major Problems"],
   greenery:            ["Lush",             "Very Green",       "Green",           "Some Greenery",    "Sparse"],
+  bedbug:              ["No History",       "Clean Record",     "Past Reports",    "Recent Reports",   "Repeat Infestations"],
+  street_danger:       ["Calm Streets",     "Safe Streets",     "Some Incidents",  "Busy Danger",      "High-Crash Zone"],
+  air_quality:         ["Cleanest Air",     "Clean Air",        "Average Air",     "Below Average",    "Poor Air"],
+  road_exposure:       ["Tucked Away",      "Quiet Street",     "Average Traffic", "Busy Street",      "Highway-Adjacent"],
 };
 
 // ── Score groups ───────────────────────────────────────────────
@@ -101,21 +113,21 @@ export const SCORE_GROUPS: ScoreGroup[] = [
     key: "neighborhood",
     label: "Neighborhood",
     icon: "🌳",
-    dimensions: ["convenience", "parks", "greenery", "schools"],
-    description: "Convenience, Parks, Greenery, Schools",
+    dimensions: ["convenience", "parks", "greenery", "schools", "air_quality", "noise", "road_exposure"],
+    description: "Convenience, Parks, Greenery, Schools, Air, Noise, Traffic",
   },
   {
     key: "safety",
     label: "Safety",
     icon: "🛡️",
-    dimensions: ["crime", "noise", "shelter"],
-    description: "Crime, Noise, Shelters",
+    dimensions: ["crime", "street_danger", "shelter"],
+    description: "Crime, Street Safety, Shelters",
   },
   {
     key: "building",
     label: "Building",
     icon: "🏢",
-    dimensions: ["building_violations", "management", "pest"],
+    dimensions: ["building_violations", "management", "pest", "bedbug"],
     description: "Violations, Management, Pests",
   },
 ];
@@ -134,6 +146,61 @@ export const DEFAULT_GROUP_PRIORITIES: ScoreGroupKey[] = [
   "building",
   "neighborhood",
   "access",
+];
+
+/** Max number of groups a user can boost ("What matters most?"). */
+export const MAX_BOOSTS = 2;
+
+/** Dimensions offered as ignorable in Settings ("Ignore signals"). */
+export const IGNORABLE_DIMENSIONS: ScoreDimension[] = [
+  "noise",
+  "schools",
+  "shelter",
+  "air_quality",
+  "street_danger",
+];
+
+/**
+ * Derive a full 5-group priority ordering from boost selections:
+ * boosted groups first, then the remaining groups in default order.
+ * Keeps every priorities-consumer (rings, pills, ordering) working
+ * while the API only receives the boosts themselves.
+ */
+export function boostsToPriorities(boosts: ScoreGroupKey[]): ScoreGroupKey[] {
+  const b = boosts.slice(0, MAX_BOOSTS);
+  return [...b, ...DEFAULT_GROUP_PRIORITIES.filter((g) => !b.includes(g))];
+}
+
+// ── Detail-panel dimension sections (building / block / around) ─
+
+export interface DetailDimensionSection {
+  title: string;
+  dimensions: ScoreDimension[];
+}
+
+/**
+ * Organizes the detail-panel score list by physical scope:
+ * signals verified against THIS building, signals measured on the
+ * surrounding block, and getting-around signals. "This unit" holds
+ * the price/feature dimensions that aren't location-scoped.
+ */
+export const DETAIL_DIMENSION_SECTIONS: DetailDimensionSection[] = [
+  {
+    title: "This unit",
+    dimensions: ["deal", "unit_amenities"],
+  },
+  {
+    title: "This building",
+    dimensions: ["building_violations", "management", "pest", "bedbug"],
+  },
+  {
+    title: "This block",
+    dimensions: ["crime", "noise", "street_danger", "greenery", "shelter", "road_exposure"],
+  },
+  {
+    title: "Getting around",
+    dimensions: ["transit", "convenience", "parks", "schools", "air_quality"],
+  },
 ];
 
 /** Lookup from group key → ScoreGroup config. */
@@ -184,6 +251,10 @@ export interface Scores {
   shelter: number | null;
   pest: number | null;
   greenery: number | null;
+  bedbug: number | null;
+  street_danger: number | null;
+  air_quality: number | null;
+  road_exposure: number | null;
   rent_stabilized: boolean;
 }
 
@@ -243,6 +314,23 @@ export interface POI {
   distance_m: number;
 }
 
+// ── Score transparency (detail endpoint) ───────────────────────
+
+/** One-sentence plain-English explanation per dimension. */
+export type ScoreExplanations = Partial<Record<ScoreDimension, string>>;
+
+/** Peer comparison stats for a dimension within the neighborhood. */
+export interface PeerContextEntry {
+  /** Percentile of this listing among neighborhood peers (0–100). */
+  nbhd_percentile: number;
+  /** Number of peer listings the percentile was computed over. */
+  n_peers: number;
+  /** Median score among neighborhood peers. */
+  nbhd_median: number;
+}
+
+export type PeerContext = Partial<Record<ScoreDimension, PeerContextEntry>>;
+
 export interface ComparableListing {
   id: string;
   address: string;
@@ -297,6 +385,11 @@ export interface Listing {
   nearby_neighborhoods: string[];
   similar: ComparableListing[];
   also_consider: ComparableListing[];
+
+  // Score transparency (populated on the detail endpoint; optional so
+  // persisted feed/queue listings from before this field remain valid)
+  score_explanations?: ScoreExplanations;
+  peer_context?: PeerContext | null;
 }
 
 export interface ListingsResponse {
@@ -428,9 +521,28 @@ export const DIMENSION_BREAKOUT: Partial<Record<ScoreDimension, BreakoutItem[]>>
     { key: "mgmt_evictions", label: "Eviction filings (building)" },
     { key: "mgmt_complaints_per_unit", label: "Complaints per unit" },
   ],
+  bedbug: [
+    { key: "bedbug_filings", label: "Owner bedbug filings" },
+    { key: "bedbug_infested_total", label: "Units reported infested" },
+    { key: "bedbug_reinfested_total", label: "Re-infestations" },
+  ],
+  street_danger: [
+    { key: "street_danger_injuries", label: "Ped/cyclist injuries (300 m, 12 mo)" },
+    { key: "street_danger_deaths", label: "Deaths" },
+  ],
+  air_quality: [
+    { key: "air_quality_pm25", label: "PM2.5 (µg/m³, annual)" },
+    { key: "air_quality_no2", label: "NO₂ (ppb, annual)" },
+  ],
   greenery: [
     { key: "greenery_tree_count", label: "Street trees (200 m)" },
     { key: "greenery_canopy_score", label: "Canopy score" },
     { key: "greenery_garden_count", label: "Community gardens (500 m)" },
+  ],
+  road_exposure: [
+    { key: "road_exposure_hwy_dist_m", label: "Nearest highway", unit: "m" },
+    { key: "road_exposure_arterial", label: "Arterial density" },
+    { key: "road_exposure_truck", label: "Truck route proximity" },
+    { key: "road_exposure_index", label: "Exposure index" },
   ],
 };

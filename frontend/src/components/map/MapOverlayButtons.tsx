@@ -4,6 +4,10 @@
  * Positioned below the Leaflet zoom controls (top-right).
  * Each button toggles a score-dimension heatmap area overlay.
  * Active button gets amber highlight; clicking again clears the overlay.
+ *
+ * While an overlay is active, a "Relative to view" pill appears below
+ * the column: it renormalizes the heatmap ramp to the scores currently
+ * visible (useful when a neighborhood looks flat on the citywide scale).
  */
 
 "use client";
@@ -87,10 +91,12 @@ const OVERLAYS: OverlayOption[] = [
 export default function MapOverlayButtons() {
   const mapColorOverlay = useStore((s) => s.mapColorOverlay);
   const setMapColorOverlay = useStore((s) => s.setMapColorOverlay);
+  const heatmapRelative = useStore((s) => s.heatmapRelative);
+  const setHeatmapRelative = useStore((s) => s.setHeatmapRelative);
   const [hoveredKey, setHoveredKey] = useState<string | null>(null);
 
   return (
-    <div className="absolute top-[120px] right-[10px] z-[1001] flex flex-col gap-1">
+    <div className="absolute top-[120px] right-[10px] z-[1001] flex flex-col items-end gap-1">
       {OVERLAYS.map(({ key, label, description, icon }) => {
         const active = mapColorOverlay === key;
         const hovered = hoveredKey === key;
@@ -121,6 +127,39 @@ export default function MapOverlayButtons() {
           </div>
         );
       })}
+
+      {/* ── "Relative to view" pill — only while an overlay is active ── */}
+      {mapColorOverlay && (
+        <div className="relative mt-1">
+          <button
+            onClick={() => setHeatmapRelative(!heatmapRelative)}
+            onMouseEnter={() => setHoveredKey("relative")}
+            onMouseLeave={() => setHoveredKey(null)}
+            className={clsx(
+              "flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[10px] font-medium shadow-md transition-all duration-200",
+              heatmapRelative
+                ? "bg-amber-500 text-white border-amber-500 shadow-amber-200"
+                : "bg-white text-gray-500 border-[#E5E0D8] hover:text-gray-800 hover:bg-[#F3F0EB]",
+            )}
+          >
+            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" />
+            </svg>
+            Relative to view
+          </button>
+
+          {/* Hover tooltip — left of pill */}
+          {hoveredKey === "relative" && (
+            <div className="absolute right-full mr-2 top-1/2 -translate-y-1/2 whitespace-nowrap bg-gray-900 text-white text-xs rounded-lg px-3 py-2 shadow-lg pointer-events-none">
+              <p className="font-semibold">Relative to view</p>
+              <p className="text-gray-300 text-[10px]">
+                Stretch colors to the score range currently in view
+              </p>
+              <div className="absolute right-[-4px] top-1/2 -translate-y-1/2 w-2 h-2 bg-gray-900 rotate-45" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
