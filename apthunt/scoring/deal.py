@@ -58,6 +58,14 @@ class DealScorer(Scorer):
     def name(self) -> str:
         return "deal"
 
+    # Baseline metric: combined value deviation vs comps (positive =
+    # better value). Baselined against the active-listing distribution so
+    # a single pasted listing scores absolutely (the old batch z-score
+    # returned a meaningless 50.0 for a batch of one).
+    baseline_component = "deal_deviation"
+    baseline_reverse = False
+    baseline_zero_perfect = False
+
     def columns(self) -> dict[str, str]:
         return {
             "comp_median": "INTEGER",
@@ -67,6 +75,7 @@ class DealScorer(Scorer):
             "price_per_sqft": "REAL",
             "tenure_median_months": "REAL",
             "tenure_cycle_count": "INTEGER",
+            "deal_deviation": "REAL",
         }
 
     def score(
@@ -156,11 +165,19 @@ class DealScorer(Scorer):
                 # Scale existing signals down by (1 - W_TENURE), add tenure
                 combined = combined * (1.0 - W_TENURE) + W_TENURE * tenure_dev
 
+            meta["deal_deviation"] = round(combined, 4)
             intermediate.append((lst["id"], combined, meta))
 
-        # Pass 2: z-score normalization
+        # Pass 2: absolute scoring against the frozen active-listing
+        # distribution of deal deviations (positive deviation = better
+        # value). Falls back to batch z-scores until the first baseline
+        # build — which returns a meaningless 50.0 for a single pasted
+        # listing, exactly what the baseline path fixes.
         deviations = [r[1] for r in intermediate]
-        scores = self._deviations_to_scores(deviations)
+        from apthunt.scoring.baseline import baseline_scores
+        scores = baseline_scores(conn, "deal", deviations)
+        if scores is None:
+            scores = self._deviations_to_scores(deviations)
 
         results = []
         for i, (listing_id, _, meta) in enumerate(intermediate):

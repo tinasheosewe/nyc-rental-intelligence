@@ -38,6 +38,10 @@ from apthunt.scoring.unit_amenities import UnitAmenitiesScorer
 from apthunt.scoring.shelter import ShelterScorer
 from apthunt.scoring.pest import PestScorer
 from apthunt.scoring.greenery import GreeneryScorer
+from apthunt.scoring.bedbug import BedbugScorer
+from apthunt.scoring.street_danger import StreetDangerScorer
+from apthunt.scoring.air_quality import AirQualityScorer
+from apthunt.scoring.road_exposure import RoadExposureScorer
 
 
 # Path to bundled GTFS stops.txt (download from MTA and place here)
@@ -72,6 +76,10 @@ def build_scorers(
         "shelter": lambda: ShelterScorer(store, cache),
         "pest": lambda: PestScorer(store, cache),
         "greenery": lambda: GreeneryScorer(store, cache),
+        "bedbug": lambda: BedbugScorer(store, cache),
+        "street_danger": lambda: StreetDangerScorer(store, cache),
+        "air_quality": lambda: AirQualityScorer(store, cache),
+        "road_exposure": lambda: RoadExposureScorer(store, cache),
     }
 
     if only:
@@ -126,6 +134,7 @@ def main():
         print("  convenience          - Nearby conveniences (grocery, pharmacy, gym, etc.)")
         print("  unit_amenities       - In-unit / in-building amenities (washer/dryer, doorman, etc.)")
         print("  shelter              - Proximity to homeless shelters/services & NYCHA projects")
+        print("  road_exposure        - Highway/arterial/truck-route traffic exposure")
         return
 
     conn = get_connection(args.db)

@@ -8,16 +8,18 @@ Uses pre-downloaded datasets:
 - NYCHA BBL Extract — all 2,964 public housing buildings across 219
   developments ("the projects").
 
-Scoring model — distance-weighted facility count, median-normalized:
+Scoring model — distance-weighted facility count, baseline-normalized:
 
 1.  Query all shelters within 800 m and all NYCHA buildings within 800 m.
-2.  Weight each by proximity:  weight = 1 − (dist / 800).
-    A facility at 0 m gets weight 1.0; at 800 m gets ~0.0.
+2.  Weight each by a Gaussian proximity kernel:
+        weight = exp(−(dist / (800/2))²)
+    A facility at 0 m gets weight 1.0; at 800 m gets ~0.02.
 3.  Sum the weights → ``proximity_weighted_total``.
-4.  Normalize against the batch median:
-        score = 100 − 50 × (total / median)       when total ≤ median
-        score = max(0, 50 − 50 × (excess/median)) when total > median
-    *Inverted*: fewer/farther facilities → higher score.
+4.  Score against the frozen citywide baseline distribution
+    (``baseline_scores``); *inverted*: fewer/farther facilities →
+    higher score, and a total of exactly 0 pins to 100.
+    Falls back to batch-median normalization until the first
+    ``build_baseline.py`` run.
 
 Component columns stored: ``shelter_count``, ``shelter_nearest_m``,
 ``shelter_nearest_name``, ``shelter_weighted_total``,
@@ -27,12 +29,12 @@ Component columns stored: ``shelter_count``, ``shelter_nearest_m``,
 from __future__ import annotations
 
 import sqlite3
-
-from haversine import haversine, Unit
+from math import exp
 
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.baseline import baseline_scores
 from apthunt.scoring.utils import dedupe_by_geohash, median_inverse_scores
 
 _RADIUS_M = 800
@@ -47,6 +49,11 @@ class ShelterScorer(Scorer):
     @property
     def name(self) -> str:
         return "shelter"
+
+    # Citywide baseline: sampled by scripts/build_baseline.py.
+    baseline_component = "shelter_weighted_total"
+    baseline_reverse = True          # fewer/closer facilities weighted less = better
+    baseline_zero_perfect = True     # no facilities within 800 m → 100
 
     def columns(self) -> dict[str, str]:
         return {
@@ -70,9 +77,12 @@ class ShelterScorer(Scorer):
         # Deduplicate by geohash
         gh_map = dedupe_by_geohash(listings)
 
+        # Gaussian distance kernel: 1.0 at the door, ~0.02 at the radius edge.
+        _sigma = _RADIUS_M / 2.0
+
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "shelter")
+            cached = self._cache.get(gh, "shelter_v2")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
@@ -94,12 +104,11 @@ class ShelterScorer(Scorer):
                 rlon = float(r.get("longitude") or 0)
                 if rlat == 0 or rlon == 0:
                     continue
-                dist = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
+                dist = float(r["_dist_m"])
                 if dist > _RADIUS_M:
                     continue
                 s_count += 1
-                proximity = max(0.0, 1.0 - dist / _RADIUS_M)
-                s_weighted += proximity
+                s_weighted += exp(-((dist / _sigma) ** 2))
                 if dist < s_nearest_m:
                     s_nearest_m = int(dist)
                     s_nearest_name = r.get("facname") or ""
@@ -121,7 +130,7 @@ class ShelterScorer(Scorer):
                 rlon = float(r.get("longitude") or 0)
                 if rlat == 0 or rlon == 0:
                     continue
-                dist = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
+                dist = float(r["_dist_m"])
                 if dist > _RADIUS_M:
                     continue
                 dev = r.get("development") or "unknown"
@@ -130,7 +139,7 @@ class ShelterScorer(Scorer):
 
             p_count = len(dev_nearest)
             p_weighted = sum(
-                max(0.0, 1.0 - d / _RADIUS_M) for d in dev_nearest.values()
+                exp(-((d / _sigma) ** 2)) for d in dev_nearest.values()
             )
             p_nearest_m = 9999
             p_nearest_name = ""
@@ -152,13 +161,19 @@ class ShelterScorer(Scorer):
                 "project_nearest_name": p_nearest_name,
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "shelter", stats)
+            self._cache.put(gh, "shelter_v2", stats)
 
-        # ── Normalize against batch median (inverted: fewer = better) ──
-        baseline = [v["shelter_weighted_total"] for v in block_stats.values()]
+        # ── Score against the citywide baseline (inverted: fewer = better);
+        #    fall back to batch-median until the first baseline build ──
         per_listing = [block_stats[lst["geohash"]]["shelter_weighted_total"]
                        for lst in listings]
-        scores = median_inverse_scores(per_listing, baseline=baseline)
+        scores = baseline_scores(
+            conn, self.name, per_listing,
+            reverse=True, zero_is_perfect=True,
+        )
+        if scores is None:
+            baseline = [v["shelter_weighted_total"] for v in block_stats.values()]
+            scores = median_inverse_scores(per_listing, baseline=baseline)
 
         results: list[ScorerResult] = []
         for lst, sc in zip(listings, scores):

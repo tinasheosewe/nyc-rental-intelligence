@@ -40,11 +40,19 @@ def find_nearest_row(
     *,
     lat_key: str = "latitude",
     lon_key: str = "longitude",
+    max_dist_m: float | None = None,
 ) -> dict | None:
     """Return the row nearest to *(lat, lon)* by Haversine distance.
 
     Works for any list of dicts that contain lat/lon columns.
     Rows missing valid coordinates are silently skipped.
+
+    ``max_dist_m``: when set, return None if the nearest row is farther
+    than this — used as an attribution guard so a listing whose geocode
+    lands between lots can't inherit a *neighbor's* building record
+    (measured: p50 match distance is 0.4m, p95 is 25m; beyond 40m the
+    match is likely the wrong building). The matched row gains a
+    "_dist_m" key either way.
     """
     if not rows:
         return None
@@ -59,7 +67,28 @@ def find_nearest_row(
         d = haversine((lat, lon), (rlat, rlon), unit=Unit.METERS)
         if d < best_d:
             best, best_d = row, d
+    if best is not None:
+        best["_dist_m"] = round(best_d, 1)
+        if max_dist_m is not None and best_d > max_dist_m:
+            return None
     return best
+
+
+BUILDING_MATCH_MAX_M = 40.0
+NEW_BUILDING_YEARS = 3
+
+
+def is_new_building(pluto_row: dict | None) -> bool:
+    """True when the building is too new to have a meaningful compliance
+    record (~3 years) — scored dimensions should return None ("no track
+    record yet"), not a fake perfect score."""
+    if pluto_row is None:
+        return False
+    try:
+        year = int(float(pluto_row.get("yearbuilt") or 0))
+    except (TypeError, ValueError):
+        return False
+    return year >= date.today().year - NEW_BUILDING_YEARS
 
 
 def pluto_units(row: dict | None, *, min_val: int = 1) -> int:
@@ -94,6 +123,44 @@ def parse_bbl(raw) -> tuple[str, str, str]:
     block = bbl_str[1:6]
     lot = bbl_str[6:10].zfill(5)
     return boro, block, lot
+
+
+def kernel_weighted_units(
+    store,
+    lat: float,
+    lon: float,
+    radius_m: float,
+    *,
+    floor: float = 25.0,
+) -> float:
+    """Gaussian-kernel-weighted residential units around a point (PLUTO).
+
+    The denominator for per-household incident rates: raw counts-in-radius
+    are population-density confounded (dense Williamsburg generates more
+    incident *volume* than sparse Bayside at identical per-person risk).
+    Dividing kernel-weighted incidents by kernel-weighted units — the same
+    kernel on both sides — yields a density-corrected rate.
+
+    Floored so near-empty areas can't produce explosive rates.
+    """
+    import math
+
+    sigma = radius_m / 2.0
+    rows = store.query_circle(
+        "pluto", lat=lat, lon=lon, radius_m=radius_m,
+        select="unitsres",
+    )
+    total = 0.0
+    for r in rows:
+        try:
+            units = float(r.get("unitsres") or 0)
+        except (TypeError, ValueError):
+            continue
+        if units <= 0:
+            continue
+        d = float(r.get("_dist_m") or 0.0)
+        total += units * math.exp(-((d / sigma) ** 2))
+    return max(total, floor)
 
 
 # ── Scoring functions ────────────────────────────────────────────────

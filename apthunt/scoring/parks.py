@@ -39,6 +39,7 @@ from haversine import haversine, Unit
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.baseline import baseline_scores
 from apthunt.scoring.utils import dedupe_by_geohash
 
 # ── Size tiers ──────────────────────────────────────────────────────
@@ -77,11 +78,18 @@ class ParksScorer(Scorer):
     def name(self) -> str:
         return "parks"
 
+    # Baseline metric: raw effective park-access score (proximity × quality).
+    # Higher = better access, and 0 (no park in reach) is the worst case.
+    baseline_component = "parks_effective"
+    baseline_reverse = False
+    baseline_zero_perfect = False
+
     def columns(self) -> dict[str, str]:
         return {
             "parks_distance_m": "INTEGER",
             "parks_name": "TEXT",
             "parks_acres": "REAL",
+            "parks_effective": "REAL",
         }
 
     # ─── public entry point ─────────────────────────────────────────
@@ -98,7 +106,7 @@ class ParksScorer(Scorer):
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "parks")
+            cached = self._cache.get(gh, "parks_v2")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
@@ -112,12 +120,21 @@ class ParksScorer(Scorer):
                 "_effective": hit.effective_score,
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "parks", stats)
+            self._cache.put(gh, "parks_v2", stats)
+
+        # Absolute scoring: rank the raw effective-access metric against the
+        # frozen citywide baseline; fall back to the raw effective score
+        # (already 0-100) until the first baseline build.
+        raw_values = [block_stats[lst["geohash"]]["_effective"] for lst in listings]
+        scores = baseline_scores(
+            conn, self.name, raw_values, reverse=False, zero_is_perfect=False
+        )
+        if scores is None:
+            scores = [round(v, 1) for v in raw_values]
 
         results: list[ScorerResult] = []
-        for lst in listings:
+        for lst, sc, raw in zip(listings, scores, raw_values):
             stats = block_stats[lst["geohash"]]
-            sc = round(stats["_effective"], 1)
 
             results.append(
                 ScorerResult(
@@ -127,6 +144,7 @@ class ParksScorer(Scorer):
                         "parks_distance_m": stats["parks_distance_m"],
                         "parks_name": stats["parks_name"],
                         "parks_acres": stats["parks_acres"],
+                        "parks_effective": round(raw, 1),
                     },
                 )
             )

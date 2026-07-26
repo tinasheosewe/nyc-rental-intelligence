@@ -6,9 +6,12 @@ Quality composite = average of attendance_rate and pct_stu_safe
 (both 0–1 floats).  Best school in 1.5 km wins.
 
 Scoring (absolute, 0–100):
-    score = quality composite of best nearby school × 100.
-    The composite is already a meaningful 0–100 scale (attendance rate
-    and student safety percentage), so no percentile ranking is needed.
+    Raw metric = quality composite of best nearby school × 100
+    (attendance rate and student safety percentage), stored unchanged
+    in components as ``school_rating``.  The final score maps that
+    composite onto the frozen citywide baseline distribution
+    (``baseline_scores``) so spread is citywide-calibrated; until the
+    first baseline build, the raw composite itself is the score.
     Higher composite → higher score.  No school nearby → 0.
 """
 
@@ -19,6 +22,7 @@ import sqlite3
 from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.baseline import baseline_scores
 from apthunt.scoring.utils import dedupe_by_geohash
 
 # 0.014° ≈ 1.5 km at NYC latitude
@@ -34,6 +38,11 @@ class SchoolsScorer(Scorer):
     @property
     def name(self) -> str:
         return "schools"
+
+    # Raw metric sampled citywide by scripts/build_baseline.py
+    baseline_component = "school_rating"
+    baseline_reverse = False        # higher composite = better
+    baseline_zero_perfect = False   # no school nearby (0) is worst, not best
 
     def columns(self) -> dict[str, str]:
         return {
@@ -64,13 +73,25 @@ class SchoolsScorer(Scorer):
             block_stats[gh] = stats
             self._cache.put(gh, "schools", stats)
 
+        # Absolute scoring: map the raw composite onto the citywide
+        # baseline distribution; fall back to the raw composite (already
+        # a meaningful 0-100 scale) until the first baseline build.
+        raw_values = [block_stats[lst["geohash"]]["school_rating"] for lst in listings]
+        scores = baseline_scores(
+            conn, self.name, raw_values,
+            reverse=self.baseline_reverse,
+            zero_is_perfect=self.baseline_zero_perfect,
+        )
+        if scores is None:
+            scores = raw_values
+
         results: list[ScorerResult] = []
-        for lst in listings:
+        for lst, sc in zip(listings, scores):
             stats = block_stats[lst["geohash"]]
             results.append(
                 ScorerResult(
                     listing_id=lst["id"],
-                    score=stats["school_rating"],
+                    score=sc,
                     components={
                         "school_name": stats["school_name"],
                         "school_rating": stats["school_rating"],

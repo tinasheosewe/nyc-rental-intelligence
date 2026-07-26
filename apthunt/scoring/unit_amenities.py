@@ -89,6 +89,12 @@ def _classify_amenities(amenities: list[str]) -> dict[str, int]:
 
 class UnitAmenitiesScorer(Scorer):
 
+    # Baselined against the active-listing distribution of weighted amenity
+    # totals so single-listing scoring is absolute.
+    baseline_component = "unit_amenities_total"
+    baseline_reverse = False
+    baseline_zero_perfect = False
+
     @property
     def name(self) -> str:
         return "unit_amenities"
@@ -135,9 +141,14 @@ class UnitAmenitiesScorer(Scorer):
                 for lst in listings
             ]
 
-        # Percentile-rank only listings with data
+        # Absolute scoring against the frozen active-listing distribution;
+        # batch percentiles only as pre-baseline fallback (meaningless for
+        # a single pasted listing).
         raw_totals = [p["unit_amenities_total"] for _, p in has_data]
-        pct_scores = percentile_scores(raw_totals, reverse=False)
+        from apthunt.scoring.baseline import baseline_scores
+        pct_scores = baseline_scores(conn, "unit_amenities", raw_totals)
+        if pct_scores is None:
+            pct_scores = percentile_scores(raw_totals, reverse=False)
 
         # Build score map for listings with data
         score_map: dict[int, float] = {}
