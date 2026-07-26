@@ -66,13 +66,19 @@ class BlockCache:
         return json.loads(data)
 
     def put(self, geohash: str, source: str, data: Any):
-        """Write data to cache (upsert)."""
+        """Write data to cache (upsert).
+
+        Commits immediately: without this, a long scoring/baseline run
+        accumulates one giant implicit transaction and holds the SQLite
+        write lock for minutes, starving every other process.
+        """
         now = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
             "INSERT OR REPLACE INTO block_cache "
             "(geohash, source, fetched_at, data) VALUES (?, ?, ?, ?)",
             (geohash, source, now, json.dumps(data)),
         )
+        self._conn.commit()
 
     def get_or_fetch(
         self,

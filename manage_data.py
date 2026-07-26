@@ -95,13 +95,22 @@ def main():
     t0 = time.time()
 
     results = {}
+    failures = {}
     for name in names:
-        results[name] = store.download(name, force=args.force)
+        try:
+            results[name] = store.download(name, force=args.force)
+        except Exception as exc:  # one flaky dataset must not kill the batch
+            log.error("%s: download FAILED: %s", name, exc)
+            failures[name] = str(exc)
+            results[name] = {"downloaded": False, "rows": 0, "elapsed_sec": 0}
 
     elapsed = time.time() - t0
     _print_results(results)
     log.info("Total time: %.1fs", elapsed)
     conn.close()
+    if failures:
+        print(f"\n{len(failures)} dataset(s) FAILED: {', '.join(failures)}", file=sys.stderr)
+        sys.exit(1)
 
 
 def _print_status(store: DataStore):
