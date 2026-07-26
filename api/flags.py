@@ -115,7 +115,11 @@ def _management(row: dict) -> Optional[Flag]:
 
 
 def _flood_risk(row: dict) -> Optional[Flag]:
-    score = row.get("flood_risk_score") or 100
+    # NB: `or 100` would treat the in-flood-zone score of exactly 0.0 as
+    # missing and default it to 100 — the red flag could never fire.
+    score = row.get("flood_risk_score")
+    if score is None:
+        score = 100
     if score < 30:
         return Flag(type="red", text="Located in a FEMA flood zone")
     return None
@@ -239,6 +243,27 @@ def _pest(row: dict) -> Optional[Flag]:
     return None
 
 
+def _highway_adjacent(row: dict) -> Optional[Flag]:
+    dist = row.get("road_exposure_hwy_dist_m")
+    if dist is None:
+        return None
+    if dist <= 150:
+        return Flag(
+            type="red",
+            text=f"~{int(round(dist))}m from a highway — expect constant traffic noise",
+        )
+    return None
+
+
+def _truck_route(row: dict) -> Optional[Flag]:
+    # truck component >= 1.5 means the nearest designated truck-route
+    # point is within ~42 m (3 * exp(-d/60) >= 1.5).
+    truck = row.get("road_exposure_truck")
+    if truck is not None and truck >= 1.5:
+        return Flag(type="yellow", text="On or beside a designated truck route")
+    return None
+
+
 def _hpd_class_c(row: dict) -> Optional[Flag]:
     if row.get("building_hpd_class_c") is None:
         return None  # no data
@@ -296,10 +321,34 @@ def _evictions(row: dict) -> Optional[Flag]:
 
 # ── Public API ──────────────────────────────────────────────────
 
+def _building_data_states(row: dict) -> Optional[Flag]:
+    """Surface honest building-data states instead of fake scores."""
+    if any(
+        row.get(f"{dim}_new_building")
+        for dim in ("building_violations", "management", "bedbug", "pest")
+    ):
+        return Flag(type="yellow", text="New building — no compliance track record yet")
+    if any(
+        row.get(f"{dim}_match_uncertain")
+        for dim in ("building_violations", "management", "bedbug", "pest")
+    ):
+        return Flag(type="yellow", text="Building records may not match this exact address")
+    return None
+
+
+def _bedbug_never_filed(row: dict) -> Optional[Flag]:
+    units = row.get("building_unitsres") or 0
+    if row.get("bedbug_never_filed") and units >= 5:
+        return Flag(type="yellow", text="Owner has never filed the required annual bedbug report")
+    return None
+
+
 _RULES = [
     _crime_trend,
     _noise_trend,
     _rent_stabilized,
+    _building_data_states,
+    _bedbug_never_filed,
     _transit,
     _violations,
     _hpd_class_c,
@@ -314,6 +363,8 @@ _RULES = [
     _shelter,
     _projects,
     _pest,
+    _highway_adjacent,
+    _truck_route,
 ]
 
 
@@ -324,4 +375,67 @@ def generate_flags(row: dict) -> list[Flag]:
         flag = rule(row)
         if flag is not None:
             flags.append(flag)
+    return flags
+
+
+# ── Forensic flags — from request-time building_facts lookups ────
+
+def forensic_flags(forensics: dict | None) -> list[Flag]:
+    """Flags derived from the building-forensics payload.
+
+    Each topic may be None (dataset still downloading) — skip silently.
+    """
+    if not forensics:
+        return []
+    flags: list[Flag] = []
+
+    vac = forensics.get("vacate_orders")
+    if vac and vac.get("has_active_vacate_order"):
+        reason = (vac.get("reason") or "unsafe conditions").lower()
+        flags.append(Flag(type="red", text=f"Active HPD vacate order on this building ({reason})"))
+
+    aep = forensics.get("aep")
+    if aep and aep.get("in_aep"):
+        flags.append(Flag(type="red", text="On HPD's Alternative Enforcement list (city-designated worst buildings)"))
+
+    bb = forensics.get("bedbugs")
+    if bb:
+        if (bb.get("total_reinfested_units") or 0) > 0:
+            flags.append(Flag(type="red", text="Repeat bedbug infestations reported by owner"))
+        elif (bb.get("total_infested_units") or 0) > 0:
+            flags.append(Flag(type="yellow", text=f"{int(bb['total_infested_units'])} unit(s) reported bedbug infestation"))
+        elif (bb.get("filings") or 0) >= 2:
+            flags.append(Flag(type="green", text="Owner bedbug filings on record — no infestations reported"))
+
+    spec = forensics.get("speculation")
+    if spec and spec.get("on_watch_list"):
+        flags.append(Flag(type="yellow", text="Building on NYC Speculation Watch List (recent investor purchase)"))
+
+    lien = forensics.get("tax_lien")
+    if lien and (lien.get("entry_count") or 0) > 0:
+        if lien.get("all_water_debt_only"):
+            flags.append(Flag(type="yellow", text="Building appeared on tax-lien sale list (water debt)"))
+        else:
+            flags.append(Flag(type="red", text="Building appeared on tax-lien sale list (financial distress)"))
+
+    shed = forensics.get("sidewalk_shed")
+    if shed and shed.get("has_active_shed"):
+        age_days = shed.get("shed_age_days") or 0
+        if age_days > 730:
+            flags.append(Flag(type="yellow", text=f"Sidewalk shed up for {age_days // 365}+ years (facade work stalled?)"))
+        else:
+            flags.append(Flag(type="yellow", text="Active sidewalk shed / scaffolding at building"))
+
+    ecb = forensics.get("ecb")
+    if ecb and (ecb.get("total_balance_due") or 0) > 10_000:
+        flags.append(Flag(type="red", text=f"${int(ecb['total_balance_due']):,} in unpaid DOB/ECB penalties"))
+
+    erp = forensics.get("omo")
+    if erp and (erp.get("order_count") or 0) >= 3:
+        flags.append(Flag(type="red", text=f"{int(erp['order_count'])} city emergency-repair orders (owner failed to fix)"))
+
+    reg = forensics.get("registration")
+    if reg and reg.get("expired"):
+        flags.append(Flag(type="yellow", text="Landlord's HPD registration has expired"))
+
     return flags

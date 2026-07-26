@@ -620,35 +620,42 @@ def get_nearby_pois(row: dict) -> list[POI]:
 
 # ── Transit stations with route badges ─────────────────────────
 
+_TRANSIT_DATA = None
+_TRANSIT_DATA_LOADED = False
+
+
+def _get_transit_data():
+    """Load GTFS TransitData once per process — parsing routes.txt and
+    stop_times.txt on every request was the dominant cost of the detail
+    endpoint (~1s per call)."""
+    global _TRANSIT_DATA, _TRANSIT_DATA_LOADED
+    if _TRANSIT_DATA_LOADED:
+        return _TRANSIT_DATA
+    _TRANSIT_DATA_LOADED = True
+    from apthunt.data.transit_data import TransitData
+
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    stops_candidates = [
+        os.path.join(base_dir, "data", "stops.txt"),
+        os.path.join(base_dir, "data", "gtfs", "stops.txt"),
+        os.path.join(base_dir, "apthunt", "data", "gtfs", "stops.txt"),
+        os.path.join(base_dir, "gtfs", "stops.txt"),
+    ]
+    for p in stops_candidates:
+        if os.path.exists(p):
+            _TRANSIT_DATA = TransitData(p)
+            break
+    return _TRANSIT_DATA
+
+
 def get_transit_stations(lat: float, lon: float) -> list[TransitStation]:
-    """Get nearby transit stations with route letters.
-
-    Uses the GTFS data that's already loaded by the TransitScorer.
-    We load it fresh here since the API process may not have the scorer
-    instance available.
-    """
+    """Get nearby transit stations with route letters."""
     try:
-        from apthunt.data.transit_data import TransitData, _haversine
+        from apthunt.data.transit_data import _haversine
 
-        # Find the stops.txt file
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        stops_candidates = [
-            os.path.join(base_dir, "data", "stops.txt"),
-            os.path.join(base_dir, "data", "gtfs", "stops.txt"),
-            os.path.join(base_dir, "apthunt", "data", "gtfs", "stops.txt"),
-            os.path.join(base_dir, "gtfs", "stops.txt"),
-        ]
-
-        stops_path = None
-        for p in stops_candidates:
-            if os.path.exists(p):
-                stops_path = p
-                break
-
-        if not stops_path:
+        td = _get_transit_data()
+        if td is None:
             return []
-
-        td = TransitData(stops_path)
         stations = td.stations_within(lat, lon, 800)
 
         result: list[TransitStation] = []

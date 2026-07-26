@@ -63,15 +63,13 @@ def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
 
 # ── Grade curve (duplicated to avoid circular import) ───────────
 
-_GRADE_EXPONENT = 0.4
-
-
+# Grade curve removed: scores are citywide percentiles, reported as-is.
 def _grade_curve(raw: float) -> float:
     if raw <= 0:
         return 0.0
     if raw >= 100:
         return 100.0
-    return round(100.0 * (raw / 100.0) ** _GRADE_EXPONENT, 1)
+    return round(raw, 1)
 
 
 # ── Main engine ────────────────────────────────────────────────

@@ -88,29 +88,21 @@ def _parse_photos(raw: Optional[str]) -> list[str]:
 #
 #   raw 0 → 0  |  25 → 55  |  50 → 76  |  75 → 90  |  100 → 100
 
-_GRADE_EXPONENT = 0.4
-
-
-def _grade_curve(raw: float) -> float:
-    """Monotonic concave curve: raises the middle while keeping 0 and 100 fixed."""
-    if raw <= 0:
-        return 0.0
-    if raw >= 100:
-        return 100.0
-    return round(100.0 * (raw / 100.0) ** _GRADE_EXPONENT, 1)
-
-
 def _row_to_scores(row: dict) -> dict[str, float | None]:
     """Extract score values from a DB row into a flat dict.
 
-    Applies the grade curve so the UI shows school-grade-like values.
+    Scores are citywide percentiles and are reported AS-IS. (A concave
+    "grade curve" used to inflate them — raw 20 displayed as ~52 — which
+    compressed the visible range and made every listing look mediocre-good.
+    With absolute baseline scoring the percentile IS the honest grade.)
+
     Returns None for dimensions where the DB value is NULL (no data),
     so that compute_group_scores can exclude them from averages.
     """
     result: dict[str, float | None] = {}
     for key in SCORE_KEYS:
         raw = row.get(f"{key}_score")
-        result[key] = _grade_curve(float(raw)) if raw is not None else None
+        result[key] = round(float(raw), 1) if raw is not None else None
     return result
 
 
@@ -200,6 +192,12 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
         ("greenery_canopy_score", "Canopy score (diameter-weighted)"),
         ("greenery_garden_count", "Community gardens within 500 m"),
     ],
+    "road_exposure": [
+        ("road_exposure_hwy_dist_m", "Nearest highway (m)"),
+        ("road_exposure_arterial", "Arterial traffic density"),
+        ("road_exposure_truck", "Truck-route proximity"),
+        ("road_exposure_index", "Combined road-noise index"),
+    ],
 }
 
 
@@ -223,14 +221,25 @@ def _row_to_listing(
     exclude_schools: bool = False,
     conn: object | None = None,
     detail: bool = False,
+    ignore: list[str] | None = None,
 ) -> Listing:
     """Convert a raw DB row dict into a Listing response model.
 
     When detail=True and conn is provided, includes expensive lookups:
     transit stations, neighborhood info, POIs, comparable listings, etc.
+
+    ``ignore`` lists score dimensions excluded from the composite.
     """
     score_vals = _row_to_scores(row)
-    composite, data_quality = compute_composite(score_vals, priorities, exclude_schools=exclude_schools)
+    composite_raw, data_quality = compute_composite(
+        score_vals, priorities, exclude_schools=exclude_schools, ignore=ignore
+    )
+    # Display the composite as its percentile among active listings (full
+    # 0-100 range); raw means-of-percentiles cluster in a narrow band.
+    composite = composite_raw
+    if conn is not None:
+        from api.composite import composite_percentile
+        composite = composite_percentile(conn, composite_raw)
 
     scores = Scores(
         composite=composite,
@@ -247,6 +256,10 @@ def _row_to_listing(
         shelter=score_vals.get("shelter"),
         pest=score_vals.get("pest"),
         greenery=score_vals.get("greenery"),
+        bedbug=score_vals.get("bedbug"),
+        street_danger=score_vals.get("street_danger"),
+        air_quality=score_vals.get("air_quality"),
+        road_exposure=score_vals.get("road_exposure"),
         rent_stabilized=bool(row.get("rent_stabilized")),
     )
 
@@ -258,6 +271,19 @@ def _row_to_listing(
     )
 
     flags = generate_flags(row)
+
+    # Dealbreaker chips — dimensions that capped the composite
+    # (ignored dimensions no longer cap, so no chip for them)
+    from api.composite import dealbreakers as _dealbreakers
+    ignore_set = set(ignore or [])
+    for dim in _dealbreakers(score_vals):
+        if dim in ignore_set:
+            continue
+        label = dim.replace("_", " ")
+        flags.append(Flag(
+            type="red",
+            text=f"Dealbreaker: {label} is in the bottom tier citywide (caps overall score)",
+        ))
 
     building = BuildingInfo(
         owner=row.get("mgmt_owner"),
@@ -308,8 +334,29 @@ def _row_to_listing(
     nearby_nbrs = []
     similar_listings = []
     also_consider_listings = []
+    forensics = None
+    peer_context = None
+    explanations: dict[str, str] = {}
 
     if detail and conn is not None:
+        try:
+            from api.peer_context import get_peer_context
+            peer_context = get_peer_context(conn, row) or None
+        except Exception:
+            peer_context = None  # peer context is additive — never break the detail
+        try:
+            from api.explanations import score_explanations
+            explanations = score_explanations(row, peer_context)
+        except Exception:
+            explanations = {}  # explanations are additive — never break the detail
+        try:
+            from api.building_facts import get_building_facts
+            forensics = get_building_facts(conn, lat, lon)
+        except Exception:
+            forensics = None  # forensics are additive — never break the detail
+        if forensics:
+            from api.flags import forensic_flags
+            flags = flags + forensic_flags(forensics)
         transit_stations_list = get_transit_stations(lat, lon)
         neighborhood_info_data = get_neighborhood_info(conn, neighborhood_name)
         pois = get_nearby_pois(row)
@@ -367,6 +414,9 @@ def _row_to_listing(
         nearby_neighborhoods=nearby_nbrs,
         similar=similar_listings,
         also_consider=also_consider_listings,
+        peer_context=peer_context,
+        forensics=forensics,
+        score_explanations=explanations,
     )
 
 
@@ -410,6 +460,25 @@ def _coverage_sql(exclude_schools: bool) -> str:
     return "(" + " + ".join(f"CASE WHEN {c} IS NOT NULL THEN 1 ELSE 0 END" for c in cols) + ")"
 
 
+# ── Persisted composite column guard ───────────────────────────
+#
+# scripts/compute_composites.py materializes the DEFAULT-priority
+# composite into a listings.composite_score column so the default feed
+# can ORDER BY it in SQL instead of computing every composite per
+# request. Checked once per process; if the column is missing (the
+# script hasn't run yet) the feed falls back to the full compute path.
+
+_HAS_COMPOSITE_COLUMN: Optional[bool] = None
+
+
+def _has_composite_column(conn) -> bool:
+    global _HAS_COMPOSITE_COLUMN
+    if _HAS_COMPOSITE_COLUMN is None:
+        cols = {row[1] for row in conn.execute("PRAGMA table_info(listings)")}
+        _HAS_COMPOSITE_COLUMN = "composite_score" in cols
+    return _HAS_COMPOSITE_COLUMN
+
+
 # ── Endpoints ───────────────────────────────────────────────────
 
 @router.get("/listings", response_model=ListingsResponse)
@@ -427,7 +496,8 @@ def get_listings(
     available_before: Optional[str] = Query(None, description="ISO date; only listings available on or before"),
     amenities: Optional[str] = Query(None, description="Comma-separated required amenity names"),
     min_data_quality: Optional[str] = Query(None, description="Minimum data quality: 'full' or 'limited'"),
-    priorities: Optional[str] = Query(None, description="Comma-separated group priority order"),
+    priorities: Optional[str] = Query(None, description="Comma-separated group priority order (top 2 map to boosts)"),
+    ignore: Optional[str] = Query(None, description="Comma-separated score dimensions to exclude from the composite"),
     kids_mode: Optional[bool] = Query(None, description="Include schools in scoring"),
 ) -> ListingsResponse:
     """Paginated listing feed with filtering and sorting."""
@@ -484,17 +554,15 @@ def get_listings(
             conditions.append(f"{_coverage_sql(exclude_schools)} >= ?")
             params.append(min_scored)
 
-        where = " AND ".join(conditions)
-
         # Parse priority ordering for composite score
         priority_list: list[str] | None = None
         if priorities:
             priority_list = [p.strip() for p in priorities.split(",") if p.strip()]
 
-        # Count total
-        total = conn.execute(
-            f"SELECT COUNT(*) FROM listings WHERE {where}", params
-        ).fetchone()[0]
+        # Parse ignored dimensions (excluded from the composite)
+        ignore_list: list[str] | None = None
+        if ignore:
+            ignore_list = [d.strip() for d in ignore.split(",") if d.strip()] or None
 
         # Determine sort
         sort_key = sort if sort in _SORT_MAP else "composite"
@@ -507,27 +575,53 @@ def get_listings(
                 sort_key = "neighborhood_no_schools"
         db_sort_col = _SORT_MAP.get(sort_key, "")
 
-        if db_sort_col:
+        # Default-priority composite sort reads the persisted
+        # composite_score column and paginates in SQL. Only custom
+        # priorities need the full per-row compute path.
+        use_persisted_composite = (
+            not db_sort_col
+            and priority_list is None
+            and ignore_list is None
+            and _has_composite_column(conn)
+        )
+
+        if use_persisted_composite:
+            if min_score is not None:
+                conditions.append("composite_score >= ?")
+                params.append(min_score)
+            # Tiebreak: when composites are equal, prefer more data coverage
+            order_clause = (
+                "ORDER BY composite_score DESC, "
+                f"{_coverage_sql(exclude_schools)} DESC"
+            )
+        elif db_sort_col:
             order_clause = f"ORDER BY {db_sort_col} DESC"
         else:
-            # composite — fetch all, sort in Python
+            # composite with custom priorities — fetch all, sort in Python
             order_clause = ""
 
+        where = " AND ".join(conditions)
+
+        # Count total
+        total = conn.execute(
+            f"SELECT COUNT(*) FROM listings WHERE {where}", params
+        ).fetchone()[0]
+
         # Fetch rows
-        if db_sort_col:
+        if order_clause:
             offset = (page - 1) * page_size
             rows = conn.execute(
                 f"SELECT * FROM listings WHERE {where} {order_clause} "
                 f"LIMIT ? OFFSET ?",
                 params + [page_size, offset],
             ).fetchall()
-            listings = [_row_to_listing(dict(r), priority_list, exclude_schools) for r in rows]
+            listings = [_row_to_listing(dict(r), priority_list, exclude_schools, conn=conn, ignore=ignore_list) for r in rows]
         else:
             # Composite sort — need to compute on all, then paginate
             rows = conn.execute(
                 f"SELECT * FROM listings WHERE {where}", params
             ).fetchall()
-            all_listings = [_row_to_listing(dict(r), priority_list, exclude_schools) for r in rows]
+            all_listings = [_row_to_listing(dict(r), priority_list, exclude_schools, conn=conn, ignore=ignore_list) for r in rows]
 
             # Filter by min_score if provided
             if min_score is not None:

@@ -90,6 +90,10 @@ class Scores(BaseModel):
     shelter: Optional[float] = None
     pest: Optional[float] = None
     greenery: Optional[float] = None
+    bedbug: Optional[float] = None
+    street_danger: Optional[float] = None
+    air_quality: Optional[float] = None
+    road_exposure: Optional[float] = None
     rent_stabilized: bool = False
 
 
@@ -169,6 +173,25 @@ class Listing(BaseModel):
     nearby_neighborhoods: list[str] = []        # adjacent neighborhood names
     similar: list[ComparableListing] = []       # 5 similar listings
     also_consider: list[ComparableListing] = [] # 5 also-consider listings (each better in 1 group)
+
+    # ── Neighborhood peer context (detail view only) ────────────
+    # Scores stay citywide; this ranks the listing per-dimension
+    # against ACTIVE listings in the same neighborhood:
+    # {dim: {"nbhd_percentile": 0-100, "n_peers": int, "nbhd_median": float}}
+    peer_context: Optional[dict] = None
+
+    # ── Building forensics (openigloo-superset facts) ───────────
+    # Request-time lookups from ds_* tables keyed by the building's BBL:
+    # vacate orders, AEP status, bedbug filings, speculation list, tax
+    # liens, sheds, elevators, ECB balance, emergency repairs, landlord
+    # registration. Topics still downloading are None.
+    forensics: Optional[dict] = None
+
+    # ── Score explanations (detail view only) ───────────────────
+    # One deterministic plain-English sentence per scored dimension
+    # explaining WHY, built from component columns + peer context:
+    # {dim: sentence}
+    score_explanations: dict[str, str] = {}
 
 
 class ListingsResponse(BaseModel):
