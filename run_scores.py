@@ -134,7 +134,11 @@ def main():
         print("  convenience          - Nearby conveniences (grocery, pharmacy, gym, etc.)")
         print("  unit_amenities       - In-unit / in-building amenities (washer/dryer, doorman, etc.)")
         print("  shelter              - Proximity to homeless shelters/services & NYCHA projects")
-        print("  road_exposure        - Highway/arterial/truck-route traffic exposure")
+        print("  bedbug               - Owner bedbug filing history (building)")
+        print("  street_danger        - Pedestrian/cyclist crash injuries (block)")
+        print("  air_quality          - PM2.5/NO2 by community district (absolute)")
+        print("  road_exposure        - Road noise: highways, arterials, truck routes,")
+        print("                         elevated trains — with building-row shielding")
         return
 
     conn = get_connection(args.db)

@@ -194,8 +194,10 @@ _COMPONENT_MAP: dict[str, list[tuple[str, str]]] = {
     ],
     "road_exposure": [
         ("road_exposure_hwy_dist_m", "Nearest highway (m)"),
+        ("road_exposure_hwy_shield_rows", "Building rows shielding the highway"),
         ("road_exposure_arterial", "Arterial traffic density"),
         ("road_exposure_truck", "Truck-route proximity"),
+        ("road_exposure_el_dist_m", "Nearest elevated train (m)"),
         ("road_exposure_index", "Combined road-noise index"),
     ],
 }

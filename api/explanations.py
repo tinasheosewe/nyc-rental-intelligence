@@ -455,7 +455,44 @@ def _air_quality(row: dict, score: float):
     return fact[0].upper() + fact[1:], clause, good
 
 
+def _road_exposure(row: dict, score: float):
+    hwy_d = row.get("road_exposure_hwy_dist_m")
+    shield = int(row.get("road_exposure_hwy_shield_rows") or 0)
+    truck = float(row.get("road_exposure_truck") or 0.0)
+    el_d = row.get("road_exposure_el_dist_m")
+    arterial = float(row.get("road_exposure_arterial") or 0.0)
+    good = score >= 50
+
+    bits = []
+    if hwy_d is not None and float(hwy_d) <= 500:
+        hw = f"A highway passes {_dist(hwy_d)} away"
+        if shield >= 1:
+            hw += (f", though {shield} row{'s' if shield > 1 else ''} of "
+                   "buildings shield this block from it")
+        bits.append(hw)
+    if el_d is not None and float(el_d) <= 400:
+        bits.append(f"an elevated train runs {_dist(el_d)} away")
+    if truck >= 1.5:
+        # Building-level truth with the unit-level caveat: orientation is
+        # the one thing no dataset can see.
+        bits.append("it fronts a designated truck route — rear-facing "
+                    "units will hear far less")
+    elif arterial >= 4.0:
+        bits.append("it fronts busy surface streets")
+
+    if not bits:
+        fact = "Quiet side-street profile — no highways, elevated trains, or truck routes close by"
+    else:
+        fact = "; ".join(bits)
+        fact = fact[0].upper() + fact[1:]
+
+    clause = (f"quieter street exposure than {_better_pct(score)}% of NYC listings" if good
+              else f"more road noise than {_worse_pct(score)}% of NYC listings")
+    return fact, clause, good
+
+
 _BUILDERS = {
+    "road_exposure": _road_exposure,
     "deal": _deal,
     "unit_amenities": _unit_amenities,
     "transit": _transit,
