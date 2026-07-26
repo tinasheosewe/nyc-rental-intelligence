@@ -14,6 +14,15 @@ apartments worth acting on.
 The goal is simple: **Show the top 3 apartments that matter today.
 Suppress everything else.**
 
+## Production DB Seed
+
+The Render backend expects a valid SQLite file at startup.
+
+- `build.sh` downloads `apthunt.db` from `APTHUNT_DB_URL` when the file is missing.
+- The build now fails if the URL returns a non-200 response, if the downloaded file is not valid SQLite, or if it does not contain the `listings` table.
+- The API health check returns `503` when the database has no API-visible active listings.
+- Optional overrides: `APTHUNT_DB_URL`, `APTHUNT_DB_PATH`, `APTHUNT_REQUIRE_LISTINGS`.
+
 ---
 
 ## Core Philosophy
