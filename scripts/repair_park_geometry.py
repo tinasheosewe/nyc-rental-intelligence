@@ -278,6 +278,15 @@ def main():
     args = ap.parse_args()
 
     conn = get_connection(DB_PATH)
+    # Persistent overrides: DataStore._apply_park_overrides re-applies
+    # this table after every parks re-download, so repairs survive
+    # refreshes (a refresh once silently reverted them to the quads).
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS park_geometry_overrides ("
+        "name311 TEXT PRIMARY KEY, typecategory TEXT, acres REAL, "
+        "multipolygon TEXT NOT NULL, centroid_lat REAL, centroid_lon REAL, "
+        "source TEXT, updated_at TEXT)"
+    )
     rows = conn.execute(
         "SELECT rowid, name311, typecategory, acres, multipolygon, "
         "centroid_lat, centroid_lon FROM ds_parks WHERE multipolygon IS NOT NULL"
@@ -306,10 +315,18 @@ def main():
             continue
         clat, clon = vertex_centroid(m["geom"])
         if not args.dry_run:
+            blob = json.dumps(m["geom"])
             conn.execute(
                 "UPDATE ds_parks SET multipolygon = ?, centroid_lat = ?, "
                 "centroid_lon = ? WHERE rowid = ?",
-                (json.dumps(m["geom"]), clat, clon, row["rowid"]),
+                (blob, clat, clon, row["rowid"]),
+            )
+            conn.execute(
+                "INSERT OR REPLACE INTO park_geometry_overrides "
+                "(name311, typecategory, acres, multipolygon, centroid_lat, "
+                "centroid_lon, source, updated_at) "
+                "VALUES (?, NULL, ?, ?, ?, ?, 'osm', datetime('now'))",
+                (row["name311"], row["acres"], blob, clat, clon),
             )
         repaired += 1
         if row["name311"] in ("Cooper Park", "Sunset Park", "Msgr. McGolrick Park"):
@@ -326,11 +343,20 @@ def main():
             dp = max(cands, key=lambda p: p["acres"])
             clat, clon = vertex_centroid(dp["geom"])
             if not args.dry_run:
+                blob = json.dumps(dp["geom"])
                 conn.execute(
                     "INSERT INTO ds_parks (name311, typecategory, acres, "
                     "multipolygon, centroid_lat, centroid_lon) VALUES (?,?,?,?,?,?)",
                     ("Domino Park", "Neighborhood Park", round(dp["acres"], 3),
-                     json.dumps(dp["geom"]), clat, clon),
+                     blob, clat, clon),
+                )
+                conn.execute(
+                    "INSERT OR REPLACE INTO park_geometry_overrides "
+                    "(name311, typecategory, acres, multipolygon, centroid_lat, "
+                    "centroid_lon, source, updated_at) "
+                    "VALUES ('Domino Park', 'Neighborhood Park', ?, ?, ?, ?, "
+                    "'osm', datetime('now'))",
+                    (round(dp["acres"], 3), blob, clat, clon),
                 )
             print(f"  + Domino Park inserted from OSM ({dp['acres']:.1f}ac)")
 

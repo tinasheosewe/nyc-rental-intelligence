@@ -198,7 +198,7 @@ RADIUS_M = 100
 # building's HPD record can't bleed onto neighbors in the same cell;
 # that layout is unchanged.  The area blob stays under the plain
 # geohash key with this source.)
-CACHE_SOURCE = "pest_v7"
+CACHE_SOURCE = "pest_v8"
 
 # v7 blend weights over the combined area+building metric (module doc):
 # verified DOHMH inspection evidence dominates; self-reported 311 and

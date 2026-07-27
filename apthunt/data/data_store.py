@@ -1883,6 +1883,48 @@ out body;
             f"CREATE INDEX IF NOT EXISTS idx_{table}_clon ON [{table}] (centroid_lon)"
         )
         self._conn.commit()
+
+        # Re-apply persistent geometry repairs. 289 parks >1 acre ship
+        # from DPR as ~5-vertex quads (upstream corruption — SODA and
+        # the GeoJSON export are identically degraded), and Domino Park
+        # is absent from DPR entirely. scripts/repair_park_geometry.py
+        # writes OSM-sourced fixes into park_geometry_overrides; applying
+        # them HERE makes the repairs survive every re-download — without
+        # this, any refresh silently reverts to the corrupt quads.
+        self._apply_park_overrides(table)
+
+    def _apply_park_overrides(self, table: str) -> None:
+        """Overlay park_geometry_overrides rows onto a parks table."""
+        try:
+            rows = self._conn.execute(
+                "SELECT name311, typecategory, acres, multipolygon, "
+                "centroid_lat, centroid_lon FROM park_geometry_overrides"
+            ).fetchall()
+        except sqlite3.OperationalError:
+            return  # no overrides recorded yet
+        n_upd, n_ins = 0, 0
+        for name, typecat, acres, mp, clat, clon in rows:
+            cur = self._conn.execute(
+                f"UPDATE [{table}] SET multipolygon=?, centroid_lat=?, "
+                "centroid_lon=? WHERE name311=?",
+                (mp, clat, clon, name),
+            )
+            if cur.rowcount:
+                n_upd += cur.rowcount
+            else:
+                self._conn.execute(
+                    f"INSERT INTO [{table}] (name311, typecategory, acres, "
+                    "multipolygon, centroid_lat, centroid_lon) "
+                    "VALUES (?,?,?,?,?,?)",
+                    (name, typecat, acres, mp, clat, clon),
+                )
+                n_ins += 1
+        self._conn.commit()
+        if n_upd or n_ins:
+            log.info(
+                "parks: re-applied %d geometry overrides (+%d inserted) "
+                "after download", n_upd, n_ins,
+            )
         log.info("Parks: computed centroids for %d rows", len(rows))
 
 
