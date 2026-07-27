@@ -327,7 +327,7 @@ class PestScorer(Scorer):
 
             stats = {
                 "pest_rodent_count": rodent_count,
-                "pest_rodent_weighted": round(rodent_weighted, 4),
+                "pest_rodent_weighted": round(rodent_weighted, 7),
                 "pest_rodent_rate": round(
                     1000.0 * rodent_weighted / kw_units, 4,
                 ),
@@ -366,7 +366,7 @@ class PestScorer(Scorer):
                 else None
             )
             weighted = (
-                round(hpd_count + area["pest_rodent_weighted"], 4)
+                round(hpd_count + area["pest_rodent_weighted"], 7)
                 if hpd_count is not None
                 else None
             )
@@ -394,14 +394,14 @@ class PestScorer(Scorer):
                     W_INSPECTION * insp_rate
                     + W_311_RODENT * area_term
                     + W_HPD_BUILDING * building_term,
-                    4,
+                    7,
                 )
             else:
                 rest = W_311_RODENT + W_HPD_BUILDING
                 pest_rate = round(
                     (W_311_RODENT * area_term
                      + W_HPD_BUILDING * building_term) / rest,
-                    4,
+                    7,
                 )
 
             per_listing.append({
@@ -529,7 +529,7 @@ class PestScorer(Scorer):
             # old +5 damping): thin evidence shrinks toward the
             # citywide prior; a large zero-count building keeps a
             # near-zero rate on the strength of its exposure.
-            per_unit = round(eb_rate(hpd_count, units, prior, k=10.0), 4)
+            per_unit = round(eb_rate(hpd_count, units, prior, k=10.0), 7)
 
         stats = {
             "pest_hpd_count": hpd_count,
@@ -666,5 +666,5 @@ class PestScorer(Scorer):
             if any(m in result for m in self._FAIL_MARKERS):
                 failed += 1
                 w_failed += w
-        rate = round(w_failed / max(w_total, INSP_DENOM_FLOOR), 4)
+        rate = round(w_failed / max(w_total, INSP_DENOM_FLOOR), 7)
         return total, failed, rate

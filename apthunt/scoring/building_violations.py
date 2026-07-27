@@ -391,7 +391,7 @@ class BuildingViolationsScorer(Scorer):
                         "building_hpd_class_i": s.get("building_hpd_class_i", 0),
                         "building_unitsres": s.get("building_unitsres", 1),
                         "building_violations_per_unit": (
-                            round(per_units[i], 4)
+                            round(per_units[i], 7)
                             if per_units[i] is not None
                             else None
                         ),

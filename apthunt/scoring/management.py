@@ -423,7 +423,7 @@ class ManagementScorer(Scorer):
             / HEAT_SEASON_MONTHS_PER_YEAR
         )
         stats["mgmt_bldg_heat_rate"] = (
-            None if match_uncertain else round(bldg_heat_rate, 4)
+            None if match_uncertain else round(bldg_heat_rate, 7)
         )
 
         units = stats["mgmt_owner_units"]
@@ -456,7 +456,7 @@ class ManagementScorer(Scorer):
                     prior,
                     k=10.0,
                 ),
-                4,
+                7,
             )
         return stats
 

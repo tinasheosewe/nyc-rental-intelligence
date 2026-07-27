@@ -319,7 +319,7 @@ class BedbugScorer(Scorer):
                             prior,
                             k=EB_K,
                         ),
-                        4,
+                        7,
                     )
                 )
 
@@ -529,7 +529,7 @@ class BedbugScorer(Scorer):
             "bedbug_filings": len(rows),
             "bedbug_infested_total": round(infested_total, 1),
             "bedbug_reinfested_total": round(reinfested_total, 1),
-            "bedbug_weighted": round(weighted, 4),
+            "bedbug_weighted": round(weighted, 7),
             "bedbug_units": units,
         }
         if adj_ok:
@@ -595,4 +595,4 @@ class BedbugScorer(Scorer):
             if infested <= 0:
                 continue
             total += infested * _bedbug_decay(r.get("filing_date"), today_ord)
-        return round(total, 4)
+        return round(total, 7)

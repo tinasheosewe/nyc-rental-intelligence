@@ -69,12 +69,32 @@ const ORANGE: RGB = [249, 115, 22];
 const YELLOW: RGB = [234, 179, 8];
 const GREEN: RGB = [34, 197, 94];
 
+// Ramp designed for PERCENTILE data (uniform by construction — exactly
+// 10% of residential cells per decile). The old ramp painted the entire
+// bottom quartile flat red and reached full green only at ~100, so a
+// statistically uniform map READ as "everything at the extremes". This
+// ramp gives the middle of the distribution a wide, honest neutral band
+// (35–65 ≈ "average is average") and saturates only in the true tails —
+// red/green on the map now mean bottom/top ~decile, not bottom/top third.
+const NEUTRAL: RGB = [232, 226, 200]; // warm parchment — visibly "no signal"
+
 function scoreToRgb(score: number): RGB {
   const s = Math.max(0, Math.min(100, score));
-  if (s >= 75) return lerpColor(YELLOW, GREEN, (s - 75) / 25);
-  if (s >= 50) return lerpColor(ORANGE, YELLOW, (s - 50) / 25);
-  if (s >= 25) return lerpColor(RED, ORANGE, (s - 25) / 25);
+  if (s >= 90) return GREEN;
+  if (s >= 65) return lerpColor(NEUTRAL, GREEN, (s - 65) / 25);
+  if (s >= 35) return NEUTRAL; // wide flat middle band
+  if (s >= 20) return lerpColor(ORANGE, NEUTRAL, (s - 20) / 15);
+  if (s >= 10) return lerpColor(RED, ORANGE, (s - 10) / 10);
   return RED;
+}
+
+// Alpha encodes signal strength: the neutral middle whispers (the map
+// stops shouting about average blocks) while the distribution tails
+// punch through — a red or green area is now ALWAYS a genuine outlier.
+function scoreToAlpha(score: number): number {
+  const s = Math.max(0, Math.min(100, score));
+  const t = Math.min(1, Math.abs(s - 50) / 40); // 0 at median → 1 at |Δ|≥40
+  return 0.30 + 0.38 * t * t; // 0.30 mid → 0.68 tails (quadratic ease)
 }
 
 // ── Relative-to-view normalization ──────────────────────────────
@@ -251,7 +271,7 @@ function createHeatmapGridLayer(
           pixels[idx] = r;
           pixels[idx + 1] = g;
           pixels[idx + 2] = b;
-          pixels[idx + 3] = Math.round(OPACITY * 255);
+          pixels[idx + 3] = Math.round(scoreToAlpha(display) * 255);
         }
       }
 
