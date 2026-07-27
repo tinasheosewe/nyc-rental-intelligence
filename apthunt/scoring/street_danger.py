@@ -129,7 +129,7 @@ SCHOOL_HOURS = frozenset({7, 8, 14, 15, 16})
 
 # v3: frontage/arterial decomposition + school-hours share (raw-metric
 # semantics changed — old cached stats are not comparable).
-_CACHE_KEY = "street_danger_v3"
+_CACHE_KEY = "street_danger_v4"
 
 
 class StreetDangerScorer(Scorer):

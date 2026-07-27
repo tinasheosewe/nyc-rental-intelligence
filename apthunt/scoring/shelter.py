@@ -75,7 +75,7 @@ _RADIUS_M = 800
 
 # Cache version: v3 — subtype weights + NYCHA violence weights + observed
 # encampment term (raw-metric semantics changed; rebaseline follows).
-_CACHE_KEY = "shelter_v3"
+_CACHE_KEY = "shelter_v4"
 
 # ── Observed street condition (311 'Encampment') ─────────────────────
 ENCAMP_RADIUS_M = 200

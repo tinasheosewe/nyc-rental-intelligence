@@ -111,7 +111,7 @@ class GreeneryScorer(Scorer):
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "greenery_v3")
+            cached = self._cache.get(gh, "greenery_v4")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
@@ -135,7 +135,7 @@ class GreeneryScorer(Scorer):
                 ),
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "greenery_v3", stats)
+            self._cache.put(gh, "greenery_v4", stats)
 
         raw_values = [
             block_stats[lst["geohash"]]["greenery_weighted"] for lst in listings

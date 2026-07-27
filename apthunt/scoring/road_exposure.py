@@ -184,7 +184,7 @@ FALLBACK_SLOPE = 6.0
 # The availability flags of the still-downloading dependencies are folded
 # into the key at score() time (see _cache_key), so blocks computed while
 # a table/column is missing are recomputed automatically once it lands.
-_CACHE_VERSION = "road_exposure_v4"
+_CACHE_VERSION = "road_exposure_v5"
 
 
 class RoadExposureScorer(Scorer):

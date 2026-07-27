@@ -77,7 +77,7 @@ log = logging.getLogger(__name__)
 # nearest-supermarket / nearest-grocery paths (metric semantics changed).
 # Blocks computed while ds_supermarkets is unavailable use a ":nosm"
 # suffix so they are recomputed once the re-download lands.
-_CACHE_KEY = "convenience_v4"
+_CACHE_KEY = "convenience_v5"
 
 # Category weights for weighted total (kept for display)
 _WEIGHTS = {
