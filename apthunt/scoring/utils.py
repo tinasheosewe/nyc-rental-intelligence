@@ -188,6 +188,85 @@ def set_severance_raster(raster) -> None:
     _SEVERANCE_RASTER = raster
 
 
+_PARK_RASTER = None
+
+
+def set_park_raster(raster) -> None:
+    """Install (or clear, with None) the module-wide park raster."""
+    global _PARK_RASTER
+    _PARK_RASTER = raster
+
+
+def park_area_fraction(store, lat: float, lon: float, radius_m: float) -> float:
+    """Fraction [0,1] of the disc around (lat, lon) covered by parkland.
+
+    Used by the greenery scorer to renormalize its street-tree kernel by
+    the NON-park share of the disc: the 2015 census counts STREET trees
+    only, so a point whose disc is half Cooper Park would otherwise be
+    scored as if that half were treeless streets.
+
+    Raster fast path when attached (10 m grid); SQLite fallback samples
+    ~180 sunflower-spiral points against ds_parks polygons (parks fetched
+    by centroid bbox — delta wide enough to catch large parks whose
+    centroid sits far from the probe).
+    """
+    raster = getattr(store, "park_raster", None) or _PARK_RASTER
+    if raster is not None:
+        try:
+            return raster.fraction_in_disc(lat, lon, radius_m)
+        except Exception:
+            pass  # degrade to the SQLite reference path
+    return _park_area_fraction_sql(store, lat, lon, radius_m)
+
+
+def _park_area_fraction_sql(store, lat, lon, radius_m) -> float:
+    """SQLite reference implementation (see park_area_fraction)."""
+    import json as _json
+    import math as _m
+
+    try:
+        rows = store.query_bbox(
+            "parks", lat, lon, delta=0.03, select="multipolygon",
+            lat_col="centroid_lat", lon_col="centroid_lon",
+        )
+    except Exception:
+        return 0.0
+    rings = []
+    for r in rows:
+        try:
+            geom = _json.loads(r.get("multipolygon") or "")
+        except (TypeError, ValueError):
+            continue
+        raw = geom.get("coordinates", [])
+        polys = raw if geom.get("type") == "MultiPolygon" else [raw]
+        rings.extend(p[0] for p in polys if p)
+    if not rings:
+        return 0.0
+
+    m_per_lat = 111_320.0
+    m_per_lon = 111_320.0 * _m.cos(_m.radians(lat))
+    n_pts, golden = 180, _m.pi * (3.0 - _m.sqrt(5.0))
+    inside = 0
+    for i in range(n_pts):
+        rr = radius_m * _m.sqrt((i + 0.5) / n_pts)
+        th = i * golden
+        plat = lat + rr * _m.sin(th) / m_per_lat
+        plon = lon + rr * _m.cos(th) / m_per_lon
+        for ring in rings:
+            hit, j = False, len(ring) - 1
+            for k in range(len(ring)):
+                xi, yi = ring[k][0], ring[k][1]
+                xj, yj = ring[j][0], ring[j][1]
+                if (yi > plat) != (yj > plat):
+                    if plon < (xj - xi) * (plat - yi) / (yj - yi) + xi:
+                        hit = not hit
+                j = k
+            if hit:
+                inside += 1
+                break
+    return inside / n_pts
+
+
 def path_severance_penalty_m(store, lat1, lon1, lat2, lon2) -> float:
     """Pedestrian-severance penalty (effective extra meters) for the
     straight path between two points.

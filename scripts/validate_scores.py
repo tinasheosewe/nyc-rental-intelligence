@@ -61,8 +61,33 @@ PROBES = [
                  "Maspeth industrial", (40.7231, -73.9077)),
     ("crime",    "Forest Hills Gardens", (40.7146, -73.8437),
                  "Times Square core", (40.7580, -73.9855)),
-    ("noise",    "Riverdale (Fieldston)", (40.8896, -73.9057),
+    # NB: the original Fieldston pin (40.8896,-73.9057) sits on a real
+    # complaint pocket — the Manhattan College Pkwy corridor logged 165
+    # in-type complaints/12mo across 57 distinct sources. Interior
+    # Fieldston asserts what this probe means to assert ("quietest
+    # leafy NYC beats nightlife core"); the old pin is a known noise
+    # pocket, not a scorer bug.
+    ("noise",    "Riverdale (Fieldston interior)", (40.8925, -73.9095),
                  "Lower East Side nightlife", (40.7205, -73.9873)),
+    # Strip-blur regression test (the 300m-kernel bug): a quiet
+    # Williamsburg side street (Fillmore Pl) must clearly beat the
+    # Bedford & N7th nightlife core — under the old kernel it carried
+    # 0.96x the core's complaint rate and scored within 1 point of it.
+    ("noise",    "Fillmore Pl (Wburg side street)", (40.7143, -73.9563),
+                 "Bedford Ave & N 7th (nightlife core)", (40.7193, -73.9555)),
+    # Denominator-floor regression test: the McCarren Park edge must not
+    # read "loud" just because few households live beside a park (it
+    # scored 9.6 on one-tenth the core's complaint mass, units=141).
+    ("noise",    "Driggs & N 12th (McCarren edge)", (40.7212, -73.9530),
+                 "Bedford Ave & N 7th (nightlife core)", (40.7193, -73.9555)),
+    # Park-adjacency regression test (repaired geometry + edge distance).
+    # NB coords: Cooper Park is bounded by Sharon St on the SOUTH
+    # (~40.7152) — Frost/Debevoise sit 150m+ north in the NYCHA Cooper
+    # Park Houses campus and are NOT park-adjacent (a diagnostic agent
+    # misread this and manufactured a phantom "displaced geometry"
+    # discount; PLUTO street addresses settled it).
+    ("parks",    "Sharon St @ Cooper Park", (40.7152, -73.9375),
+                 "Morgan Ave industrial", (40.7130, -73.9280)),
     ("convenience", "Upper West Side (Broadway/79th)", (40.7838, -73.9800),
                     "Broad Channel (Jamaica Bay)", (40.6032, -73.8202)),
     # NB: first shelter probe used Carroll Gardens, which legitimately has

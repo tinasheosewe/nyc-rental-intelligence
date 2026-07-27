@@ -61,6 +61,7 @@ scoring process.
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import sqlite3
@@ -818,6 +819,92 @@ class SeveranceRaster(_RasterBase):
         return float(pen[starts].sum())
 
 
+class ParkRaster(_RasterBase):
+    """10 m boolean grid of park interiors, scanline-filled from
+    ``ds_parks`` polygons.
+
+    Consumer: ``utils.park_area_fraction`` — the greenery scorer
+    renormalizes its street-tree kernel by the NON-park share of the
+    200 m disc, so a point whose disc is half parkland isn't scored as
+    if that half were treeless streets (the 2015 census counts STREET
+    trees only; in-park canopy is invisible to it).
+    """
+
+    def __init__(self, conn: sqlite3.Connection):
+        super().__init__()
+        t0 = time.time()
+        grid = np.zeros((self._nrows, self._ncols), dtype=bool)
+        n_parks = 0
+        for (blob,) in conn.execute(
+            "SELECT multipolygon FROM ds_parks WHERE multipolygon IS NOT NULL"
+        ):
+            try:
+                geom = json.loads(blob)
+            except (TypeError, ValueError):
+                continue
+            raw = geom.get("coordinates", [])
+            polys = raw if geom.get("type") == "MultiPolygon" else [raw]
+            for poly in polys:
+                if poly and self._fill_ring(grid, poly[0]):
+                    n_parks += 1
+        self._grid = grid
+        self.build_seconds = time.time() - t0
+        log.info(
+            "spatial_index: ParkRaster %dx%d (10m) from %d park rings, "
+            "%.2f km² filled, built in %.2fs",
+            self._nrows, self._ncols, n_parks,
+            grid.sum() * (RASTER_CELL_M ** 2) / 1e6, self.build_seconds,
+        )
+
+    def _fill_ring(self, grid: np.ndarray, ring) -> bool:
+        """Scanline-fill one (lon, lat) ring onto the grid."""
+        if len(ring) < 4:
+            return False
+        lats = np.array([p[1] for p in ring], dtype=np.float64)
+        lons = np.array([p[0] for p in ring], dtype=np.float64)
+        r_lo = max(0, int((lats.min() - GRID_MIN_LAT) / self._lat_step))
+        r_hi = min(self._nrows - 1, int((lats.max() - GRID_MIN_LAT) / self._lat_step) + 1)
+        if r_hi < r_lo:
+            return False
+        for r in range(r_lo, r_hi + 1):
+            lat = GRID_MIN_LAT + (r + 0.5) * self._lat_step
+            xs = []
+            for i in range(len(ring) - 1):
+                y1, y2 = lats[i], lats[i + 1]
+                if (y1 > lat) == (y2 > lat):
+                    continue
+                x1, x2 = lons[i], lons[i + 1]
+                xs.append(x1 + (lat - y1) * (x2 - x1) / (y2 - y1))
+            if not xs:
+                continue
+            xs.sort()
+            for k in range(0, len(xs) - 1, 2):
+                c_lo = max(0, int(math.ceil(
+                    (xs[k] - GRID_MIN_LON) / self._lon_step - 0.5)))
+                c_hi = min(self._ncols - 1, int(
+                    (xs[k + 1] - GRID_MIN_LON) / self._lon_step - 0.5))
+                if c_hi >= c_lo:
+                    grid[r, c_lo:c_hi + 1] = True
+        return True
+
+    def fraction_in_disc(self, lat: float, lon: float, radius_m: float) -> float:
+        """Fraction [0,1] of the disc around (lat,lon) that is parkland."""
+        rc = int(round(radius_m / RASTER_CELL_M))
+        ri = int((lat - GRID_MIN_LAT) / self._lat_step)
+        ci = int((lon - GRID_MIN_LON) / self._lon_step)
+        if not (0 <= ri < self._nrows and 0 <= ci < self._ncols):
+            return 0.0
+        r0, r1 = max(0, ri - rc), min(self._nrows, ri + rc + 1)
+        c0, c1 = max(0, ci - rc), min(self._ncols, ci + rc + 1)
+        sub = self._grid[r0:r1, c0:c1]
+        yy, xx = np.ogrid[r0 - ri:r1 - ri, c0 - ci:c1 - ci]
+        mask = (yy * yy + xx * xx) <= rc * rc
+        n = int(mask.sum())
+        if n == 0:
+            return 0.0
+        return float(sub[mask].sum()) / n
+
+
 # ---------------------------------------------------------------------------
 # CLI activation
 # ---------------------------------------------------------------------------
@@ -886,6 +973,12 @@ def activate_fast_path(conn: sqlite3.Connection, store,
     except Exception as exc:
         log.warning("SeveranceRaster unavailable (%s) — severance stays "
                     "on the SQLite path", exc)
+    park = None
+    try:
+        park = ParkRaster(conn)
+    except Exception as exc:
+        log.warning("ParkRaster unavailable (%s) — greenery park "
+                    "renormalization stays on the SQLite path", exc)
 
     keyed = None
     n_keyed = 0
@@ -911,7 +1004,8 @@ def activate_fast_path(conn: sqlite3.Connection, store,
         log.warning("KeyedMaps unavailable (%s) — per-key lookups stay "
                     "on the SQLite path", exc)
 
-    store.attach_fast_path(index, blocker, severance, keyed_maps=keyed)
+    store.attach_fast_path(index, blocker, severance, keyed_maps=keyed,
+                           park_raster=park)
     log.info(
         "fast path attached in %.1fs (rasters: blocker %s, severance %s; "
         "keyed maps: %d/%d preloaded; KD-trees load lazily per dataset)",

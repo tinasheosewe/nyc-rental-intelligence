@@ -57,11 +57,20 @@ from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 from apthunt.scoring.baseline import baseline_scores
-from apthunt.scoring.utils import dedupe_by_geohash
+from apthunt.scoring.utils import dedupe_by_geohash, park_area_fraction
 
 TREE_RADIUS_M = 200
 GARDEN_RADIUS_M = 500
 PARK_SEARCH_DELTA = 0.005   # ~500 m in degrees
+
+# Park-share renormalization: the census counts STREET trees only, so a
+# point whose 200 m disc is half parkland would otherwise be scored as if
+# that half were treeless streets (measured: greenery 2.3 beside Cooper
+# Park on the NYCHA side while the tree-lined south side scored 91.8).
+# The kernel sums are scaled by 1/(1 - min(f_park, cap)) — judge the
+# streetscape by the street area that actually exists. Capped so a probe
+# deep inside a park can't blow up its own score.
+PARK_FRACTION_CAP = 0.55
 
 # Absolute-score thresholds (component reaches full marks at this value)
 _TREE_CAP = 200       # street trees within 200 m
@@ -95,6 +104,7 @@ class GreeneryScorer(Scorer):
             "greenery_canopy_score": "INTEGER",
             "greenery_garden_count": "INTEGER",
             "greenery_park_count": "INTEGER",
+            "greenery_park_fraction": "REAL",
             "greenery_weighted": "REAL",
         }
 
@@ -111,7 +121,7 @@ class GreeneryScorer(Scorer):
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "greenery_v4")
+            cached = self._cache.get(gh, "greenery_v5")
             if cached is not None:
                 block_stats[gh] = cached
                 continue
@@ -125,17 +135,27 @@ class GreeneryScorer(Scorer):
             # Parks within 500 m (count, not quality — that's ParksScorer)
             park_count = self._count_parks(lat, lon)
 
+            # Renormalize street-tree kernels by the non-park disc share
+            f_park = min(
+                park_area_fraction(self._store, lat, lon, TREE_RADIUS_M),
+                PARK_FRACTION_CAP,
+            )
+            renorm = 1.0 / (1.0 - f_park)
+            tree_w *= renorm
+            canopy_w *= renorm
+
             stats = {
                 "greenery_tree_count": tree_count,
                 "greenery_canopy_score": canopy,
                 "greenery_garden_count": garden_count,
                 "greenery_park_count": park_count,
+                "greenery_park_fraction": round(f_park, 3),
                 "greenery_weighted": self._weighted_metric(
                     tree_w, canopy_w, garden_w
                 ),
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "greenery_v4", stats)
+            self._cache.put(gh, "greenery_v5", stats)
 
         raw_values = [
             block_stats[lst["geohash"]]["greenery_weighted"] for lst in listings
@@ -166,6 +186,7 @@ class GreeneryScorer(Scorer):
                         "greenery_canopy_score": s["greenery_canopy_score"],
                         "greenery_garden_count": s["greenery_garden_count"],
                         "greenery_park_count": s["greenery_park_count"],
+                        "greenery_park_fraction": s.get("greenery_park_fraction", 0.0),
                         "greenery_weighted": s["greenery_weighted"],
                     },
                 )

@@ -56,7 +56,7 @@ from apthunt.scoring.utils import dedupe_by_geohash, path_severance_penalty_m
 
 # Cache version — v3: typecategory gate + severance-adjusted distance
 # (raw metric semantics changed; rebaseline follows this wave).
-_CACHE_KEY = "parks_v3"
+_CACHE_KEY = "parks_v4"
 
 # ── Size tiers ──────────────────────────────────────────────────────
 #                   (min_acres, quality, reach_m)
@@ -376,14 +376,54 @@ def _park_acres(row: dict, geom: dict) -> float:
 
 
 def _nearest_border_dist(geom: dict, lat: float, lon: float) -> float:
-    """Minimum haversine distance (m) from (lat,lon) to any polygon vertex."""
-    coords = _extract_coords(geom)
+    """Minimum distance (m) from (lat,lon) to any polygon EDGE.
+
+    Point-to-segment, not point-to-vertex: on sparse polygons (some park
+    rows are simplified to 4-corner quads) vertex distance overstates a
+    mid-edge doorstep by up to half an edge length (measured +31m on
+    Cooper Park's Maspeth Ave side).  Equirectangular projection around
+    the query point is accurate to well under 1m at edge scales.
+    """
+    m_per_deg_lat = 111_320.0
+    m_per_deg_lon = 111_320.0 * math.cos(math.radians(lat))
+
+    def _seg_dist(a, b) -> float:
+        ax = (a[0] - lon) * m_per_deg_lon
+        ay = (a[1] - lat) * m_per_deg_lat
+        bx = (b[0] - lon) * m_per_deg_lon
+        by = (b[1] - lat) * m_per_deg_lat
+        dx, dy = bx - ax, by - ay
+        seg_len_sq = dx * dx + dy * dy
+        if seg_len_sq <= 0.0:
+            return math.hypot(ax, ay)
+        t = max(0.0, min(1.0, -(ax * dx + ay * dy) / seg_len_sq))
+        return math.hypot(ax + t * dx, ay + t * dy)
+
     best = float("inf")
-    for clon, clat in coords:
-        d = haversine((lat, lon), (clat, clon), unit=Unit.METERS)
-        if d < best:
-            best = d
+    for ring in _extract_rings(geom):
+        for i in range(len(ring) - 1):
+            d = _seg_dist(ring[i], ring[i + 1])
+            if d < best:
+                best = d
+        # Close the ring if the data didn't repeat the first vertex
+        if len(ring) >= 2 and ring[0] != ring[-1]:
+            d = _seg_dist(ring[-1], ring[0])
+            if d < best:
+                best = d
     return best
+
+
+def _extract_rings(geom: dict) -> list:
+    """All rings (outer + holes) as lists of (lon, lat) pairs."""
+    gtype = geom.get("type", "")
+    raw = geom.get("coordinates", [])
+    rings = []
+    if gtype == "MultiPolygon":
+        for poly in raw:
+            rings.extend(r for r in poly if r)
+    elif gtype == "Polygon":
+        rings.extend(r for r in raw if r)
+    return rings
 
 
 def _polygon_area_acres(geom: dict) -> float:

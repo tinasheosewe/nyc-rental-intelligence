@@ -44,7 +44,12 @@ class ScoringEngine:
         listings = self._load_listings(conn, listing_ids)
 
         for lst in listings:
-            lst["geohash"] = geohash.encode(lst["lat"], lst["lon"])
+            # Precision 8 (~38m x 19m) so block stats are effectively
+            # per-building. Precision 7 (~152m) aliased whole blocks onto
+            # one member's coords — a listing 102m from Cooper Park
+            # carried a neighbor's greenery/noise; a truck arterial
+            # inherited a quiet side street's road score.
+            lst["geohash"] = geohash.encode(lst["lat"], lst["lon"], precision=8)
 
         stats: dict[str, Any] = {}
         for scorer in self._scorers:

@@ -11,11 +11,19 @@ Filters to actual noise types only:
     five specific types against an older DB).
 
 Scoring:
-    Count noise complaints within 300 m in the last 12 months, each
+    Count noise complaints within 150 m in the last 12 months, each
     weighted by recency (exponential decay, half-life 180 days) and by
-    distance (Gaussian kernel, sigma = radius/2).  Generic "Noise"
+    distance (Gaussian kernel, sigma = radius/2 = 75 m).  Generic "Noise"
     complaints with after-hours-construction descriptors are up-weighted
     x1.2 (sleep-relevant); other generic Noise counts x1.0.
+
+    Kernel size is a measured decision, not a default: at 300 m/sigma-150
+    North Williamsburg's nightlife strips (spaced every 2-3 blocks) put
+    EVERY residential cell within ~1 sigma of a strip — a quiet side
+    street (Fillmore Pl) carried 0.96x the raw rate of the Bedford &
+    N 7th nightlife core, flattening whole neighborhoods to the strip
+    value.  At 150 m/sigma-75 the same side street reads 0.49x the core:
+    strips stay loud, the streets between them recover their gradient.
 
     Serial-complainant guard: weight accumulates per (location, type)
     and is capped PER TYPE.  Residential/Street complaints cap low (6.0
@@ -30,18 +38,27 @@ Scoring:
     prior for blocks whose complaint record understates their nightlife;
     complaints stay dominant.
 
-    Seasonality: noise complaints are strongly seasonal (summer peak),
-    so the decayed complaint sum is divided by ``seasonal_factor`` —
-    the current month's share of annual ds_noise volume — removing the
+    Seasonality: noise complaints are strongly seasonal (the current
+    rolling window peaks in WINTER — Dec ~1.42x the monthly mean, Jul
+    ~0.74x — heating-season indoor complaints dominate), so the decayed
+    complaint sum is divided by ``seasonal_factor`` — the current
+    month's share of annual ds_noise volume — removing the
     month-of-scoring bias.  Applied at score time (not baked into the
     cache) so cached blocks stay month-independent.
 
     The scored metric is a per-household rate: the seasonally-adjusted
     weighted sum (plus the nightlife prior) divided by Gaussian-kernel-
     weighted PLUTO residential units in the same radius, x1000
-    (per-1000-households).  The rate is scored against the frozen
-    citywide baseline (absolute); fall back to median-inverse until a
-    baseline is built.  Fewer complaints per household -> higher score.
+    (per-1000-households).  The denominator is floored at
+    RATE_UNITS_FLOOR (150): per-location caps are absolute while the
+    denominator scales with density, so an unfloored sparse cell had
+    effectively no serial-complainant protection — one fresh complaint
+    at 25 kernel units cost 35 points, and a McCarren-edge cell scored
+    9.6 on one-tenth the complaint mass of the Bedford core purely
+    because few households live beside a park.  The rate is scored
+    against the frozen citywide baseline (absolute); fall back to
+    median-inverse until a baseline is built.  Fewer complaints per
+    household -> higher score.
 
     Trend: compares recent-half (last 6 months) vs older-half
     to produce a trend ratio.  < 1.0 = improving, > 1.0 = worsening.
@@ -154,6 +171,14 @@ class NoiseScorer(Scorer):
     # numerator: a predictive prior — complaints stay dominant.
     NIGHTLIFE_PRIOR_WEIGHT = 0.3
 
+    # Rate-denominator floor (kernel-weighted units). Caps are absolute
+    # while the denominator scales with density: unfloored, one fresh
+    # complaint at 25 kernel units cost 35 score points and park-edge /
+    # estate-area cells (McCarren edge, Fieldston) read "loud" on tiny
+    # complaint mass. 150 units ≈ one small apartment building in the
+    # 150 m disc; dense blocks (1000s of units) are unaffected.
+    RATE_UNITS_FLOOR = 150.0
+
     def columns(self) -> dict[str, str]:
         return {
             "noise_complaint_count": "INTEGER",
@@ -221,7 +246,7 @@ class NoiseScorer(Scorer):
         except Exception:
             pass  # nightlife prior degrades to 0; noise scoring proceeds
 
-        RADIUS_M = 300
+        RADIUS_M = 150  # was 300 — see module docstring (strip-blur fix)
         # Complaint types to count (generic 'Noise' rows exist only in
         # the re-downloaded dataset; absent rows simply don't match).
         NOISE_TYPES = set(self.PER_LOCATION_CAPS)
@@ -236,11 +261,11 @@ class NoiseScorer(Scorer):
         has_descriptor = self._has_descriptor_column()
         has_liquor = self._has_liquor_table()
 
-        # Cache version: v7 = nuance wave (type-aware caps + nightlife +
-        # descriptor weighting; seasonal factor applied OUTSIDE the cache).
-        # Availability suffixes force a recompute for a block once the
-        # in-flight re-downloads land.
-        cache_key = "noise_v7" + ("d" if has_descriptor else "") + ("l" if has_liquor else "")
+        # Cache version: v8 = 150 m kernel + floored denominator (v7 was
+        # the 300 m nuance-wave kernel; seasonal factor stays OUTSIDE the
+        # cache). Availability suffixes force a recompute for a block
+        # once the in-flight re-downloads land.
+        cache_key = "noise_v8" + ("d" if has_descriptor else "") + ("l" if has_liquor else "")
 
         noise_select = "complaint_type,created_date,latitude,longitude"
         if has_descriptor:
@@ -356,7 +381,7 @@ class NoiseScorer(Scorer):
         for stats in block_stats.values():
             adj = stats["noise_weighted"] / season
             numer = adj + self.NIGHTLIFE_PRIOR_WEIGHT * stats["noise_nightlife_density"]
-            units = max(stats.get("_kernel_units") or 25.0, 1.0)
+            units = max(stats.get("_kernel_units") or 0.0, self.RATE_UNITS_FLOOR)
             stats["noise_rate_per_khh"] = round(1000.0 * numer / units, 3)
 
         per_listing = [block_stats[lst["geohash"]]["noise_rate_per_khh"] for lst in listings]

@@ -217,15 +217,30 @@ def _noise(row: dict, score: float):
     if cnt is None:
         return None
     good = score >= 50
+    # Wider neutral band than other dims: the score is a complaint-RATE
+    # percentile, and quoting strong verdicts off mid-range percentiles
+    # made 75% of Williamsburg read "loud by city standards" — a claim
+    # locals reject on quiet side streets.
     if score >= 75:
         clause = "quiet by city standards"
-    elif score >= 50:
+    elif score >= 55:
         clause = "quieter than average for NYC"
-    elif score >= 25:
+    elif score >= 35:
+        clause = None  # mid-band: let the rate fact speak for itself
+    elif score >= 15:
         clause = "noisier than most of NYC"
     else:
         clause = "loud by city standards"
-    fact = f"{_plural(cnt, 'noise complaint')} within ~2 blocks last year"
+    # Quote the metric that actually drives the score (rate per 1k
+    # households), not the raw count — neighboring listings showed "400
+    # complaints — loud" beside "566 complaints — quieter than average",
+    # which reads as a contradiction even though both were correct.
+    rate = row.get("noise_rate_per_khh")
+    if rate is not None:
+        fact = (f"{_plural(cnt, 'noise complaint')} within ~1 block last year "
+                f"({rate:.0f} per 1,000 households)")
+    else:
+        fact = f"{_plural(cnt, 'noise complaint')} within ~1 block last year"
     return fact, clause, good
 
 

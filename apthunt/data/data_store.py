@@ -850,7 +850,8 @@ class DataStore:
         self._memory_index = index
 
     def attach_fast_path(self, index=None, blocker_raster=None,
-                         severance_raster=None, keyed_maps=None) -> None:
+                         severance_raster=None, keyed_maps=None,
+                         park_raster=None) -> None:
         """Single attachment point for all Tier-1 scoring fast paths.
 
         - ``index``: MemoryIndex → accelerates ``query_circle``.
@@ -870,9 +871,11 @@ class DataStore:
         self._keyed_maps = keyed_maps
         self.blocker_raster = blocker_raster
         self.severance_raster = severance_raster
+        self.park_raster = park_raster
         try:
-            from apthunt.scoring.utils import set_severance_raster
+            from apthunt.scoring.utils import set_severance_raster, set_park_raster
             set_severance_raster(severance_raster)
+            set_park_raster(park_raster)
         except Exception:  # scoring layer absent/broken — store attr still works
             pass
 
