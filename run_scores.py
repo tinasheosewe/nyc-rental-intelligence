@@ -50,14 +50,33 @@ STOPS_PATH = os.path.join(
 )
 
 
+def attach_fast_path(conn, store) -> None:
+    """Best-effort Tier-1 fast-path activation (in-memory KD-tree index +
+    occlusion/severance rasters).  Degrades to pure SQLite on any failure,
+    including numpy/scipy being unimportable."""
+    try:
+        from apthunt.data.spatial_index import activate_fast_path
+    except ImportError as exc:
+        print(f"Fast path unavailable ({exc}) — using SQLite paths")
+        return
+    try:
+        activate_fast_path(conn, store)
+    except Exception as exc:
+        print(f"Fast path activation failed ({exc}) — using SQLite paths")
+
+
 def build_scorers(
     conn,
     only: list[str] | None = None,
+    fast: bool = True,
 ) -> list:
     """Instantiate all scorers (or a filtered subset)."""
     store = DataStore(conn)
     cache = BlockCache(conn)
     transit = TransitData(STOPS_PATH)
+
+    if fast:
+        attach_fast_path(conn, store)
 
 
     all_scorers = {
@@ -118,6 +137,19 @@ def main():
         default=DB_PATH,
         help="Path to the SQLite database",
     )
+    parser.add_argument(
+        "--fast",
+        dest="fast",
+        action="store_true",
+        default=True,
+        help="Use the in-memory spatial fast path (default ON)",
+    )
+    parser.add_argument(
+        "--no-fast",
+        dest="fast",
+        action="store_false",
+        help="Disable the in-memory fast path (pure SQLite queries)",
+    )
     args = parser.parse_args()
 
     if args.list:
@@ -143,7 +175,7 @@ def main():
 
     conn = get_connection(args.db)
     only = args.only.split(",") if args.only else None
-    scorers = build_scorers(conn, only)
+    scorers = build_scorers(conn, only, fast=args.fast)
 
     engine = ScoringEngine(conn)
     for scorer in scorers:

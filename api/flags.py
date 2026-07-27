@@ -336,6 +336,23 @@ def _building_data_states(row: dict) -> Optional[Flag]:
     return None
 
 
+def _stabilized_unicorn(row: dict) -> Optional[Flag]:
+    """Rent-stabilized AND below market — the discount compounds at renewal."""
+    if row.get("deal_stabilized_below_median"):
+        return Flag(type="green",
+                    text="Rent-stabilized and priced below market — the discount compounds at renewal")
+    return None
+
+
+def _price_cut_leverage(row: dict) -> Optional[Flag]:
+    cut = row.get("deal_price_cut_pct")
+    days = row.get("deal_cut_recency_days")
+    if cut and float(cut) >= 2.0 and days is not None and float(days) <= 30:
+        return Flag(type="green",
+                    text=f"Price cut {float(cut):.0f}% {int(days)} days ago — landlord signaling flexibility")
+    return None
+
+
 def _bedbug_never_filed(row: dict) -> Optional[Flag]:
     units = row.get("building_unitsres") or 0
     if row.get("bedbug_never_filed") and units >= 5:
@@ -349,6 +366,8 @@ _RULES = [
     _rent_stabilized,
     _building_data_states,
     _bedbug_never_filed,
+    _stabilized_unicorn,
+    _price_cut_leverage,
     _transit,
     _violations,
     _hpd_class_c,

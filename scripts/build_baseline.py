@@ -142,11 +142,25 @@ def main():
                     help="baseline against active-listing buildings instead of "
                          "grid cells (building-level dimensions)")
     ap.add_argument("--db", type=str, default=DB_PATH)
+    ap.add_argument("--fast", dest="fast", action="store_true", default=True,
+                    help="use the in-memory spatial fast path (default ON)")
+    ap.add_argument("--no-fast", dest="fast", action="store_false",
+                    help="disable the in-memory fast path (pure SQLite)")
     args = ap.parse_args()
 
     conn = get_connection(args.db)
     store = DataStore(conn)
     cache = BlockCache(conn)
+
+    if args.fast:
+        # Tier-1 fast path: in-memory KD-tree index + occlusion/severance
+        # rasters. Degrades to pure SQLite on any failure (incl. missing
+        # numpy/scipy).
+        try:
+            from apthunt.data.spatial_index import activate_fast_path
+            activate_fast_path(conn, store)
+        except Exception as exc:
+            print(f"Fast path unavailable ({exc}) — using SQLite paths")
 
     scorers = [
         CrimeScorer(store, cache),

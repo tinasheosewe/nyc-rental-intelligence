@@ -7,18 +7,38 @@ owned by that entity to produce a portfolio-level complaint rate, broken
 down by category.
 
 Also integrates:
-- **311 HEAT/HOT WATER** complaints within 200 m (building-level).
+- **Own-building HEAT/HOT WATER** — the building's OWN HPD heat
+  complaints looked up by BBL (heat-season months only, Oct–May),
+  normalized per building unit per heat-season month and corrected for
+  the month-of-scoring seasonal bias (``seasonal_factor``; heat volume
+  is ~23× Jan vs Jul).  This REPLACES the old 200 m area 311-heat term
+  in the scored rate: 60% of listings absorbed *area* heat despite zero
+  own-building heat complaints.  The 311 area count is still computed
+  and surfaced (``mgmt_heat_complaints``) as an informational component.
 - **HPD Litigations** — active lawsuits filed by HPD against the owner
   (looked up by BBL; indicates severe negligence).
-- **Evictions** — executed residential evictions at this building (12 mo).
+- **Evictions** — executed residential evictions at this building (12 mo),
+  plus portfolio-wide marshal evictions across the owner's BBL set
+  (``mgmt_eviction_rate``, per 100 units), folded modestly into the rate.
 
 Scoring:
-    recency-weighted complaints (HPD + 311 heat, half-life 180 days)
-    + litigation penalty (×10 each) + eviction penalty (×5 each, decayed)
+    recency-weighted portfolio HPD complaints (half-life 180 days,
+    decayed sum divided by the seasonal factor)
+    + own-building heat term: the per-unit per-heat-season-month rate
+      scaled by portfolio units (so the empirical-Bayes per-unit division
+      cancels the scaling and the contribution is portfolio-size
+      invariant, ×10 — one bad boiler can't hide inside a big portfolio)
+    + litigation penalty (×10 each)
+    + building eviction penalty (×5 each, decayed)
+    + portfolio eviction penalty (×0.2 each, decayed — modest fold; the
+      building's own evictions are a subset counted again at ×5, which is
+      intentional building-level emphasis, as with heat)
     turned into an exposure-aware empirical-Bayes rate per portfolio unit
-    (``eb_rate``, k=10, prior = citywide baseline mean), then scored
+    (``eb_rate``, k=10, prior = citywide baseline median), then scored
     against the frozen citywide baseline (batch percentile fallback).
-    Fewer complaints per unit → higher score.
+    Fewer complaints per unit → higher score.  (The raw metric definition
+    changed in v7 — own-building heat + portfolio evictions replaced the
+    area 311 term — a rebaseline follows this wave.)
 
     Exposure-aware EB replaces the old zero-is-perfect pin: a 3-unit
     portfolio with 0 complaints shrinks toward the citywide prior
@@ -56,9 +76,19 @@ Output columns:
     mgmt_hpd_plumbing       INTEGER — HPD PLUMBING complaints
     mgmt_hpd_paint          INTEGER — HPD PAINT/PLASTER complaints
     mgmt_hpd_safety         INTEGER — HPD SAFETY complaints
-    mgmt_heat_complaints    INTEGER — 311 HEAT/HOT WATER (area-level, 200 m)
+    mgmt_heat_complaints    INTEGER — 311 HEAT/HOT WATER (area-level, 200 m;
+                                     informational, no longer in the rate)
+    mgmt_bldg_heat          INTEGER — building's OWN HPD HEAT/HOT WATER
+                                     complaints (heat-season months)
+    mgmt_bldg_heat_rate     REAL    — seasonally-corrected decayed heat
+                                     complaints per building unit per
+                                     heat-season month (None when the
+                                     building match is uncertain)
     mgmt_litigations        INTEGER — active HPD litigations for this BBL
     mgmt_evictions          INTEGER — residential evictions at building (12 mo)
+    mgmt_portfolio_evictions INTEGER — marshal evictions across the owner's
+                                     portfolio BBL set
+    mgmt_eviction_rate      REAL    — portfolio evictions per 100 units
     mgmt_complaints_weighted REAL  — decayed weighted complaint total
     mgmt_complaints_per_unit REAL  — EB-shrunk weighted rate per portfolio
                                      unit (None when unscoreable)
@@ -80,6 +110,7 @@ from apthunt.scoring.baseline import (
     baseline_scores,
     decay_weight,
     eb_rate,
+    seasonal_factor,
 )
 from apthunt.scoring.utils import (
     BUILDING_MATCH_MAX_M,
@@ -89,6 +120,7 @@ from apthunt.scoring.utils import (
     normalize_bbl,
     parse_bbl,
     percentile_scores,
+    pluto_units,
 )
 
 # HPD major_category buckets we surface individually
@@ -99,13 +131,34 @@ _CATEGORY_KEYS = {
     "SAFETY":          "mgmt_hpd_safety",
 }
 
-# Cache source (version-bumped: v5 cached full building stats under
-# geohash-cell keys, which cross-attributed neighboring buildings).
+# NYC heat season is Oct 1 – May 31: 8 months in a 12-month window.
+# Own-building heat rates are normalized per heat-season month so the
+# metric reads "heat complaints per unit per month the boiler was
+# legally required to work".
+_HEAT_SEASON_MONTHS = {10, 11, 12, 1, 2, 3, 4, 5}
+HEAT_SEASON_MONTHS_PER_YEAR = 8.0
+
+# Weight on the own-building heat rate inside the scored total.  The rate
+# is scaled by portfolio units before eb_rate divides by portfolio units,
+# so the net contribution to the final per-unit metric is
+# ~BLDG_HEAT_WEIGHT × rate regardless of portfolio size.  ×10 ≈ converts
+# the per-heat-season-month rate back to per-season magnitude, putting a
+# genuinely bad boiler on par with a weak portfolio complaint record.
+BLDG_HEAT_WEIGHT = 10.0
+
+# Modest fold of portfolio-wide marshal evictions into the rate.
+PORTFOLIO_EVICT_WEIGHT = 0.2
+
+# Cache source (version-bumped: v6→v7 semantics change — own-building
+# HPD heat replaces the area 311-heat term in the rate, lot records gain
+# unitsres, owner records gain portfolio eviction stats; v5 cached full
+# building stats under geohash-cell keys, which cross-attributed
+# neighboring buildings).
 # Three key shapes share this source and cannot collide:
 #   "<geohash>"          — area-level 311 heat part (cell-scoped is correct)
 #   "lot:<lat5>,<lon5>"  — resolved PLUTO lot per unique listing coordinate
 #   "bbl:<bbl>"          — building/owner record keyed by the actual lot
-_SOURCE = "management_v6"
+_SOURCE = "management_v7"
 
 
 class ManagementScorer(Scorer):
@@ -137,8 +190,12 @@ class ManagementScorer(Scorer):
             "mgmt_hpd_paint": "INTEGER",
             "mgmt_hpd_safety": "INTEGER",
             "mgmt_heat_complaints": "INTEGER",
+            "mgmt_bldg_heat": "INTEGER",
+            "mgmt_bldg_heat_rate": "REAL",
             "mgmt_litigations": "INTEGER",
             "mgmt_evictions": "INTEGER",
+            "mgmt_portfolio_evictions": "INTEGER",
+            "mgmt_eviction_rate": "REAL",
             "mgmt_complaints_weighted": "REAL",
             "mgmt_complaints_per_unit": "REAL",
             "mgmt_match_uncertain": "INTEGER",
@@ -164,6 +221,13 @@ class ManagementScorer(Scorer):
         # first build_baseline.py run — eb_rate then falls back to the raw
         # rate, so rates converge to the shrunk form one cycle later.
         prior = baseline_median(conn, self.name)
+
+        # Month-of-scoring seasonal correction for HPD complaint sums
+        # (HEAT/HOT WATER is ~23× Jan vs Jul).  Computed once per score()
+        # call; applied at assembly time so cached decayed sums stay
+        # season-independent.  Returns 1.0 on any failure or thin data,
+        # so this degrades gracefully while re-downloads are in flight.
+        seasonal = seasonal_factor(conn, "ds_hpd_complaints", "received_date")
 
         # ---- Area-level part: 311 heat within 200 m.  A radius query
         # around the cell centroid, not a building attribute — geohash-cell
@@ -210,6 +274,7 @@ class ManagementScorer(Scorer):
             listing_stats.append(
                 self._assemble(
                     bldg_stats[ck], area_stats[lst["geohash"]], prior,
+                    seasonal,
                 )
             )
 
@@ -269,6 +334,7 @@ class ManagementScorer(Scorer):
             "bbl": nearest.get("bbl"),
             "ownername": nearest.get("ownername"),
             "yearbuilt": nearest.get("yearbuilt"),
+            "unitsres": nearest.get("unitsres"),
             "_dist_m": nearest.get("_dist_m"),
         }
         self._cache.put(key, _SOURCE, slim)
@@ -290,6 +356,7 @@ class ManagementScorer(Scorer):
 
         evictions, evict_weighted = self._eviction_count(lot, today_ord)
         litigations = self._litigation_count(lot)
+        bldg_heat, bldg_heat_weighted = self._building_heat(lot, today_ord)
 
         if not lot.get("ownername"):
             record = self._empty_stats()
@@ -299,29 +366,37 @@ class ManagementScorer(Scorer):
         record["mgmt_litigations"] = litigations
         record["mgmt_evictions"] = evictions
         record["_evict_weighted"] = evict_weighted
+        record["mgmt_bldg_heat"] = bldg_heat
+        record["_bldg_heat_weighted"] = round(bldg_heat_weighted, 3)
+        record["_bldg_units"] = pluto_units(lot)
         # Building/owner track record only (311 heat is area-level and
-        # can come from neighbors, so it doesn't count as a record).
+        # can come from neighbors, so it doesn't count as a record;
+        # own-building HPD heat IS the building's record).
         record["_new_building"] = int(
             is_new_building(lot)
             and record["mgmt_complaints"] == 0
             and litigations == 0
             and evictions == 0
+            and bldg_heat == 0
         )
         if key is not None:
             self._cache.put(key, _SOURCE, record)
         return record
 
     def _assemble(
-        self, bldg: dict | None, area: dict, prior,
+        self, bldg: dict | None, area: dict, prior, seasonal: float,
     ) -> dict:
         """Combine one listing's building record and area record into the
         final component dict (building and area parts may come from
-        different cache keys)."""
+        different cache keys).  ``seasonal`` is the month-of-scoring
+        correction factor for HPD complaint sums — applied here, not in
+        the cached records, so caches stay season-independent."""
         match_uncertain = bldg is None
         if match_uncertain:
             stats = self._empty_stats()
             stats["mgmt_litigations"] = 0
             stats["mgmt_evictions"] = 0
+            stats["mgmt_bldg_heat"] = 0
         else:
             stats = dict(bldg)  # copy: cached/shared record must not mutate
 
@@ -329,14 +404,38 @@ class ManagementScorer(Scorer):
         # Litigations are *active* lawsuits (undated status) — no decay.
         hpd_weighted = stats.pop("_hpd_weighted")
         evict_weighted = stats.pop("_evict_weighted", 0.0)
+        pf_evict_weighted = stats.pop("_portfolio_evict_weighted", 0.0)
+        bldg_heat_weighted = stats.pop("_bldg_heat_weighted", 0.0)
+        bldg_units = stats.pop("_bldg_units", 1)
         new_building = bool(stats.pop("_new_building", 0))
         litigations = stats["mgmt_litigations"]
-        heat_weighted = area.get("_heat_weighted", 0.0)
 
+        # Area 311 heat is informational only as of v7 — it no longer
+        # enters the scored rate (it attributed neighbors' boilers to
+        # buildings with zero own-building heat complaints).
         stats["mgmt_heat_complaints"] = area["mgmt_heat_complaints"]
+
+        # Own-building heat: seasonally-corrected decayed HPD HEAT/HOT
+        # WATER sum per building unit per heat-season month (Oct–May).
+        bldg_heat_rate = (
+            (bldg_heat_weighted / seasonal)
+            / max(bldg_units, 1)
+            / HEAT_SEASON_MONTHS_PER_YEAR
+        )
+        stats["mgmt_bldg_heat_rate"] = (
+            None if match_uncertain else round(bldg_heat_rate, 4)
+        )
+
+        units = stats["mgmt_owner_units"]
         weighted_total = (
-            hpd_weighted + heat_weighted
-            + litigations * 10 + evict_weighted * 5
+            hpd_weighted / seasonal
+            # Scaled by portfolio units so eb_rate's per-unit division
+            # cancels it: contribution ≈ BLDG_HEAT_WEIGHT × rate no
+            # matter how large the portfolio is.
+            + BLDG_HEAT_WEIGHT * bldg_heat_rate * max(units, 1)
+            + litigations * 10
+            + evict_weighted * 5
+            + PORTFOLIO_EVICT_WEIGHT * pf_evict_weighted
         )
         stats["mgmt_complaints_weighted"] = round(weighted_total, 3)
         stats["mgmt_match_uncertain"] = int(match_uncertain)
@@ -353,7 +452,7 @@ class ManagementScorer(Scorer):
             stats["mgmt_complaints_per_unit"] = round(
                 eb_rate(
                     weighted_total,
-                    stats["mgmt_owner_units"],
+                    units,
                     prior,
                     k=10.0,
                 ),
@@ -372,8 +471,50 @@ class ManagementScorer(Scorer):
             "mgmt_hpd_plumbing": 0,
             "mgmt_hpd_paint": 0,
             "mgmt_hpd_safety": 0,
+            "mgmt_portfolio_evictions": 0,
+            "mgmt_eviction_rate": 0.0,
             "_hpd_weighted": 0.0,
+            "_portfolio_evict_weighted": 0.0,
         }
+
+    def _building_heat(self, lot: dict | None, today_ord: int):
+        """(count, decayed weighted sum) of the building's OWN HPD
+        HEAT/HOT WATER complaints, looked up by BBL.
+
+        Heat-season months only (Oct–May): a complaint dated outside the
+        legal heat season is a data quirk, not boiler evidence.  Rows
+        with an unparseable month are kept (present, season unknown).
+        Degrades to (0, 0.0) on any query failure so scoring still runs
+        while dataset re-downloads are in flight.
+        """
+        if lot is None or not lot.get("bbl"):
+            return 0, 0.0
+        bbl_str = normalize_bbl(lot["bbl"])
+        try:
+            # Keyed fast path: exact-key rows, the old SQL's
+            # major_category filter applied as a Python post-filter
+            # (same = semantics: NULL/other categories drop out).
+            rows = self._store.rows_by_key(
+                "hpd_complaints", "bbl", bbl_str,
+                columns=["received_date", "major_category"],
+            )
+        except Exception:
+            return 0, 0.0
+        count = 0
+        weighted = 0.0
+        for r in rows:
+            if r.get("major_category") != "HEAT/HOT WATER":
+                continue
+            d = r.get("received_date") or ""
+            try:
+                month = int(d[5:7])
+            except (TypeError, ValueError):
+                month = None
+            if month is not None and month not in _HEAT_SEASON_MONTHS:
+                continue
+            count += 1
+            weighted += decay_weight(d, today_ord)
+        return count, weighted
 
     def _heat_311_count(
         self, lat: float, lon: float, radius_m: int, today_ord: int,
@@ -395,19 +536,24 @@ class ManagementScorer(Scorer):
         return count, weighted
 
     def _eviction_count(self, nearest_lot: dict | None, today_ord: int):
-        """Count evictions at this building by BBL (plus decayed weight)."""
+        """Count evictions at this building by BBL (plus decayed weight).
+
+        Degrades to (0, 0.0) on query failure — ds_evictions is part of
+        the in-flight re-download wave.
+        """
         if nearest_lot is None:
             return 0, 0.0
         raw_bbl = nearest_lot.get("bbl")
         if not raw_bbl:
             return 0, 0.0
         bbl_str = normalize_bbl(raw_bbl)
-        rows = self._store.query(
-            "evictions",
-            where_clause="bbl = ?",
-            params=(bbl_str,),
-            select="executed_date",
-        )
+        try:
+            rows = self._store.rows_by_key(
+                "evictions", "bbl", bbl_str,
+                columns=["executed_date"],
+            )
+        except Exception:
+            return 0, 0.0
         weighted = sum(
             decay_weight(r.get("executed_date"), today_ord) for r in rows
         )
@@ -423,13 +569,12 @@ class ManagementScorer(Scorer):
             boro, block, lot = parse_bbl(raw_bbl)
         except (ValueError, IndexError):
             return 0
-        rows = self._store.query(
-            "hpd_litigations",
-            where_clause="boroid = ? AND block = ? AND lot = ?",
-            params=(boro, str(int(block)), str(int(lot))),
-            select="COUNT(*) as cnt",
-        )
-        return int(rows[0]["cnt"]) if rows else 0
+        # Keyed fast path — COUNT(*) over an exact key is len() of the
+        # key's row list (HPD stores block/lot unpadded).
+        return len(self._store.rows_by_key(
+            "hpd_litigations", "boroid,block,lot",
+            (boro, str(int(block)), str(int(lot))), columns=[],
+        ))
 
     def _get_owner_stats(self, owner: str, today_ord: int) -> dict:
         """Portfolio-level stats for an owner (per-building fields and the
@@ -437,11 +582,10 @@ class ManagementScorer(Scorer):
         if owner in self._owner_cache:
             return dict(self._owner_cache[owner])
 
-        bbls = self._store.query(
-            "pluto",
-            where_clause="ownername = ?",
-            params=(owner,),
-            select="bbl, unitsres",
+        # Keyed fast path (falls back to the equivalent ownername = ? SQL).
+        bbls = self._store.rows_by_key(
+            "pluto", "ownername", owner,
+            columns=["bbl", "unitsres"],
         )
 
         total_units = 0
@@ -457,21 +601,24 @@ class ManagementScorer(Scorer):
             except (ValueError, TypeError):
                 pass
 
-        # Count HPD complaints by category across portfolio
-        # (plain counts for the UI/flags, recency-decayed sum for scoring)
+        # Count HPD complaints by category — and marshal evictions — across
+        # the portfolio BBL set (plain counts for the UI/flags,
+        # recency-decayed sums for scoring)
         total_complaints = 0
         hpd_weighted = 0.0
         cat_counts = {v: 0 for v in _CATEGORY_KEYS.values()}
+        pf_evictions = 0
+        pf_evict_weighted = 0.0
 
+        # Per-BBL keyed lookups replace the old 50-BBL IN() batches: an
+        # IN() over exact keys is the union of per-key equality matches,
+        # so the aggregated row multiset is identical (order-insensitive
+        # sums; float association wobble is below the rounding kept).
         bbl_list = list(bbl_set)
-        for i in range(0, len(bbl_list), 50):
-            batch = bbl_list[i:i + 50]
-            placeholders = ",".join("?" * len(batch))
-            rows = self._store.query(
-                "hpd_complaints",
-                where_clause=f"bbl IN ({placeholders})",
-                params=tuple(batch),
-                select="major_category,received_date",
+        for b in bbl_list:
+            rows = self._store.rows_by_key(
+                "hpd_complaints", "bbl", b,
+                columns=["major_category", "received_date"],
             )
             for r in rows:
                 total_complaints += 1
@@ -479,6 +626,21 @@ class ManagementScorer(Scorer):
                 col = _CATEGORY_KEYS.get(r.get("major_category", ""))
                 if col:
                     cat_counts[col] += 1
+            # Eviction propensity: executed marshal evictions anywhere in
+            # the portfolio.  Degrades to zero on query failure so scoring
+            # still runs while dataset re-downloads are in flight.
+            try:
+                erows = self._store.rows_by_key(
+                    "evictions", "bbl", b,
+                    columns=["executed_date"],
+                )
+            except Exception:
+                erows = []
+            for r in erows:
+                pf_evictions += 1
+                pf_evict_weighted += decay_weight(
+                    r.get("executed_date"), today_ord,
+                )
 
         stats = {
             "mgmt_owner": owner,
@@ -486,7 +648,14 @@ class ManagementScorer(Scorer):
             "mgmt_owner_units": total_units,
             "mgmt_complaints": total_complaints,
             **cat_counts,
+            "mgmt_portfolio_evictions": pf_evictions,
+            # Marshal evictions per 100 portfolio units — the landlord's
+            # eviction propensity, independent of the complaint record.
+            "mgmt_eviction_rate": round(
+                pf_evictions / max(total_units, 1) * 100.0, 2,
+            ),
             "_hpd_weighted": round(hpd_weighted, 3),
+            "_portfolio_evict_weighted": round(pf_evict_weighted, 3),
         }
         self._owner_cache[owner] = stats
         return dict(stats)

@@ -74,7 +74,7 @@ DATASETS: dict[str, DatasetDef] = {
     "parks": DatasetDef(
         name="parks",
         soda_id="enfh-gkve",
-        select="name311, multipolygon",
+        select="name311, typecategory, acres, multipolygon",
         refresh_days=90,          # quarterly
         post_process="parks_centroid",  # compute centroid lat/lon from geometry
     ),
@@ -107,7 +107,7 @@ DATASETS: dict[str, DatasetDef] = {
     "crime_historic": DatasetDef(
         name="crime_historic",
         soda_id="qgea-i56i",
-        select="cmplnt_num,cmplnt_fr_dt,law_cat_cd,latitude,longitude",
+        select="cmplnt_num,cmplnt_fr_dt,cmplnt_fr_tm,law_cat_cd,ofns_desc,prem_typ_desc,latitude,longitude",
         refresh_days=30,          # historic dataset updates quarterly
         where="cmplnt_fr_dt > '{TWO_YEARS_AGO}' AND latitude IS NOT NULL",
         geo_columns=["latitude", "longitude"],
@@ -119,11 +119,11 @@ DATASETS: dict[str, DatasetDef] = {
     "noise": DatasetDef(
         name="noise",
         soda_id="erm2-nwe9",
-        select="unique_key,created_date,complaint_type,latitude,longitude",
+        select="unique_key,created_date,complaint_type,descriptor,latitude,longitude",
         refresh_days=7,           # weekly
         where=(
             "complaint_type IN ("
-            "'Noise - Residential','Noise - Street/Sidewalk',"
+            "'Noise','Noise - Residential','Noise - Street/Sidewalk',"
             "'Noise - Commercial','Noise - Vehicle','Noise - Park',"
             "'Rodent','HEAT/HOT WATER'"
             ") AND created_date > '{TWELVE_MONTHS_AGO}'"
@@ -211,9 +211,11 @@ DATASETS: dict[str, DatasetDef] = {
         soda_id="wvxf-dwi5",     # HPD Violations — inspector-confirmed issues
         select="violationid,boroid,block,lot,class,"
                "inspectiondate,currentstatus,violationstatus,"
-               "novdescription,latitude,longitude",
+               "certifieddate,novdescription,latitude,longitude",
         refresh_days=7,           # weekly — active violations change often
-        where="violationstatus = 'Open' AND inspectiondate > '{TWO_YEARS_AGO}'",
+        # All statuses (not just Open): trajectory scoring needs corrected
+        # violations too (opened-vs-cured rate = deteriorating vs recovering)
+        where="inspectiondate > '{TWO_YEARS_AGO}'",
         geo_columns=["latitude", "longitude"],
     ),
 
@@ -277,7 +279,7 @@ DATASETS: dict[str, DatasetDef] = {
     "crime_ytd": DatasetDef(
         name="crime_ytd",
         soda_id="5uac-w243",
-        select="cmplnt_num,cmplnt_fr_dt,law_cat_cd,latitude,longitude",
+        select="cmplnt_num,cmplnt_fr_dt,cmplnt_fr_tm,law_cat_cd,ofns_desc,prem_typ_desc,latitude,longitude",
         refresh_days=7,
         where="latitude IS NOT NULL",
         geo_columns=["latitude", "longitude"],
@@ -458,6 +460,7 @@ DATASETS: dict[str, DatasetDef] = {
         refresh_days=30,
         where="occur_date > '{TWO_YEARS_AGO}' AND latitude IS NOT NULL",
         geo_columns=["latitude", "longitude"],
+        post_process="fix_swapped_latlon",
     ),
 
     "felony_arrests": DatasetDef(
@@ -520,6 +523,15 @@ DATASETS: dict[str, DatasetDef] = {
         refresh_days=365,
         index_columns=["zcta20"],
         real_columns=["hvi"],
+    ),
+
+    "firehouses": DatasetDef(
+        name="firehouses",
+        soda_id="ji82-xba5",     # FacDB — FDNY firehouses (siren corridors)
+        select="facname,factype,address,boro,latitude,longitude",
+        refresh_days=365,
+        where="factype = 'FIREHOUSE' AND latitude IS NOT NULL",
+        geo_columns=["latitude", "longitude"],
     ),
 
     # ── Transit & lifestyle ──────────────────────────────────────
@@ -658,6 +670,139 @@ CREATE TABLE IF NOT EXISTS _data_meta (
 
 
 # ---------------------------------------------------------------------------
+# Keyed fast-path recipes
+# ---------------------------------------------------------------------------
+#
+# Shared vocabulary between ``DataStore.rows_by_key`` (SQLite fallback)
+# and ``spatial_index.KeyedMaps`` (in-memory hash maps).  A *key_expr*
+# is one of:
+#
+#   - a plain column name          key = the raw stored value
+#     e.g. "bbl"                   SQL: [bbl] = ?
+#   - comma-joined column names    key = tuple of raw stored values
+#     e.g. "boro,block,lot"        SQL: [boro]=? AND [block]=? AND [lot]=?
+#   - "bbl_normalized"             str(int(float(v))) applied identically
+#                                  to the stored value and the probe,
+#                                  SQL: CAST(CAST([bbl] AS REAL) AS INTEGER) = ?
+#   - "boro_block_lot[:c1,c2,c3]"  zero-padded (boro, block5, lot5) tuple
+#                                  exactly as ``utils.parse_bbl`` produces,
+#                                  SQL: CAST([c] AS INTEGER) = ? per part
+#
+# The scorers use only the exact-equality forms (plain column / column
+# tuple), so the in-memory answer is bit-identical to the SQL it
+# replaced.  The normalizing recipes exist for callers that hold
+# canonical BBLs but face float-formatted storage (e.g. ds_pluto.bbl
+# "…​.00000000"); rows whose key can't be normalized are unindexed on the
+# map side and CAST to 0 on the SQL side — a documented, negligible edge.
+
+_RECIPE_BBL_NORM = "bbl_normalized"
+_RECIPE_BBL_PARTS = "boro_block_lot"
+
+
+def _keyed_recipe(key_expr: str) -> tuple:
+    """Parse *key_expr* → ``(recipe_name, key_columns)``.
+
+    ``recipe_name`` is None for the exact-equality (plain column /
+    column tuple) forms.  Raises ValueError on a malformed expression.
+    """
+    expr = (key_expr or "").strip()
+    if expr == _RECIPE_BBL_NORM:
+        return _RECIPE_BBL_NORM, ["bbl"]
+    if expr == _RECIPE_BBL_PARTS or expr.startswith(_RECIPE_BBL_PARTS + ":"):
+        rest = expr[len(_RECIPE_BBL_PARTS):]
+        cols = (["boro", "block", "lot"] if not rest
+                else [c.strip() for c in rest[1:].split(",") if c.strip()])
+        if len(cols) != 3:
+            raise ValueError(
+                f"boro_block_lot recipe needs exactly 3 columns: {key_expr!r}"
+            )
+        return _RECIPE_BBL_PARTS, cols
+    cols = [c.strip() for c in expr.split(",") if c.strip()]
+    if not cols:
+        raise ValueError(f"empty key_expr: {key_expr!r}")
+    return None, cols
+
+
+def keyed_key_columns(key_expr: str) -> list:
+    """The table columns a *key_expr* keys on."""
+    return _keyed_recipe(key_expr)[1]
+
+
+def _norm_int_str(v) -> str:
+    return str(int(float(v)))
+
+
+def keyed_canon_factory(key_expr: str):
+    """Return ``fn(values_tuple) -> hashable key | None``.
+
+    Applied identically to stored rows (at map build time) and to probe
+    keys (at lookup time) so both sides share one canonical form.
+    ``None`` means "unindexable row / unmatchable probe" — mirroring SQL
+    ``=`` which never matches NULL.
+    """
+    name, cols = _keyed_recipe(key_expr)
+    n = len(cols)
+    if name is None:
+        if n == 1:
+            def canon(vals):
+                v = vals[0]
+                return None if v is None else v
+        else:
+            def canon(vals):
+                if len(vals) != n or any(v is None for v in vals):
+                    return None
+                return tuple(vals)
+        return canon
+    if name == _RECIPE_BBL_NORM:
+        def canon(vals):
+            try:
+                return _norm_int_str(vals[0])
+            except (TypeError, ValueError):
+                return None
+        return canon
+
+    def canon(vals):    # boro_block_lot — parse_bbl-shaped tuple
+        try:
+            return (
+                _norm_int_str(vals[0]),
+                _norm_int_str(vals[1]).zfill(5),
+                _norm_int_str(vals[2]).zfill(5),
+            )
+        except (TypeError, ValueError):
+            return None
+    return canon
+
+
+def keyed_where(key_expr: str, key) -> tuple:
+    """``(where_clause, params)`` reproducing the recipe's key semantics
+    in SQL — the correctness reference and automatic fallback for
+    :meth:`DataStore.rows_by_key`.  An unmatchable probe yields the
+    always-false clause (parity with the map side's empty result)."""
+    name, cols = _keyed_recipe(key_expr)
+    vals = tuple(key) if isinstance(key, (list, tuple)) else (key,)
+    if name is None:
+        if len(vals) != len(cols):
+            return "1 = 0", ()
+        return " AND ".join(f"[{c}] = ?" for c in cols), vals
+    if name == _RECIPE_BBL_NORM:
+        try:
+            k = int(float(vals[0]))
+        except (TypeError, ValueError):
+            return "1 = 0", ()
+        return f"CAST(CAST([{cols[0]}] AS REAL) AS INTEGER) = ?", (k,)
+    try:
+        ints = tuple(int(float(v)) for v in vals)
+    except (TypeError, ValueError):
+        return "1 = 0", ()
+    if len(ints) != 3:
+        return "1 = 0", ()
+    return (
+        " AND ".join(f"CAST([{c}] AS INTEGER) = ?" for c in cols),
+        ints,
+    )
+
+
+# ---------------------------------------------------------------------------
 # DataStore
 # ---------------------------------------------------------------------------
 
@@ -687,8 +832,49 @@ class DataStore:
         self._app_token = app_token or os.environ.get("SODA_APP_TOKEN")
         self._conn.execute(_META_DDL)
         self._conn.commit()
+        # Optional scoring-performance fast paths (see attach_fast_path).
+        self._memory_index = None
+        self._keyed_maps = None
+        self.blocker_raster = None
+        self.severance_raster = None
 
     # ------------------------------------------------------------------ public
+
+    def attach_memory_index(self, index) -> None:
+        """Attach a ``spatial_index.MemoryIndex``.
+
+        Once attached, ``query_circle`` delegates to it whenever it can
+        serve the dataset (lazy load included); the SQLite path remains
+        the fallback and the correctness reference.
+        """
+        self._memory_index = index
+
+    def attach_fast_path(self, index=None, blocker_raster=None,
+                         severance_raster=None, keyed_maps=None) -> None:
+        """Single attachment point for all Tier-1 scoring fast paths.
+
+        - ``index``: MemoryIndex → accelerates ``query_circle``.
+        - ``blocker_raster``: BlockerRaster → ``road_exposure`` reads it
+          off this store for sightline occlusion.
+        - ``severance_raster``: SeveranceRaster → reachable both via
+          this store and via ``utils.set_severance_raster`` (module
+          fallback for callers holding a different store instance).
+        - ``keyed_maps``: KeyedMaps → accelerates ``rows_by_key`` (the
+          per-building exact-key lookups of the building-dimension
+          scorers).
+
+        Every consumer degrades to the SQLite path when a component is
+        ``None`` or fails at query time.
+        """
+        self._memory_index = index
+        self._keyed_maps = keyed_maps
+        self.blocker_raster = blocker_raster
+        self.severance_raster = severance_raster
+        try:
+            from apthunt.scoring.utils import set_severance_raster
+            set_severance_raster(severance_raster)
+        except Exception:  # scoring layer absent/broken — store attr still works
+            pass
 
     def download(
         self,
@@ -780,6 +966,19 @@ class DataStore:
         # Post-processing hooks (e.g. compute derived columns)
         if ddef.post_process:
             self._run_post_process(ddef.post_process, table)
+
+        # A dataset refreshed mid-process invalidates its in-memory copy
+        # (and any derived dataset built from it, e.g. crime ← crime_ytd).
+        if self._memory_index is not None:
+            self._memory_index.invalidate(name)
+            for dname, spec in DERIVED_DATASETS.items():
+                if name in spec["sources"]:
+                    self._memory_index.invalidate(dname)
+        if self._keyed_maps is not None:
+            try:
+                self._keyed_maps.invalidate(name)
+            except Exception:  # never let cache hygiene break a download
+                pass
 
         # Build spatial indexes
         self._build_indexes(table, ddef.geo_columns)
@@ -907,7 +1106,26 @@ class DataStore:
         Query rows within ``radius_m`` meters of (lat, lon).
 
         Uses a bbox pre-filter + exact Haversine post-filter.
+
+        When a MemoryIndex is attached (attach_memory_index /
+        attach_fast_path) and can serve the dataset, the query is
+        answered from memory with identical semantics; any inability
+        (missing table/column, oversize dataset, error) falls back to
+        the SQLite path below.
         """
+        if self._memory_index is not None:
+            try:
+                fast = self._memory_index.query_circle(
+                    dataset, lat, lon, radius_m,
+                    select_cols=select, lat_col=lat_col, lon_col=lon_col,
+                )
+                if fast is not None:
+                    return fast
+            except Exception:
+                log.warning(
+                    "memory index failed for %s — falling back to SQLite",
+                    dataset, exc_info=True,
+                )
         # 1° latitude ≈ 111,320 m.  At NYC, 1° longitude ≈ 85,000 m.
         lat_delta = radius_m / 111_320
         lon_delta = radius_m / 85_000
@@ -942,6 +1160,50 @@ class DataStore:
                 row["_dist_m"] = d
                 results.append(row)
         return results
+
+    def rows_by_key(
+        self,
+        dataset: str,
+        key_expr: str,
+        key,
+        columns=None,
+    ) -> list[dict]:
+        """Fetch a dataset's rows matching one exact key.
+
+        Answers from the attached :class:`spatial_index.KeyedMaps` when
+        it can serve the (dataset, key_expr) pair — O(1) dict lookup,
+        lazy load included — and otherwise (or on any failure) falls
+        back to an equivalent parameterized SQLite query built from the
+        same recipe (see the keyed-recipe block above).  Both paths
+        return identical row dicts.
+
+        Args:
+            key_expr: plain column name, comma-joined column names, or
+                      a named recipe ("bbl_normalized",
+                      "boro_block_lot[:c1,c2,c3]").
+            key:      scalar for single-column keys, tuple otherwise.
+            columns:  columns for the returned dicts.  ``None`` = all
+                      table columns (SELECT *); an empty list = just the
+                      key columns (for pure count-style callers).
+        """
+        if columns is None:
+            cols = None
+        else:
+            cols = list(dict.fromkeys(columns)) or keyed_key_columns(key_expr)
+        if self._keyed_maps is not None:
+            try:
+                rows = self._keyed_maps.get(dataset, key_expr, key,
+                                            columns=cols)
+                if rows is not None:
+                    return rows
+            except Exception:
+                log.warning(
+                    "keyed map failed for %s/%s — falling back to SQLite",
+                    dataset, key_expr, exc_info=True,
+                )
+        where, params = keyed_where(key_expr, key)
+        select = "*" if cols is None else ", ".join(f"[{c}]" for c in cols)
+        return self.query(dataset, where, params, select=select)
 
     def status(self) -> list[dict]:
         """Return metadata for all datasets."""
@@ -1187,7 +1449,7 @@ out body;
         self._conn.execute(
             f"CREATE TABLE [{table}] "
             "(way_id INTEGER, road_class TEXT, name TEXT, lanes INTEGER, "
-            "lat REAL, lon REAL)"
+            "tunnel INTEGER, bridge INTEGER, lat REAL, lon REAL)"
         )
         self._conn.commit()
 
@@ -1277,6 +1539,11 @@ out body;
                     for g in (el.get("geometry") or [])
                     if g and g.get("lat") is not None and g.get("lon") is not None
                 ]
+                # Tunnel segments are inaudible at the surface; bridges/
+                # viaducts radiate farther (elevated sources clear the
+                # first building row).
+                tunnel = 1 if (tags.get("tunnel") or "no") != "no" else 0
+                bridge = 1 if (tags.get("bridge") or "no") != "no" else 0
                 for plat, plon in _sample_polyline(
                     coords, self.ROAD_SAMPLE_SPACING_M
                 ):
@@ -1286,13 +1553,13 @@ out body;
                     seen_pts.add(key)
                     rows.append(
                         (way_id, road_class, tags.get("name", ""), lanes,
-                         plat, plon)
+                         tunnel, bridge, plat, plon)
                     )
 
             self._conn.executemany(
                 f"INSERT INTO [{table}] "
-                "(way_id, road_class, name, lanes, lat, lon) "
-                "VALUES (?, ?, ?, ?, ?, ?)",
+                "(way_id, road_class, name, lanes, tunnel, bridge, lat, lon) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                 rows,
             )
             self._conn.commit()
@@ -1359,6 +1626,14 @@ out body;
             self._pp_extract_point(table, "the_geom")
         elif hook == "dedupe_bus_stops":
             self._pp_dedupe_bus_stops(table)
+        elif hook == "fix_swapped_latlon":
+            # Some upstream feeds ship (lat, lon) swapped (lat ≈ -73.9):
+            # swap any row whose latitude is impossibly negative for NYC.
+            self._conn.execute(
+                f"UPDATE [{table}] SET latitude = longitude, longitude = latitude "
+                "WHERE latitude < 0"
+            )
+            self._conn.commit()
         elif hook == "rebuild_crime_merged":
             self._rebuild_crime_merged()
         elif hook == "sample_truck_routes":
@@ -1392,9 +1667,13 @@ out body;
             self._conn.isolation_level = None
             self._conn.execute("BEGIN IMMEDIATE")
             self._conn.execute(f"DROP TABLE IF EXISTS [{staging}]")
+            # NB: index names survive a table RENAME — drop the stale one
+            # from the previous rebuild or CREATE INDEX collides.
+            self._conn.execute(f"DROP INDEX IF EXISTS [idx_{staging}_num]")
             self._conn.execute(
                 f"CREATE TABLE [{staging}] ("
-                "cmplnt_num TEXT, cmplnt_fr_dt TEXT, law_cat_cd TEXT, "
+                "cmplnt_num TEXT, cmplnt_fr_dt TEXT, cmplnt_fr_tm TEXT, "
+                "law_cat_cd TEXT, ofns_desc TEXT, prem_typ_desc TEXT, "
                 "latitude REAL, longitude REAL)"
             )
             self._conn.execute(
@@ -1403,8 +1682,10 @@ out body;
             for src in sources:  # historic listed first → wins dedupe
                 self._conn.execute(
                     f"INSERT OR IGNORE INTO [{staging}] "
-                    "(cmplnt_num, cmplnt_fr_dt, law_cat_cd, latitude, longitude) "
-                    f"SELECT cmplnt_num, cmplnt_fr_dt, law_cat_cd, latitude, longitude "
+                    "(cmplnt_num, cmplnt_fr_dt, cmplnt_fr_tm, law_cat_cd, "
+                    "ofns_desc, prem_typ_desc, latitude, longitude) "
+                    f"SELECT cmplnt_num, cmplnt_fr_dt, cmplnt_fr_tm, law_cat_cd, "
+                    f"ofns_desc, prem_typ_desc, latitude, longitude "
                     f"FROM [ds_{src}] WHERE cmplnt_num IS NOT NULL"
                 )
             self._conn.execute("DROP TABLE IF EXISTS ds_crime")

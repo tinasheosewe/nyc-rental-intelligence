@@ -1,15 +1,23 @@
 """
 PestScorer — scores listings by pest / vermin exposure.
 
-Combines two independent data sources:
+Combines three independent data sources:
 
 1. **Building-level** — HPD complaints categorised as
    ``major_category='UNSANITARY CONDITION'`` and
    ``minor_category='PESTS'``, looked up by the building's BBL
    (via PLUTO, same approach as ManagementScorer).
 
-2. **Area-level** — 311 Service Requests with ``complaint_type='Rodent'``
-   within 100 m (tight radius — pests are hyper-local).
+2. **Area-level, self-reported** — 311 Service Requests with
+   ``complaint_type='Rodent'`` within 100 m (tight radius — pests are
+   hyper-local).
+
+3. **Area-level, verified (v7)** — DOHMH rodent inspections
+   (``ds_rodent_inspections``): trained inspectors visiting properties
+   and recording ground truth ('Passed' vs 'Failed for Rat Activity').
+   Unlike 311 reports (unverified, reporting-propensity biased), an
+   inspection result is evidence in *both* directions — failures prove
+   rats, passes prove their absence.
 
 Scoring:
     Both sides are normalised into density-corrected per-household rates
@@ -33,18 +41,63 @@ Scoring:
       sum divided by :func:`kernel_weighted_units` over the *same* 100 m
       radius (same Gaussian kernel on both sides), scaled ×1000 to a
       per-1000-household rate for human-readable numbers.
+    * **Inspection failure rate (v7)** — over *initial + compliance*
+      inspections within 100 m (treatments / stoppages / clean-ups are
+      excluded: they are follow-up actions, not assessments), each
+      inspection is weighted by the same Gaussian distance kernel
+      (σ = 50 m) times recency decay (half-life 180 d), on BOTH sides
+      of the ratio:
 
-    Combined baseline metric (documented design):
+          pest_insp_fail_rate = W(failed) / max(W(all initial+compliance), 3.0)
 
-        pest_rate = pest_per_unit + 0.5 * (pest_rodent_rate / 1000)
+      where a "failed" result is any containing 'Failed' / 'Rat
+      Activity'.  Identical weights on numerator and denominator make
+      this a proper weighted failure *fraction* in [0, 1]: recent
+      passed inspections actively dilute old failures, so a block that
+      was infested two years ago and has passed every visit since reads
+      near-zero.  The denominator floor (3.0) shrinks thin-evidence
+      cells toward 0 rather than letting a 1-for-1 cell read as a 100%
+      failure blackspot.
 
-    The /1000 converts the area rate back to per-household so both terms
-    share units; the 0.5 half-weights block-level 311 reports against
-    building-verified HPD complaints.  ``pest_rate`` is scored against
-    the frozen citywide baseline distribution (batch percentile fallback
-    until the first baseline build), while ``pest_per_unit`` ("this
-    building") and ``pest_rodent_rate`` ("this block") stay separate
-    components for the UI.
+    Combined baseline metric (documented design — v7 blend):
+
+        pest_rate = 0.5 * pest_insp_fail_rate
+                  + 0.3 * (pest_rodent_rate / 1000)
+                  + 0.2 * building_term
+
+    Verified inspection evidence (0.5) dominates; self-reported 311
+    chatter (0.3) and the building's own HPD record (0.2) refine.  This
+    is how verified ABSENCE improves the score: a block whose
+    inspections keep coming back clean holds the *dominant* term at ~0
+    even when unverified 311 complaints exist nearby (311's influence
+    on the combined metric dropped from the old formula's half-weight),
+    while a block with confirmed rat activity is tanked by ground truth
+    no matter how few neighbors bother to file 311 reports.  The terms
+    are on heterogeneous scales (a failure fraction vs per-household
+    rates); the frozen baseline distribution absorbs the units —
+    pest_rate is only ever compared to its own citywide distribution.
+    REBASELINE REQUIRED: the v7 metric definition differs from the v6
+    baseline (a rebaseline pass follows this wave; until then v7 raw
+    values map onto the stale grid / batch-percentile fallback).
+
+    ``building_term`` is the EB per-unit rate as before, degrading to
+    the citywide prior when the building side is unknown (guard reject
+    / new building) — see "Combining when the building part is unknown"
+    below.  ``pest_per_unit`` ("this building"), ``pest_rodent_rate``
+    ("this block, self-reported") and ``pest_insp_fail_rate`` ("this
+    block, verified") stay separate components for the UI.
+
+    **Degradation while re-downloads are in flight (v7)** — availability
+    of ``ds_rodent_inspections`` is probed once per ``score()`` call;
+    when the table is missing the three inspection components go NULL
+    and the blend renormalises the remaining terms at the same 3:2
+    ratio:
+
+        pest_rate = 0.6 * (pest_rodent_rate / 1000) + 0.4 * building_term
+
+    Cached v7 area blobs written during an outage self-heal: a cached
+    cell with NULL inspection fields is recomputed as soon as the table
+    is available again (and expires by cache TTL regardless).
 
     **Per-building attribution (v6)** — building-level stats are
     resolved per unique listing coordinate — listings in the same
@@ -70,14 +123,12 @@ Scoring:
     ``pest_per_unit`` goes NULL and ``pest_new_building = 1``.
 
     **Combining when the building part is unknown** (either rule above):
-    the score is still computed, from the area part plus the prior.  The
-    EB estimate with *zero* building evidence collapses to the prior, so
-    the building term degrades to ``prior`` — keeping ``pest_rate`` on
-    the same scale as the frozen baseline distribution:
-
-        pest_rate = prior + 0.5 * (pest_rodent_rate / 1000)
-
-    (area-only before the first baseline build, when no prior exists).
+    the score is still computed, from the area parts plus the prior.
+    The EB estimate with *zero* building evidence collapses to the
+    prior, so ``building_term`` degrades to ``prior`` — keeping
+    ``pest_rate`` on the same scale as the frozen baseline distribution
+    (``building_term = 0.0`` before the first baseline build, when no
+    prior exists — area-only).
 
 Output columns:
     pest_hpd_count       INTEGER — HPD pest complaints for the building
@@ -92,7 +143,17 @@ Output columns:
                                    prior, k=10) (NULL when building side unknown)
     pest_rodent_rate     REAL    — area rate: 1000 × weighted rodent sum
                                    / kernel-weighted units (100 m)
-    pest_rate            REAL    — combined per-household rate (baseline metric)
+    pest_insp_total      INTEGER — initial+compliance DOHMH rodent
+                                   inspections within 100 m (plain count;
+                                   NULL when ds_rodent_inspections is
+                                   unavailable)
+    pest_insp_failed     INTEGER — of those, 'Failed'/'Rat Activity'
+                                   results (plain count; NULL when
+                                   unavailable)
+    pest_insp_fail_rate  REAL    — kernel(σ=50 m) × decay weighted failure
+                                   fraction, weighted denominator floored
+                                   at 3.0 (NULL when unavailable)
+    pest_rate            REAL    — combined blended metric (baseline metric)
     pest_match_uncertain INTEGER — 1 when nearest lot > 40 m (building
                                    attribution rejected), else 0
     pest_new_building    INTEGER — 1 when lot built within ~3 yr with zero
@@ -128,12 +189,30 @@ from apthunt.scoring.utils import (
 
 RADIUS_M = 100
 
-# Cache version — bumped to v6 when building-level stats moved from
-# geohash-cell keys to per-building keys (``bbl:{bbl}`` / ``lot:{lat5},
-# {lon5}``); cell-keyed building stats let one building's HPD record
-# bleed onto every neighbor in the same ~150 m cell.  The area (311
-# rodent) blob stays under the plain geohash key with this source.
-CACHE_SOURCE = "pest_v6"
+# Cache version — bumped to v7 when the DOHMH verified-inspection signal
+# landed: the area blob gained pest_insp_* fields and pest_rate's
+# definition changed from ``per_unit + 0.5*area`` to the weighted
+# 0.5/0.3/0.2 inspection/311/HPD blend, so v6 blobs are semantically
+# stale.  (v6 had moved building-level stats from geohash-cell keys to
+# per-building keys — ``bbl:{bbl}`` / ``lot:{lat5},{lon5}`` — so one
+# building's HPD record can't bleed onto neighbors in the same cell;
+# that layout is unchanged.  The area blob stays under the plain
+# geohash key with this source.)
+CACHE_SOURCE = "pest_v7"
+
+# v7 blend weights over the combined area+building metric (module doc):
+# verified DOHMH inspection evidence dominates; self-reported 311 and
+# the building's own HPD record refine.  When ds_rodent_inspections is
+# unavailable (re-downloads in flight) the 311/HPD terms renormalise to
+# sum to 1 at the same 3:2 ratio.
+W_INSPECTION = 0.5
+W_311_RODENT = 0.3
+W_HPD_BUILDING = 0.2
+
+# Weighted-denominator floor for the inspection failure rate: thin
+# evidence shrinks toward 0 instead of a 1-for-1 cell reading as a
+# 100%-failure blackspot.
+INSP_DENOM_FLOOR = 3.0
 
 
 def _coord_key(lat: float, lon: float) -> str:
@@ -161,6 +240,8 @@ class PestScorer(Scorer):
     # zero_perfect is False: absence of HPD records is mostly non-reporting
     # (31% filing rate in 1-4-unit buildings) — the EB-shrunk rate, not a
     # pinned 100, decides how much credit a zero-count building earns.
+    # v7: pest_rate's raw definition changed (inspection blend) —
+    # rebaseline follows this wave.
     baseline_component = "pest_rate"
     baseline_reverse = True
     baseline_zero_perfect = False
@@ -174,6 +255,9 @@ class PestScorer(Scorer):
             "pest_weighted": "REAL",
             "pest_per_unit": "REAL",
             "pest_rodent_rate": "REAL",
+            "pest_insp_total": "INTEGER",
+            "pest_insp_failed": "INTEGER",
+            "pest_insp_fail_rate": "REAL",
             "pest_rate": "REAL",
             "pest_match_uncertain": "INTEGER",
             "pest_new_building": "INTEGER",
@@ -200,14 +284,25 @@ class PestScorer(Scorer):
         # converges after one baseline rebuild cycle.
         prior = baseline_median(conn, self.name)
 
-        # --- Area-level: 311 rodent within 100 m, per geohash cell -----
-        # A genuine area statistic — cell-level dedupe + caching is
-        # correct here and stays (one lookup per block).
+        # Probe ds_rodent_inspections availability ONCE per score() call
+        # (re-downloads are in flight across the dataset fleet; the
+        # scorer must run against today's DB either way).
+        insp_ok = self._insp_available()
+
+        # --- Area-level: 311 rodent + DOHMH inspections within 100 m,
+        # per geohash cell.  Genuine area statistics — cell-level dedupe
+        # + caching is correct here and stays (one lookup per block).
         gh_map = dedupe_by_geohash(listings)
         area_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
             cached = self._cache.get(gh, CACHE_SOURCE)
-            if cached is not None:
+            if cached is not None and not (
+                insp_ok and cached.get("pest_insp_fail_rate") is None
+            ):
+                # A cached cell whose inspection fields are NULL (written
+                # while ds_rodent_inspections was unavailable) is
+                # recomputed as soon as the table lands — self-healing
+                # degradation; everything else is served as cached.
                 area_stats[gh] = cached
                 continue
 
@@ -220,12 +315,25 @@ class PestScorer(Scorer):
             # denominator (kernel-weighted PLUTO units).
             kw_units = kernel_weighted_units(self._store, lat, lon, RADIUS_M)
 
+            # Verified-inspection failure rate (NULL triple while the
+            # table is unavailable — components degrade, blend
+            # renormalises below).
+            if insp_ok:
+                insp_total, insp_failed, insp_rate = self._inspection_stats(
+                    lat, lon, today_ord,
+                )
+            else:
+                insp_total = insp_failed = insp_rate = None
+
             stats = {
                 "pest_rodent_count": rodent_count,
                 "pest_rodent_weighted": round(rodent_weighted, 4),
                 "pest_rodent_rate": round(
                     1000.0 * rodent_weighted / kw_units, 4,
                 ),
+                "pest_insp_total": insp_total,
+                "pest_insp_failed": insp_failed,
+                "pest_insp_fail_rate": insp_rate,
             }
             area_stats[gh] = stats
             self._cache.put(gh, CACHE_SOURCE, stats)
@@ -263,13 +371,15 @@ class PestScorer(Scorer):
                 else None
             )
 
-            # Combined baseline metric: building rate + half-weighted
-            # area rate (converted back to per-household via /1000).
-            # When the building part is unknown (guard reject or new
-            # building), the EB estimate with zero building evidence
-            # collapses to the prior — so the building term degrades to
-            # `prior`, keeping pest_rate on the baseline's scale
-            # (area-only before the first baseline build).
+            # Combined baseline metric — v7 blend (module doc): verified
+            # inspection failure rate 0.5, self-reported 311 rate 0.3,
+            # building HPD EB rate 0.2.  When the building part is
+            # unknown (guard reject or new building), the EB estimate
+            # with zero building evidence collapses to the prior — so
+            # the building term degrades to `prior`, keeping pest_rate
+            # on the baseline's scale (0.0 before the first baseline
+            # build).  When ds_rodent_inspections is unavailable the
+            # remaining terms renormalise at the same 3:2 ratio.
             per_unit = building["pest_per_unit"]
             if per_unit is not None:
                 building_term = per_unit
@@ -277,9 +387,22 @@ class PestScorer(Scorer):
                 building_term = prior
             else:
                 building_term = 0.0
-            pest_rate = round(
-                building_term + 0.5 * (area["pest_rodent_rate"] / 1000.0), 4,
-            )
+            area_term = area["pest_rodent_rate"] / 1000.0
+            insp_rate = area.get("pest_insp_fail_rate")
+            if insp_rate is not None:
+                pest_rate = round(
+                    W_INSPECTION * insp_rate
+                    + W_311_RODENT * area_term
+                    + W_HPD_BUILDING * building_term,
+                    4,
+                )
+            else:
+                rest = W_311_RODENT + W_HPD_BUILDING
+                pest_rate = round(
+                    (W_311_RODENT * area_term
+                     + W_HPD_BUILDING * building_term) / rest,
+                    4,
+                )
 
             per_listing.append({
                 "pest_hpd_count": hpd_count,
@@ -289,6 +412,9 @@ class PestScorer(Scorer):
                 "pest_weighted": weighted,
                 "pest_per_unit": per_unit,
                 "pest_rodent_rate": area["pest_rodent_rate"],
+                "pest_insp_total": area.get("pest_insp_total"),
+                "pest_insp_failed": area.get("pest_insp_failed"),
+                "pest_insp_fail_rate": insp_rate,
                 "pest_rate": pest_rate,
                 "pest_match_uncertain": building["pest_match_uncertain"],
                 "pest_new_building": building["pest_new_building"],
@@ -422,17 +548,18 @@ class PestScorer(Scorer):
         if not bbl:
             return 0
 
-        rows = self._store.query(
-            "hpd_complaints",
-            where_clause=(
-                "bbl = ? "
-                "AND major_category = 'UNSANITARY CONDITION' "
-                "AND minor_category = 'PESTS'"
-            ),
-            params=(bbl,),
-            select="COUNT(*) as cnt",
+        # Keyed fast path: exact-key rows with the old SQL's category
+        # filters applied as Python post-filters (same = semantics —
+        # NULL/other categories drop out), COUNT(*) becoming a sum.
+        rows = self._store.rows_by_key(
+            "hpd_complaints", "bbl", bbl,
+            columns=["major_category", "minor_category"],
         )
-        return int(rows[0]["cnt"]) if rows else 0
+        return sum(
+            1 for r in rows
+            if r.get("major_category") == "UNSANITARY CONDITION"
+            and r.get("minor_category") == "PESTS"
+        )
 
     def _rodent_counts(
         self, lat: float, lon: float, today_ord: int
@@ -463,3 +590,81 @@ class PestScorer(Scorer):
                 (r.get("created_date") or "")[:10], today_ord,
             )
         return count, weighted
+
+    # Assessment visits only — treatments ('Bait applied'), stoppages
+    # and clean-ups are follow-up *actions*, not pass/fail assessments,
+    # and would dilute the denominator.  All 'Failed'/'Rat Activity'
+    # results in the feed occur under these two types.
+    _INSPECTION_TYPES = ("Initial", "Compliance")
+    _FAIL_MARKERS = ("Failed", "Rat Activity")
+
+    def _insp_available(self) -> bool:
+        """Probe ds_rodent_inspections once per ``score()`` call.
+
+        Re-downloads are in flight across the dataset fleet; the scorer
+        must import AND run against today's DB whether or not the table
+        exists yet.  ``ensure_downloaded`` is attempted (consistent with
+        the other source tables) but any failure — offline,
+        mid-download, missing table — degrades to "unavailable" instead
+        of raising: inspection components go NULL and the blend
+        renormalises (module doc).
+        """
+        try:
+            self._store.ensure_downloaded("rodent_inspections", quiet=True)
+        except Exception:
+            pass
+        try:
+            self._store.query(
+                "rodent_inspections", select="1 AS probe", limit=1,
+            )
+            return True
+        except sqlite3.OperationalError:
+            return False
+
+    def _inspection_stats(
+        self, lat: float, lon: float, today_ord: int
+    ) -> tuple:
+        """DOHMH rodent-inspection failure rate within RADIUS_M metres.
+
+        Returns ``(total_count, failed_count, fail_rate)``:
+
+        * plain counts of initial+compliance inspections and of
+          'Failed' / 'Rat Activity' results (UI transparency);
+        * the failure rate — each inspection weighted by the Gaussian
+          distance kernel exp(-(d/σ)²) with σ = 50 m times recency
+          decay (half-life 180 d), applied identically to numerator
+          and denominator so the rate is a proper weighted fraction in
+          [0, 1]; the weighted denominator is floored at
+          ``INSP_DENOM_FLOOR`` (3.0) so thin evidence shrinks toward 0.
+
+        Rows with NULL coordinates never reach here (query_circle
+        drops them); the feed's occasional far-future timestamps get
+        decay weight 1.0 (age clamped at 0), which is harmless.
+        """
+        rows = self._store.query_circle(
+            "rodent_inspections",
+            lat=lat,
+            lon=lon,
+            radius_m=RADIUS_M,
+            select="inspection_type,result,inspection_date",
+        )
+        sigma = RADIUS_M / 2.0  # σ = 50 m
+        total = 0
+        failed = 0
+        w_total = 0.0
+        w_failed = 0.0
+        for r in rows:
+            if r.get("inspection_type") not in self._INSPECTION_TYPES:
+                continue
+            dist = float(r.get("_dist_m") or 0.0)
+            w = math.exp(-((dist / sigma) ** 2)) * decay_weight(
+                (r.get("inspection_date") or "")[:10], today_ord,
+            )
+            total += 1
+            w_total += w
+            result = r.get("result") or ""
+            if any(m in result for m in self._FAIL_MARKERS):
+                failed += 1
+                w_failed += w
+        rate = round(w_failed / max(w_total, INSP_DENOM_FLOOR), 4)
+        return total, failed, rate

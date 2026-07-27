@@ -163,6 +163,92 @@ def kernel_weighted_units(
     return max(total, floor)
 
 
+# Severance classes: roads that impede pedestrians crossing them, with a
+# per-encounter walking penalty in effective meters. (At-grade highway
+# crossings are rare — encounters there usually mean service roads and
+# overpass approaches, still hostile.)
+SEVERANCE_PENALTY_M = {
+    "motorway": 250.0, "motorway_link": 200.0,
+    "trunk": 250.0, "trunk_link": 200.0,
+    "primary": 120.0, "secondary": 60.0,
+}
+
+
+# Optional fast path: a spatial_index.SeveranceRaster attached either on
+# the DataStore (attach_fast_path) or module-wide via set_severance_raster.
+# When present, path_severance_penalty_m answers from the raster in O(path
+# length) array lookups instead of ~25 SQLite circle queries; any failure
+# degrades to the SQLite implementation below.
+_SEVERANCE_RASTER = None
+
+
+def set_severance_raster(raster) -> None:
+    """Install (or clear, with None) the module-wide severance raster."""
+    global _SEVERANCE_RASTER
+    _SEVERANCE_RASTER = raster
+
+
+def path_severance_penalty_m(store, lat1, lon1, lat2, lon2) -> float:
+    """Pedestrian-severance penalty (effective extra meters) for the
+    straight path between two points.
+
+    A park or supermarket 200m away across a six-lane arterial is not
+    experientially 200m away — the sibling of acoustic shielding, on foot.
+    Samples the path every ~20m; severing-class road points (ds_roads)
+    within ~22m of a sample mark an encounter; consecutive blocked samples
+    merge into one encounter (one crossing), each adding its class penalty.
+
+    Returns 0.0 when ds_roads is missing (degrade gracefully).
+
+    Uses the rasterized fast path when one is attached (store attribute
+    first, module-level fallback); SQLite otherwise.
+    """
+    raster = getattr(store, "severance_raster", None) or _SEVERANCE_RASTER
+    if raster is not None:
+        try:
+            return raster.path_penalty_m(lat1, lon1, lat2, lon2)
+        except Exception:
+            pass  # degrade to the SQLite reference path
+    return _path_severance_penalty_m_sql(store, lat1, lon1, lat2, lon2)
+
+
+def _path_severance_penalty_m_sql(store, lat1, lon1, lat2, lon2) -> float:
+    """SQLite reference implementation (see path_severance_penalty_m)."""
+    import math as _m
+
+    dy = (lat2 - lat1) * 111_320.0
+    dx = (lon2 - lon1) * 85_000.0
+    seg = _m.hypot(dx, dy)
+    if seg <= 40.0:
+        return 0.0
+    n = max(1, int(seg / 20.0))
+    penalty = 0.0
+    in_row_class = None
+    for i in range(1, n):
+        f = i / n
+        plat = lat1 + f * (lat2 - lat1)
+        plon = lon1 + f * (lon2 - lon1)
+        try:
+            rows = store.query_circle(
+                "roads", lat=plat, lon=plon, radius_m=22.0,
+                select="road_class", lat_col="lat", lon_col="lon",
+            )
+        except Exception:
+            return 0.0  # roads table unavailable
+        worst = None
+        for r in rows:
+            cls = r.get("road_class") or ""
+            p = SEVERANCE_PENALTY_M.get(cls)
+            if p is not None and (worst is None or p > worst[1]):
+                worst = (cls, p)
+        if worst and in_row_class is None:
+            penalty += worst[1]
+            in_row_class = worst[0]
+        elif not worst:
+            in_row_class = None
+    return penalty
+
+
 # ── Scoring functions ────────────────────────────────────────────────
 
 def percentile_scores(

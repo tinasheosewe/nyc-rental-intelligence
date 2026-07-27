@@ -202,6 +202,44 @@ def baseline_median(conn: sqlite3.Connection, dimension: str) -> Optional[float]
     return quantiles[len(quantiles) // 2]
 
 
+_seasonal_cache: dict = {}
+
+
+def seasonal_factor(conn: sqlite3.Connection, table: str, date_col: str) -> float:
+    """Seasonal normalization factor for THIS month, for a dated table.
+
+    Complaint streams are strongly seasonal (HEAT/HOT WATER: 23× Jan vs
+    Jul; noise peaks in summer), so decayed 12-month sums scored in July
+    differ systematically from the same block scored in January. Dividing
+    a block's decayed sum by this factor (the current month's share of
+    annual volume, normalized to mean 1.0) removes the month-of-scoring
+    bias without touching the underlying data.
+
+    Cached per (table, month). Returns 1.0 on any failure or thin data.
+    """
+    from datetime import date as _date
+
+    month = _date.today().month
+    key = (table, month)
+    if key in _seasonal_cache:
+        return _seasonal_cache[key]
+    factor = 1.0
+    try:
+        rows = conn.execute(
+            f"SELECT CAST(strftime('%m', [{date_col}]) AS INTEGER) AS m, "
+            f"COUNT(*) FROM [{table}] "
+            f"WHERE [{date_col}] IS NOT NULL GROUP BY m"
+        ).fetchall()
+        counts = {int(r[0]): r[1] for r in rows if r[0]}
+        if len(counts) >= 10 and sum(counts.values()) >= 1000:
+            mean = sum(counts.values()) / len(counts)
+            factor = max(0.25, min(4.0, counts.get(month, mean) / mean))
+    except Exception:
+        pass
+    _seasonal_cache[key] = factor
+    return factor
+
+
 # ── Statistical helpers used by scorers ──────────────────────────────
 
 DECAY_HALF_LIFE_DAYS = 180.0

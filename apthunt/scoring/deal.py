@@ -1,15 +1,33 @@
 """
 DealScorer — multi-signal value score.
 
-Combines up to four signals when data is available:
+Combines up to five signals when data is available:
   1. Price vs neighborhood median  (weight 0.40)
   2. $/sqft vs neighborhood median (weight 0.30)
   3. Absolute sqft vs neighborhood median (weight 0.30)
   4. Tenant tenure bonus/penalty   (weight 0.10, applied as multiplier)
+  5. Landlord-leverage: a FRESH price cut (≤21 days) adds
+     +0.25 × cut_fraction to the deviation — recent softness means the
+     achievable price sits below the current ask.
 
 When sqft is unavailable the score falls back to price-only (weight 1.0).
 Comp sets are grouped by (neighborhood, bed count) — no citywide fallback.
-Scores are z-score normalized: 50 = mean, ±25 per stdev, clamped 0–100.
+Scores are baselined citywide (fallback: batch z-scores, 50 = mean,
+±25 per stdev, clamped 0–100).
+
+Leverage signals (parsed from listings.raw_json — verified 100% of
+active listings carry price_delta):
+    deal_price_cut_pct     — cut as a FRACTION of the pre-cut ask
+                             (0.04 = 4% cut; same units as deal_deviation,
+                             emitted only when price_delta is negative)
+    deal_months_free       — concession months from raw_json months_free;
+                             already netted into net_effective_price, but
+                             emitted visibly for the flag/UI layer
+    deal_cut_recency_days  — days since price_changed_at, emitted for cuts
+
+Stabilized unicorn (flag layer surfaces it; no score change):
+    deal_stabilized_below_median = 1 when the unit is rent stabilized AND
+    deal_deviation > 0.05 — the discount compounds at every renewal.
 
 Tenure estimation:
     Derived from the listing's price_history "Listed" events.
@@ -24,7 +42,7 @@ from __future__ import annotations
 import json
 import statistics
 import sqlite3
-from datetime import datetime
+from datetime import date, datetime
 from typing import Optional
 
 from apthunt.scoring.base import Scorer, ScorerResult
@@ -42,6 +60,14 @@ _RELIST_CLUSTER_DAYS = 90   # relists within this window = same attempt
 _ASSUMED_VACANCY_DAYS = 30  # subtracted from gap to estimate net tenure
 _BENCHMARK_MONTHS = 12      # "neutral" tenure (1-year lease)
 _TENURE_SCALE = 24          # normalisation denominator for deviation
+
+# Leverage-signal constants
+_FRESH_CUT_DAYS = 21        # a cut this recent signals landlord softness
+_FRESH_CUT_WEIGHT = 0.25    # deviation boost = weight × cut fraction
+_MAX_CUT_FRAC = 0.5         # clamp against pathological raw_json deltas
+
+# Stabilized-unicorn threshold: stabilized AND ≥5% below comp deviation
+_STABILIZED_DEV_THRESHOLD = 0.05
 
 
 def _true_cost(listing: dict) -> int | None:
@@ -76,6 +102,10 @@ class DealScorer(Scorer):
             "tenure_median_months": "REAL",
             "tenure_cycle_count": "INTEGER",
             "deal_deviation": "REAL",
+            "deal_price_cut_pct": "REAL",
+            "deal_months_free": "REAL",
+            "deal_cut_recency_days": "INTEGER",
+            "deal_stabilized_below_median": "INTEGER",
         }
 
     def score(
@@ -165,7 +195,38 @@ class DealScorer(Scorer):
                 # Scale existing signals down by (1 - W_TENURE), add tenure
                 combined = combined * (1.0 - W_TENURE) + W_TENURE * tenure_dev
 
+            # Signal 5: landlord-leverage from raw_json. A fresh cut
+            # (≤ _FRESH_CUT_DAYS) means the achievable price sits below
+            # the current ask — fold +0.25 × cut fraction into the
+            # deviation. months_free already nets into net_effective,
+            # so it is emitted visibly but NOT folded again.
+            cut_frac, months_free, cut_recency = self._leverage_signals(lst)
+            meta["deal_price_cut_pct"] = (
+                round(cut_frac, 4) if cut_frac is not None else None
+            )
+            meta["deal_months_free"] = months_free
+            meta["deal_cut_recency_days"] = cut_recency
+            if (
+                cut_frac is not None
+                and cut_recency is not None
+                and cut_recency <= _FRESH_CUT_DAYS
+            ):
+                combined += _FRESH_CUT_WEIGHT * cut_frac
+
             meta["deal_deviation"] = round(combined, 4)
+
+            # Stabilized unicorn: rent stabilized AND meaningfully below
+            # the comp median — the discount compounds at every renewal.
+            # Emit-only (the flag layer surfaces it); no score change.
+            # rent_stabilized may be absent mid-re-download → None (unknown).
+            rs = lst.get("rent_stabilized")
+            if rs is None:
+                meta["deal_stabilized_below_median"] = None
+            else:
+                meta["deal_stabilized_below_median"] = int(
+                    bool(rs) and combined > _STABILIZED_DEV_THRESHOLD
+                )
+
             intermediate.append((lst["id"], combined, meta))
 
         # Pass 2: absolute scoring against the frozen active-listing
@@ -262,6 +323,78 @@ class DealScorer(Scorer):
 
         median_months = round(statistics.median(tenures_months), 1)
         return median_months, len(clusters)
+
+    # ── Leverage signals (raw_json) ───────────────────────────
+
+    @staticmethod
+    def _leverage_signals(
+        lst: dict,
+    ) -> tuple[Optional[float], Optional[float], Optional[int]]:
+        """Parse landlord-leverage signals from the listing's raw_json.
+
+        Returns ``(cut_frac, months_free, cut_recency_days)``:
+          * cut_frac — price cut as a fraction of the PRE-cut ask
+            (price_delta is an absolute dollar delta, negative = cut;
+            prev_ask = price - delta). Clamped to _MAX_CUT_FRAC.
+            None when there is no negative delta.
+          * months_free — raw_json months_free when > 0, else None.
+          * cut_recency_days — whole days since price_changed_at, emitted
+            only alongside a cut. None when the timestamp is missing
+            or unparseable.
+
+        Degrades gracefully: any missing/malformed field (raw_json absent
+        mid-re-download, non-JSON payload, bad timestamp) yields Nones —
+        never an exception.
+        """
+        raw = lst.get("raw_json")
+        if not raw:
+            return None, None, None
+        if isinstance(raw, str):
+            try:
+                data = json.loads(raw)
+            except (json.JSONDecodeError, TypeError):
+                return None, None, None
+        elif isinstance(raw, dict):
+            data = raw
+        else:
+            return None, None, None
+        if not isinstance(data, dict):
+            return None, None, None
+
+        # Months free — already netted into net_effective_price upstream;
+        # emitted visibly so the flag/UI layer can show the concession.
+        months_free: Optional[float] = None
+        try:
+            mf = float(data.get("months_free") or 0)
+        except (TypeError, ValueError):
+            mf = 0.0
+        if mf > 0:
+            months_free = round(mf, 2)
+
+        # Price cut + recency
+        cut_frac: Optional[float] = None
+        recency: Optional[int] = None
+        try:
+            delta = float(data.get("price_delta"))
+        except (TypeError, ValueError):
+            delta = None
+        try:
+            price = float(lst.get("price") or 0)
+        except (TypeError, ValueError):
+            price = 0.0
+        if delta is not None and delta < 0 and price > 0:
+            prev_ask = price - delta  # delta < 0 → pre-cut ask above current
+            if prev_ask > 0:
+                cut_frac = min(_MAX_CUT_FRAC, -delta / prev_ask)
+            ts = data.get("price_changed_at")
+            if ts:
+                try:
+                    changed = datetime.fromisoformat(str(ts)[:10]).date()
+                    recency = max(0, (date.today() - changed).days)
+                except (ValueError, TypeError):
+                    recency = None
+
+        return cut_frac, months_free, recency
 
     # ── Comp-set builders ───────────────────────────────────────
 

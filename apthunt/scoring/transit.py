@@ -8,14 +8,26 @@ stops.txt path when the entrances table is unavailable (e.g. still
 downloading).
 
 Scoring formula (absolute — see note on baselines below):
-    proximity   = 100 * exp(-d_nearest_entrance_m / 400)
-    diversity   = min(1.0, distinct_routes_within_800m / 6)
+    d_eff       = d_nearest_entrance_m + severance_penalty_m
+    proximity   = 100 * exp(-d_eff / 400)
+    route_wt    = Σ over distinct routes within 800m of
+                  (1.0 if route reaches the Manhattan CBD else 0.45)
+    diversity   = min(1.0, route_wt / 6)
     subway      = proximity * (0.6 + 0.4 * diversity)
     bus_bonus   = min(10, 2 * distinct_bus_routes_within_300m)
     score       = min(100, subway + bus_bonus)
 
-Interpretation: an entrance at your door with 6+ lines → ~100; entrance
-at 400 m with 2 lines → ~27; nothing within 800 m → bus bonus only.
+v3 nuances:
+  * Line quality — a route counts fully toward diversity only if it
+    reaches the Manhattan CBD (``ds_subway_stations.cbd``); shuttles and
+    non-CBD lines (G, SIR — the only false ones, verified) count 0.45.
+  * Severance — the nearest-entrance distance becomes an *effective*
+    distance by adding ``path_severance_penalty_m`` (utils): an entrance
+    200 m away across a six-lane arterial is not experientially 200 m.
+
+Interpretation: an entrance at your door with 6+ CBD lines → ~100;
+entrance at 400 m with 2 lines → ~27; nothing within 800 m → bus bonus
+only.
 
 Baseline choice: this scorer deliberately does NOT declare
 ``baseline_component`` / route through ``baseline_scores``.  The formula
@@ -32,6 +44,9 @@ Components / columns:
     transit_nearest_m       INTEGER — nearest street entrance (9999 = none in 800 m)
     transit_bus_routes      INTEGER — distinct bus routes within 300 m
     transit_ada_nearby      INTEGER — 1 if an ADA-accessible station within 800 m
+    transit_cbd_routes      INTEGER — distinct CBD-reaching routes among those served
+    transit_severance_m     INTEGER — pedestrian-severance penalty (effective extra
+                                      meters) on the path to the nearest entrance
 """
 
 from __future__ import annotations
@@ -45,16 +60,25 @@ from apthunt.data.data_store import DataStore
 from apthunt.data.transit_data import TransitData, _haversine
 
 from apthunt.scoring.base import Scorer, ScorerResult
+from apthunt.scoring.utils import path_severance_penalty_m
 
 log = logging.getLogger(__name__)
 
-CACHE_KEY = "transit_v2"
+CACHE_KEY = "transit_v3"  # v3: CBD line-quality weighting + severance-effective distance
 LEGACY_CACHE_KEY = "transit"
 
 SUBWAY_RADIUS_M = 800     # station/route catchment
 BUS_RADIUS_M = 300        # bus stops must be genuinely close
 PROXIMITY_SCALE_M = 400.0  # exp decay constant for entrance distance
 NO_ENTRANCE_M = 9999      # sentinel kept from v1
+
+CBD_ROUTE_WEIGHT = 1.0     # route reaches the Manhattan CBD
+NON_CBD_ROUTE_WEIGHT = 0.45  # route never reaches the CBD (G, SIR)
+
+# Verified against ds_subway_stations.cbd: G and SIR are the only routes
+# with no CBD-flagged station.  Used as the fallback when the cbd column
+# hasn't landed yet (re-downloads in flight).
+NON_CBD_ROUTES_FALLBACK = frozenset({"G", "SIR"})
 
 
 class TransitScorer(Scorer):
@@ -86,6 +110,8 @@ class TransitScorer(Scorer):
             "transit_nearest_m": "INTEGER",
             "transit_bus_routes": "INTEGER",
             "transit_ada_nearby": "INTEGER",
+            "transit_cbd_routes": "INTEGER",
+            "transit_severance_m": "INTEGER",
         }
 
     # ------------------------------------------------------------------
@@ -113,6 +139,10 @@ class TransitScorer(Scorer):
             log.info("transit: ds_subway_entrances unavailable — legacy path")
             return self._score_legacy(listings)
 
+        # Probed ONCE per score() call — the cbd column may not have
+        # landed yet (re-downloads in flight); falls back gracefully.
+        non_cbd_routes = self._non_cbd_routes(store, have_stations)
+
         results: list[ScorerResult] = []
         for lst in listings:
             gh = lst["geohash"]
@@ -120,6 +150,7 @@ class TransitScorer(Scorer):
             if stats is None:
                 stats = self._block_stats(
                     store, lst["lat"], lst["lon"], have_stations, have_buses,
+                    non_cbd_routes,
                 )
                 self._cache.put(gh, CACHE_KEY, stats)
 
@@ -143,6 +174,7 @@ class TransitScorer(Scorer):
         lon: float,
         have_stations: bool,
         have_buses: bool,
+        non_cbd_routes: frozenset,
     ) -> dict:
         # --- Subway entrances within 800 m -----------------------------
         try:
@@ -151,7 +183,7 @@ class TransitScorer(Scorer):
                 lat=lat,
                 lon=lon,
                 radius_m=SUBWAY_RADIUS_M,
-                select="station_id,daytime_routes",
+                select="station_id,daytime_routes,entrance_latitude,entrance_longitude",
                 lat_col="entrance_latitude",
                 lon_col="entrance_longitude",
             )
@@ -161,6 +193,7 @@ class TransitScorer(Scorer):
         station_ids: set = set()
         routes: set = set()
         nearest = NO_ENTRANCE_M
+        nearest_coords: tuple | None = None
         for row in entrances:
             sid = row.get("station_id")
             if sid is not None:
@@ -170,6 +203,28 @@ class TransitScorer(Scorer):
             d = row.get("_dist_m")
             if d is not None and int(d) < nearest:
                 nearest = int(d)
+                try:
+                    nearest_coords = (
+                        float(row["entrance_latitude"]),
+                        float(row["entrance_longitude"]),
+                    )
+                except (KeyError, TypeError, ValueError):
+                    nearest_coords = None
+
+        # --- Severance on the walk to the nearest entrance -------------
+        # Effective extra meters for crossing hostile roads; 0 when no
+        # entrance was found or ds_roads is unavailable (graceful).
+        severance = 0
+        if nearest_coords is not None:
+            try:
+                severance = int(round(path_severance_penalty_m(
+                    store, lat, lon, nearest_coords[0], nearest_coords[1],
+                )))
+            except Exception:
+                severance = 0
+
+        # --- CBD-reaching routes among those served --------------------
+        cbd_routes = sum(1 for r in routes if r not in non_cbd_routes)
 
         # --- ADA station within 800 m ----------------------------------
         ada_nearby = 0
@@ -187,6 +242,8 @@ class TransitScorer(Scorer):
             "transit_nearest_m": nearest,
             "transit_bus_routes": bus_routes,
             "transit_ada_nearby": ada_nearby,
+            "transit_cbd_routes": cbd_routes,
+            "transit_severance_m": severance,
         }
 
     @staticmethod
@@ -196,11 +253,57 @@ class TransitScorer(Scorer):
         n_routes = int(stats.get("transit_routes_served") or 0)
         bus_routes = int(stats.get("transit_bus_routes") or 0)
 
-        proximity = 100.0 * math.exp(-nearest / PROXIMITY_SCALE_M)
-        diversity = min(1.0, n_routes / 6.0)
+        # Effective distance: raw walk + pedestrian-severance penalty.
+        severance = float(stats.get("transit_severance_m") or 0)
+        d_eff = min(float(NO_ENTRANCE_M), nearest + severance)
+
+        # Line-quality-weighted diversity: CBD-reaching routes count
+        # fully, non-CBD routes (G, SIR) at NON_CBD_ROUTE_WEIGHT.  When
+        # the component is absent (stale cache row / legacy), fall back
+        # to the unweighted count.
+        cbd_raw = stats.get("transit_cbd_routes")
+        if cbd_raw is None:
+            weighted_routes = float(n_routes)
+        else:
+            cbd = max(0, min(int(cbd_raw), n_routes))
+            weighted_routes = (
+                CBD_ROUTE_WEIGHT * cbd
+                + NON_CBD_ROUTE_WEIGHT * (n_routes - cbd)
+            )
+
+        proximity = 100.0 * math.exp(-d_eff / PROXIMITY_SCALE_M)
+        diversity = min(1.0, weighted_routes / 6.0)
         subway = proximity * (0.6 + 0.4 * diversity)
         bus_bonus = min(10.0, 2.0 * bus_routes)
         return round(max(0.0, min(100.0, subway + bus_bonus)), 1)
+
+    def _non_cbd_routes(self, store: DataStore, have_stations: bool) -> frozenset:
+        """Routes that never reach the Manhattan CBD, per ds_subway_stations.cbd.
+
+        Derived from data so route changes propagate on re-download; the
+        cbd column is part of an in-flight re-download, so any failure
+        (missing table/column, thin data) falls back to the verified
+        static set {G, SIR}.
+        """
+        if have_stations:
+            try:
+                rows = store.query(
+                    "subway_stations", select="daytime_routes,cbd",
+                )
+            except sqlite3.OperationalError:
+                rows = []
+            all_routes: set = set()
+            cbd_routes: set = set()
+            for r in rows:
+                route_list = (r.get("daytime_routes") or "").split()
+                all_routes.update(route_list)
+                if str(r.get("cbd") or "").strip().upper() in (
+                    "1", "TRUE", "T", "Y", "YES",
+                ):
+                    cbd_routes.update(route_list)
+            if cbd_routes:
+                return frozenset(all_routes - cbd_routes)
+        return NON_CBD_ROUTES_FALLBACK
 
     def _ada_nearby(self, store: DataStore, station_ids: set) -> int:
         """1 if any of the given stations is ADA-accessible (full or partial)."""
@@ -296,6 +399,8 @@ class TransitScorer(Scorer):
                         "transit_nearest_m": nearest,
                         "transit_bus_routes": None,
                         "transit_ada_nearby": None,
+                        "transit_cbd_routes": None,
+                        "transit_severance_m": None,
                     },
                 )
             )

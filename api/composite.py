@@ -172,16 +172,30 @@ def compute_composite(
 
     composite = weighted_sum / total_weight
 
-    # Dealbreaker cap
+    # NB: the dealbreaker cap is NOT applied here. Capping the RAW
+    # composite before percentile-izing inverted the intent: raw 55 sat at
+    # the 67th percentile of raw composites, so capped listings displayed
+    # 67.2 — above the cap — and 11% of listings clumped there. Callers
+    # percentile-ize first, then apply apply_dealbreaker_cap() on the
+    # percentile scale.
+    return (round(composite, 1), data_quality_label(coverage))
+
+
+def apply_dealbreaker_cap(
+    display_composite: float,
+    scores: dict[str, float],
+    ignore: list[str] | None = None,
+) -> float:
+    """Cap the DISPLAYED (percentile) composite when a dealbreaker dim is
+    in the gutter. Applied after percentile-izing — never before."""
+    ignore_set = set(ignore or [])
     for dim in DEALBREAKER_DIMS:
         if dim in ignore_set:
             continue
         val = scores.get(dim)
         if val is not None and float(val) <= DEALBREAKER_THRESHOLD:
-            composite = min(composite, DEALBREAKER_CAP)
-            break
-
-    return (round(composite, 1), data_quality_label(coverage))
+            return round(min(display_composite, DEALBREAKER_CAP), 1)
+    return display_composite
 
 
 def dealbreakers(scores: dict[str, float]) -> list[str]:

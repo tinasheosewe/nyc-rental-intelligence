@@ -65,20 +65,38 @@ class BlockCache:
 
         return json.loads(data)
 
-    def put(self, geohash: str, source: str, data: Any):
-        """Write data to cache (upsert).
+    # Commit cadence: batching amortizes fsync cost (commit-per-put made
+    # a 100k-put baseline pass spend real time in commits) while keeping
+    # write-lock holds short enough (~a second) that concurrent processes
+    # with busy_timeout never starve. A crash loses at most one batch of
+    # cache entries — they are recomputed transparently.
+    _COMMIT_EVERY = 200
 
-        Commits immediately: without this, a long scoring/baseline run
-        accumulates one giant implicit transaction and holds the SQLite
-        write lock for minutes, starving every other process.
-        """
+    def put(self, geohash: str, source: str, data: Any):
+        """Write data to cache (upsert). Commits every _COMMIT_EVERY puts
+        (and on flush()) — see cadence note above."""
         now = datetime.now(timezone.utc).isoformat()
         self._conn.execute(
             "INSERT OR REPLACE INTO block_cache "
             "(geohash, source, fetched_at, data) VALUES (?, ?, ?, ?)",
             (geohash, source, now, json.dumps(data)),
         )
-        self._conn.commit()
+        self._pending = getattr(self, "_pending", 0) + 1
+        if self._pending >= self._COMMIT_EVERY:
+            self._conn.commit()
+            self._pending = 0
+
+    def flush(self):
+        """Commit any batched puts."""
+        if getattr(self, "_pending", 0):
+            self._conn.commit()
+            self._pending = 0
+
+    def __del__(self):  # best-effort flush on teardown
+        try:
+            self.flush()
+        except Exception:
+            pass
 
     def get_or_fetch(
         self,

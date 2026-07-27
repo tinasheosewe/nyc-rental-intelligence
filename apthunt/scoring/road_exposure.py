@@ -43,9 +43,33 @@ point, only within 100 m::
 
     truck_bonus = 3 * exp(-d / 60)      (0 beyond 100 m)
 
+**Tunnel / bridge awareness** (needs the re-downloaded ``ds_roads``
+with ``tunnel``/``bridge`` INTEGER columns — degrades to the old
+behaviour when absent):
+
+* Tunnel points contribute ZERO to both the highway and arterial
+  components — a motorway under bedrock is inaudible at the surface
+  (~700 tunnel points exist: Lincoln/QMT/Holland/Park Ave etc).
+* Bridge/viaduct points SKIP occlusion attenuation — an elevated
+  source clears the first building row, so shield rows don't apply
+  (neither the highway occlusion factors nor the arterial midpoint
+  shield probe).
+
+**Bus trunk corridor** — nearest ``ds_bus_stops`` stop within 120 m;
+a stop served by many routes marks a trunk corridor (idling, pull-outs,
+brakes)::
+
+    bus_bonus = min(4.0, 0.35 * route_count) * exp(-(d / 60)**2)
+
+**Firehouse** — nearest ``ds_firehouses`` house within 150 m (siren
+corridor; dataset optional — degrades to 0 while downloading)::
+
+    firehouse_bonus = 2.5 * exp(-d / 80)
+
 Raw metric (baseline component)::
 
     road_exposure_index = exposure_hwy + arterial + truck_bonus
+                          + el_bonus + bus_bonus + firehouse_bonus
 
 The index is scored against the frozen citywide baseline with
 ``reverse=True`` (more exposure = worse) and ``zero_perfect=False`` —
@@ -69,6 +93,9 @@ Output columns:
     road_exposure_arterial   REAL — kernel-weighted class-weight density
                                     per 100 m of roadway (150 m radius)
     road_exposure_truck      REAL — truck-route proximity bonus (0–3)
+    road_exposure_bus        REAL — bus trunk-corridor bonus (0–4)
+    road_exposure_firehouse_m REAL — metres to nearest firehouse
+                                    (NULL when none within 150 m)
     road_exposure_index      REAL — combined raw exposure (baseline metric)
 """
 
@@ -119,6 +146,18 @@ POINTS_PER_100M = 100.0 / SAMPLE_SPACING_M   # = 2.0 — see module docstring
 TRUCK_RADIUS_M = 100.0
 TRUCK_DECAY_M = 60.0
 
+# Bus trunk-corridor component: a stop served by many routes marks a
+# trunk corridor (idling, pull-outs, brakes). Nearest stop only.
+BUS_RADIUS_M = 120.0
+BUS_ROUTE_WEIGHT = 0.35
+BUS_MAX_BONUS = 4.0
+BUS_SIGMA_M = 60.0
+
+# Firehouse component (siren corridor).
+FIREHOUSE_RADIUS_M = 150.0
+FIREHOUSE_MAX_BONUS = 2.5
+FIREHOUSE_DECAY_M = 80.0
+
 # Elevated-train component: search radius, peak contribution, decay.
 # Decay (300m) deliberately exceeds track audibility (~150m) to
 # compensate for station points sampling the track every ~500-800m.
@@ -141,7 +180,11 @@ TRUCK_MAX_BONUS = 3.0
 # Absolute fallback until the first baseline build (see module docstring).
 FALLBACK_SLOPE = 6.0
 
-_CACHE_KEY = "road_exposure_v3"
+# Version bumped v3→v4: tunnel/bridge handling, bus corridor, firehouse.
+# The availability flags of the still-downloading dependencies are folded
+# into the key at score() time (see _cache_key), so blocks computed while
+# a table/column is missing are recomputed automatically once it lands.
+_CACHE_VERSION = "road_exposure_v4"
 
 
 class RoadExposureScorer(Scorer):
@@ -169,8 +212,24 @@ class RoadExposureScorer(Scorer):
             "road_exposure_el_dist_m": "REAL",
             "road_exposure_hwy_shield_rows": "INTEGER",
             "road_exposure_el": "REAL",
+            "road_exposure_bus": "REAL",
+            "road_exposure_firehouse_m": "REAL",
             "road_exposure_index": "REAL",
         }
+
+    # ------------------------------------------------------------------
+    # Dependency probes (new columns/tables may still be downloading)
+    # ------------------------------------------------------------------
+
+    def _has(self, dataset: str, col: str) -> bool:
+        """True when ds_<dataset> exists AND exposes *col* — probed once
+        per score() call so the scorer runs against today's DB while the
+        nuance-wave re-downloads are still in flight."""
+        try:
+            self._store.query(dataset, select=col, limit=1)
+            return True
+        except sqlite3.OperationalError:
+            return False
 
     # ------------------------------------------------------------------
     # Main scoring entry point
@@ -184,7 +243,7 @@ class RoadExposureScorer(Scorer):
         # Ensure datasets exist; tolerate download failure (Overpass or
         # SODA down, or the table mid-download in another process) — the
         # probe below degrades to score None rather than crashing the run.
-        for ds in ("roads", "truck_routes"):
+        for ds in ("roads", "truck_routes", "bus_stops", "firehouses"):
             try:
                 self._store.ensure_downloaded(ds, quiet=True)
             except Exception as exc:
@@ -201,18 +260,28 @@ class RoadExposureScorer(Scorer):
                 for lst in listings
             ]
 
+        # Probe still-downloading dependencies once per call; fold their
+        # availability into the cache key so blocks scored while a
+        # table/column is missing recompute once the re-download lands.
+        has_tb = self._has("roads", "tunnel,bridge")
+        has_bus = self._has("bus_stops", "route_count")
+        has_fh = self._has("firehouses", "latitude")
+        cache_key = "%s:t%db%df%d" % (
+            _CACHE_VERSION, int(has_tb), int(has_bus), int(has_fh)
+        )
+
         # Deduplicate by geohash (one lookup per block)
         gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, _CACHE_KEY)
+            cached = self._cache.get(gh, cache_key)
             if cached is not None:
                 block_stats[gh] = cached
                 continue
-            stats = self._block_exposure(lat, lon)
+            stats = self._block_exposure(lat, lon, has_tb, has_bus, has_fh)
             block_stats[gh] = stats
-            self._cache.put(gh, _CACHE_KEY, stats)
+            self._cache.put(gh, cache_key, stats)
 
         # Score the raw index against the frozen citywide baseline
         # (lower = better; no zero-is-perfect pinning).
@@ -248,6 +317,8 @@ class RoadExposureScorer(Scorer):
                         "road_exposure_el_dist_m": stats.get("road_exposure_el_dist_m"),
                         "road_exposure_hwy_shield_rows": stats.get("road_exposure_hwy_shield_rows", 0),
                         "road_exposure_el": stats.get("road_exposure_el", 0.0),
+                        "road_exposure_bus": stats.get("road_exposure_bus", 0.0),
+                        "road_exposure_firehouse_m": stats.get("road_exposure_firehouse_m"),
                         "road_exposure_index": stats["road_exposure_index"],
                     },
                 )
@@ -286,7 +357,18 @@ class RoadExposureScorer(Scorer):
         Samples the segment every ~25m (excluding ~20m buffers at both
         ends so the source's and listing's own buildings don't count).
         Consecutive blocked samples merge into one "row".
+
+        Fast path: when a BlockerRaster is attached to the store
+        (DataStore.attach_fast_path), the walk runs as O(1) raster
+        lookups instead of ~25 SQLite circle queries; any raster failure
+        degrades to the SQLite loop below.
         """
+        raster = getattr(self._store, "blocker_raster", None)
+        if raster is not None:
+            try:
+                return raster.occluding_rows(lat, lon, slat, slon)
+            except Exception:
+                pass  # degrade to the SQLite reference path
         import math as _m
         dy = (slat - lat) * 111_320.0
         dx = (slon - lon) * 85_000.0
@@ -314,25 +396,48 @@ class RoadExposureScorer(Scorer):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _block_exposure(self, lat: float, lon: float) -> dict:
-        """Compute the three exposure components for one block."""
+    def _block_exposure(
+        self,
+        lat: float,
+        lon: float,
+        has_tb: bool = False,
+        has_bus: bool = False,
+        has_fh: bool = False,
+    ) -> dict:
+        """Compute the exposure components for one block.
+
+        ``has_tb``/``has_bus``/``has_fh``: probed availability of the
+        tunnel/bridge road columns, ds_bus_stops, and ds_firehouses —
+        components degrade to their pre-nuance behaviour (or 0) when the
+        corresponding data hasn't finished downloading.
+        """
         # One circle query serves both the highway-proximity search
         # (1 km) and the arterial-density sum (points ≤ 150 m).
+        road_select = "road_class,lat,lon"
+        if has_tb:
+            road_select += ",tunnel,bridge"
         road_rows = self._store.query_circle(
             "roads", lat=lat, lon=lon, radius_m=HWY_SEARCH_RADIUS_M,
-            select="road_class,lat,lon", lat_col="lat", lon_col="lon",
+            select=road_select, lat_col="lat", lon_col="lon",
         )
 
         hwy_dist = None
         hwy_pt = None
+        hwy_bridge = False
         arterial_sum = 0.0
         for r in road_rows:
             cls = r.get("road_class") or ""
             d = float(r.get("_dist_m") or 0.0)
+            # Tunnel points are inaudible at the surface (Lincoln/QMT/
+            # Holland/Park Ave etc) — zero contribution to everything.
+            if has_tb and (r.get("tunnel") or 0):
+                continue
+            bridge = bool(r.get("bridge") or 0) if has_tb else False
             if cls in HWY_CLASSES:
                 if hwy_dist is None or d < hwy_dist:
                     hwy_dist = d
                     hwy_pt = (float(r.get("lat")), float(r.get("lon")))
+                    hwy_bridge = bridge
                 # Highways are modeled by the (occlusion-aware) highway
                 # component — counting their points in the arterial field
                 # too double-counted them at close range and made a
@@ -345,8 +450,10 @@ class RoadExposureScorer(Scorer):
                 # Street-canyon shielding for the far arterial field:
                 # beyond FRONTAGE_M the sound has to cross the first
                 # building row — a single midpoint probe for a 3+-story
-                # intervening lot approximates that.
-                if d > FRONTAGE_M:
+                # intervening lot approximates that. Elevated (bridge/
+                # viaduct) points clear the first building row, so they
+                # skip the shield probe.
+                if d > FRONTAGE_M and not bridge:
                     try:
                         plat, plon = float(r.get("lat")), float(r.get("lon"))
                         if self._blocked_midpoint(lat, lon, plat, plon):
@@ -364,9 +471,12 @@ class RoadExposureScorer(Scorer):
             # Sightline occlusion: intervening 3+-story building rows
             # between the listing and the highway attenuate hard (a solid
             # row cuts traffic noise ~10-20 dBA — the "buildings in
-            # between" effect).
-            hwy_shield_rows = self._occluding_rows(lat, lon, *hwy_pt)
-            exposure_hwy *= OCCLUSION_FACTORS[min(hwy_shield_rows, 2)]
+            # between" effect). Bridge/viaduct sources are elevated and
+            # clear the first building row — full exposure, no occlusion
+            # (shield rows not computed; reported as 0).
+            if not hwy_bridge:
+                hwy_shield_rows = self._occluding_rows(lat, lon, *hwy_pt)
+                exposure_hwy *= OCCLUSION_FACTORS[min(hwy_shield_rows, 2)]
 
         truck_rows = self._store.query_circle(
             "truck_routes", lat=lat, lon=lon, radius_m=TRUCK_RADIUS_M,
@@ -409,7 +519,56 @@ class RoadExposureScorer(Scorer):
         except sqlite3.OperationalError:
             pass  # stations table absent — skip the component
 
-        index = exposure_hwy + arterial + truck_bonus + el_bonus
+        # Bus trunk corridor: the nearest stop's route count proxies
+        # corridor intensity (an M15-SBS trunk stop ≠ a one-route stop).
+        bus_bonus = 0.0
+        if has_bus:
+            try:
+                bus_rows = self._store.query_circle(
+                    "bus_stops", lat=lat, lon=lon, radius_m=BUS_RADIUS_M,
+                    select="route_count,latitude,longitude",
+                )
+                if bus_rows:
+                    nearest = min(
+                        bus_rows, key=lambda r: float(r.get("_dist_m") or 0.0)
+                    )
+                    bd = float(nearest.get("_dist_m") or 0.0)
+                    try:
+                        rc = float(nearest.get("route_count") or 0)
+                    except (TypeError, ValueError):
+                        rc = 0.0
+                    bus_bonus = (
+                        min(BUS_MAX_BONUS, BUS_ROUTE_WEIGHT * rc)
+                        * math.exp(-((bd / BUS_SIGMA_M) ** 2))
+                    )
+            except sqlite3.OperationalError:
+                pass  # table dropped mid-run — skip the component
+
+        # Firehouse: siren corridor. Dataset optional (mid-download) —
+        # component 0 / distance NULL until it lands.
+        fh_bonus = 0.0
+        fh_dist = None
+        if has_fh:
+            try:
+                fh_rows = self._store.query_circle(
+                    "firehouses", lat=lat, lon=lon,
+                    radius_m=FIREHOUSE_RADIUS_M,
+                    select="latitude,longitude",
+                )
+                if fh_rows:
+                    fh_dist = min(
+                        float(r.get("_dist_m") or 0.0) for r in fh_rows
+                    )
+                    fh_bonus = FIREHOUSE_MAX_BONUS * math.exp(
+                        -fh_dist / FIREHOUSE_DECAY_M
+                    )
+            except sqlite3.OperationalError:
+                pass  # table dropped mid-run — skip the component
+
+        index = (
+            exposure_hwy + arterial + truck_bonus + el_bonus
+            + bus_bonus + fh_bonus
+        )
         return {
             "road_exposure_hwy_dist_m": (
                 round(hwy_dist, 1) if hwy_dist is not None else None
@@ -421,5 +580,9 @@ class RoadExposureScorer(Scorer):
             ),
             "road_exposure_hwy_shield_rows": hwy_shield_rows,
             "road_exposure_el": round(el_bonus, 4),
+            "road_exposure_bus": round(bus_bonus, 4),
+            "road_exposure_firehouse_m": (
+                round(fh_dist, 1) if fh_dist is not None else None
+            ),
             "road_exposure_index": round(index, 4),
         }

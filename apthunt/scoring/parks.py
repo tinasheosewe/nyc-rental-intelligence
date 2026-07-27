@@ -7,8 +7,8 @@ Uses pre-downloaded NYC Parks Properties dataset (stored locally in
 Scoring model — *effective-score-per-park, best wins*:
 
 Each park receives a quality multiplier and an influence radius ("reach")
-based on its approximate acreage (derived from polygon geometry via the
-Shoelace formula).
+based on its acreage (dataset ``acres`` column when available, else
+approximated from polygon geometry via the Shoelace formula).
 
     Tier        Acres       Quality     Reach (m)
     ───────     ─────────   ─────────   ─────────
@@ -18,9 +18,21 @@ Shoelace formula).
     Large       15 – 100    0.95        1 200
     Flagship    100+        1.00        2 000
 
+Two nuance layers on top of the size tiers:
+
+**Typecategory gate** (``typecategory`` column, added by re-download —
+degrades to neutral ×1.0 while the column is absent): a paved triangle,
+mall strip, parkway median, or cemetery is not a park experience.
+Triangle/Plaza/Mall/Strip/Parkway/Cemetery ×0.1, Playground ×0.7,
+Nature Area ×0.9, Neighborhood/Community/Flagship Park ×1.0.
+
+**Pedestrian severance**: the proximity curve runs on
+``effective_distance = haversine + path_severance_penalty_m(...)`` —
+a park across a six-lane trunk road is not experientially 200 m away.
+
 For each park within reach:
-    proximity  = max(0, 1 − dist / reach)
-    effective  = proximity × quality × 100
+    proximity  = max(0, 1 − effective_dist / reach)
+    effective  = proximity × quality × type_mult × 100
 
 The listing's final score is the *maximum* effective score across all
 nearby parks (capped at 100).  This ensures that a small triangle next
@@ -40,7 +52,11 @@ from apthunt.data.block_cache import BlockCache
 from apthunt.data.data_store import DataStore
 from apthunt.scoring.base import Scorer, ScorerResult
 from apthunt.scoring.baseline import baseline_scores
-from apthunt.scoring.utils import dedupe_by_geohash
+from apthunt.scoring.utils import dedupe_by_geohash, path_severance_penalty_m
+
+# Cache version — v3: typecategory gate + severance-adjusted distance
+# (raw metric semantics changed; rebaseline follows this wave).
+_CACHE_KEY = "parks_v3"
 
 # ── Size tiers ──────────────────────────────────────────────────────
 #                   (min_acres, quality, reach_m)
@@ -59,13 +75,52 @@ _MAX_REACH_M = max(t[2] for t in _TIERS)
 # Convert to degrees for the centroid pre-filter (generous).
 _SEARCH_DELTA = _MAX_REACH_M / 111_320 * 1.5  # ≈0.027°
 
+# ── Typecategory gate ───────────────────────────────────────────────
+# NYC Parks "typecategory" → scoring multiplier.  Triangles, plazas,
+# malls, medians, parkway strips and cemeteries are green on a map but
+# not parks for living next to; playgrounds are parks-for-some.
+# Unknown / missing categories stay neutral (×1.0), which also covers
+# today's DB where the column hasn't been re-downloaded yet.
+_TYPE_MULT: dict = {
+    "triangle/plaza": 0.1,
+    "triangle": 0.1,
+    "plaza": 0.1,
+    "mall": 0.1,
+    "strip": 0.1,
+    "parkway": 0.1,
+    "cemetery": 0.1,
+    "playground": 0.7,
+    "jointly operated playground": 0.7,
+    "neighborhood park": 1.0,
+    "community park": 1.0,
+    "flagship park": 1.0,
+    "nature area": 0.9,
+}
+
+
+def _type_multiplier(typecategory) -> float:
+    """Scoring multiplier for a park's typecategory (neutral when unknown)."""
+    if not typecategory:
+        return 1.0
+    return _TYPE_MULT.get(str(typecategory).strip().lower(), 1.0)
+
 
 class _ParkHit(NamedTuple):
     """A single park's contribution to a listing's score."""
     name: str
     distance_m: int
     acres: float
+    typecategory: str
+    type_mult: float
+    severance_m: float
     effective_score: float
+
+
+_NO_PARK = _ParkHit(
+    name="", distance_m=9999, acres=0.0,
+    typecategory="", type_mult=1.0, severance_m=0.0,
+    effective_score=0.0,
+)
 
 
 class ParksScorer(Scorer):
@@ -78,7 +133,8 @@ class ParksScorer(Scorer):
     def name(self) -> str:
         return "parks"
 
-    # Baseline metric: raw effective park-access score (proximity × quality).
+    # Baseline metric: raw effective park-access score
+    # (proximity × quality × type_mult, severance-adjusted distance).
     # Higher = better access, and 0 (no park in reach) is the worst case.
     baseline_component = "parks_effective"
     baseline_reverse = False
@@ -90,6 +146,9 @@ class ParksScorer(Scorer):
             "parks_name": "TEXT",
             "parks_acres": "REAL",
             "parks_effective": "REAL",
+            "parks_typecategory": "TEXT",
+            "parks_type_mult": "REAL",
+            "parks_severance_m": "REAL",
         }
 
     # ─── public entry point ─────────────────────────────────────────
@@ -100,27 +159,37 @@ class ParksScorer(Scorer):
         listings: list[dict],
     ) -> list[ScorerResult]:
         self._store.ensure_downloaded("parks", quiet=True)
+        # Severance uses ds_roads opportunistically: the dataset refresh
+        # pipeline owns its (heavy, Overpass) download, and
+        # path_severance_penalty_m degrades to 0.0 while it's absent —
+        # deliberately NOT ensure_downloaded("roads") here.
+
+        # Probe once per score() call which re-download columns exist yet.
+        has_type, has_acres = self._probe_extra_cols()
 
         # Deduplicate by geohash
         gh_map = dedupe_by_geohash(listings)
 
         block_stats: dict[str, dict] = {}
         for gh, (lat, lon) in gh_map.items():
-            cached = self._cache.get(gh, "parks_v2")
+            cached = self._cache.get(gh, _CACHE_KEY)
             if cached is not None:
                 block_stats[gh] = cached
                 continue
 
-            parks = self._query_nearby_parks(lat, lon)
+            parks = self._query_nearby_parks(lat, lon, has_type, has_acres)
             hit = self._best_park(parks, lat, lon)
             stats = {
                 "parks_distance_m": hit.distance_m,
                 "parks_name": hit.name,
                 "parks_acres": round(hit.acres, 2),
+                "parks_typecategory": hit.typecategory,
+                "parks_type_mult": hit.type_mult,
+                "parks_severance_m": hit.severance_m,
                 "_effective": hit.effective_score,
             }
             block_stats[gh] = stats
-            self._cache.put(gh, "parks_v2", stats)
+            self._cache.put(gh, _CACHE_KEY, stats)
 
         # Absolute scoring: rank the raw effective-access metric against the
         # frozen citywide baseline; fall back to the raw effective score
@@ -145,6 +214,9 @@ class ParksScorer(Scorer):
                         "parks_name": stats["parks_name"],
                         "parks_acres": stats["parks_acres"],
                         "parks_effective": round(raw, 1),
+                        "parks_typecategory": stats["parks_typecategory"],
+                        "parks_type_mult": stats["parks_type_mult"],
+                        "parks_severance_m": stats["parks_severance_m"],
                     },
                 )
             )
@@ -152,11 +224,37 @@ class ParksScorer(Scorer):
 
     # ─── internals ──────────────────────────────────────────────────
 
-    def _query_nearby_parks(self, lat: float, lon: float) -> list[dict]:
+    def _probe_extra_cols(self) -> tuple[bool, bool]:
+        """Whether ds_parks has the re-download columns (typecategory, acres).
+
+        RE-DOWNLOADS ARE IN FLIGHT: today's table may predate them, so
+        probe with a cheap per-column SELECT and degrade gracefully.
+        """
+        has = []
+        for col in ("typecategory", "acres"):
+            try:
+                self._store.query("parks", select=f"[{col}]", limit=1)
+                has.append(True)
+            except Exception:
+                has.append(False)
+        return has[0], has[1]
+
+    def _query_nearby_parks(
+        self,
+        lat: float,
+        lon: float,
+        has_type: bool,
+        has_acres: bool,
+    ) -> list[dict]:
         """Fetch parks within the maximum reach using centroid pre-filter."""
+        select = "name311, multipolygon, centroid_lat, centroid_lon"
+        if has_type:
+            select += ", typecategory"
+        if has_acres:
+            select += ", acres"
         rows = self._store.query_bbox(
             "parks", lat, lon, delta=_SEARCH_DELTA,
-            select="name311, multipolygon",
+            select=select,
             lat_col="centroid_lat",
             lon_col="centroid_lon",
         )
@@ -169,42 +267,89 @@ class ParksScorer(Scorer):
                     r["multipolygon"] = None
         return rows
 
-    @staticmethod
     def _best_park(
+        self,
         parks: list[dict],
         lat: float,
         lon: float,
     ) -> _ParkHit:
-        """Return the single best-scoring park (proximity × size quality)."""
-        best = _ParkHit(name="", distance_m=9999, acres=0.0, effective_score=0.0)
+        """Return the single best-scoring park.
 
+        Severance is the expensive part (path sampling against ds_roads),
+        so candidates are first ranked by their *optimistic* score (no
+        severance — the penalty can only lower a score) and evaluated in
+        that order; once the best confirmed score beats every remaining
+        optimistic bound, we stop.
+        """
+        candidates: list[tuple] = []
         for p in parks:
             geom = p.get("multipolygon")
             if not geom or not isinstance(geom, dict):
                 continue
 
-            # Nearest border distance
+            # Nearest border distance (physical)
             dist_m = _nearest_border_dist(geom, lat, lon)
-            # Approximate acreage from polygon area
-            acres = _polygon_area_acres(geom)
-            # Look up tier
+            # Acreage: dataset column when present, else polygon-derived
+            acres = _park_acres(p, geom)
+            # Typecategory gate (neutral ×1.0 when the column is absent)
+            typecategory = str(p.get("typecategory") or "").strip()
+            type_mult = _type_multiplier(typecategory)
+            # Look up size tier
             quality, reach = _tier_params(acres)
 
             if dist_m >= reach:
-                continue  # park is out of effective range
+                continue  # park is out of range even before severance
 
-            proximity = max(0.0, 1.0 - dist_m / reach)
-            eff = proximity * quality * 100.0
+            optimistic = (1.0 - dist_m / reach) * quality * type_mult * 100.0
+            if optimistic <= 0.0:
+                continue
+            candidates.append(
+                (optimistic, dist_m, acres, typecategory, type_mult,
+                 quality, reach, p)
+            )
 
+        candidates.sort(key=lambda c: c[0], reverse=True)
+
+        best = _NO_PARK
+        for (optimistic, dist_m, acres, typecategory, type_mult,
+             quality, reach, p) in candidates:
+            if optimistic <= best.effective_score:
+                break  # sorted descending: no remaining candidate can win
+
+            # Severance-adjusted distance BEFORE the proximity curve:
+            # a park across a trunk road is not 200m away.
+            severance_m = self._severance_m(lat, lon, p)
+            eff_dist = dist_m + severance_m
+            if eff_dist >= reach:
+                continue  # severed out of effective range
+
+            proximity = 1.0 - eff_dist / reach
+            eff = proximity * quality * type_mult * 100.0
             if eff > best.effective_score:
                 best = _ParkHit(
                     name=p.get("name311", ""),
                     distance_m=int(dist_m),
                     acres=acres,
+                    typecategory=typecategory,
+                    type_mult=type_mult,
+                    severance_m=round(severance_m, 1),
                     effective_score=eff,
                 )
 
         return best
+
+    def _severance_m(self, lat: float, lon: float, park_row: dict) -> float:
+        """Pedestrian-severance penalty listing→park centroid (0.0 on any
+        missing data — degrade gracefully)."""
+        try:
+            clat = float(park_row["centroid_lat"])
+            clon = float(park_row["centroid_lon"])
+        except (KeyError, TypeError, ValueError):
+            return 0.0
+        try:
+            return path_severance_penalty_m(self._store, lat, lon, clat, clon)
+        except Exception:
+            return 0.0
 
 
 # ── helper functions ────────────────────────────────────────────────
@@ -216,6 +361,18 @@ def _tier_params(acres: float) -> tuple[float, int]:
             return quality, reach
     # Fallback (should not happen as last tier starts at 0)
     return 0.55, 300
+
+
+def _park_acres(row: dict, geom: dict) -> float:
+    """Park acreage: dataset ``acres`` column when present and positive
+    (added by re-download), else Shoelace-derived from the polygon."""
+    try:
+        a = float(row.get("acres"))
+        if a > 0:
+            return a
+    except (TypeError, ValueError):
+        pass
+    return _polygon_area_acres(geom)
 
 
 def _nearest_border_dist(geom: dict, lat: float, lon: float) -> float:

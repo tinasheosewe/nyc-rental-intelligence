@@ -25,7 +25,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
 
 from apthunt.db import get_connection, DB_PATH
-from api.composite import compute_composite, SCORE_KEYS
+from api.composite import compute_composite, apply_dealbreaker_cap, SCORE_KEYS
 
 
 def ensure_column(conn) -> None:
@@ -48,6 +48,7 @@ def main():
 
         t0 = time.time()
         raws: list[tuple[str, float]] = []
+        score_dicts: list[dict] = []
         for row in rows:
             scores = {
                 key: round(float(row[f"{key}_score"]), 1)
@@ -57,6 +58,7 @@ def main():
             }
             composite, _ = compute_composite(scores, None, exclude_schools=True)
             raws.append((row["id"], composite))
+            score_dicts.append(scores)
 
         # Freeze the raw-composite distribution, then store each listing's
         # PERCENTILE within it as composite_score. Raw composites are means
@@ -73,9 +75,14 @@ def main():
         bl.clear_cache()
         pcts = bl.baseline_scores(conn, "__composite__", raw_values)
 
+        # Dealbreaker caps apply on the PERCENTILE scale (capping raw
+        # composites before percentile-izing displayed capped listings at
+        # the 67th percentile — above the cap's intent).
+        capped = []
+        for (lid, _), p, srow in zip(raws, pcts, score_dicts):
+            capped.append((apply_dealbreaker_cap(p, srow), lid))
         conn.executemany(
-            "UPDATE listings SET composite_score = ? WHERE id = ?",
-            [(p, r[0]) for r, p in zip(raws, pcts)],
+            "UPDATE listings SET composite_score = ? WHERE id = ?", capped,
         )
         conn.commit()
         print(f"Updated composite_score (percentile-ized) for {len(raws)} "

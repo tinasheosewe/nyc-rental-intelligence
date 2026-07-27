@@ -240,8 +240,10 @@ def _row_to_listing(
     # 0-100 range); raw means-of-percentiles cluster in a narrow band.
     composite = composite_raw
     if conn is not None:
-        from api.composite import composite_percentile
-        composite = composite_percentile(conn, composite_raw)
+        from api.composite import composite_percentile, apply_dealbreaker_cap
+        composite = apply_dealbreaker_cap(
+            composite_percentile(conn, composite_raw), score_vals,
+        )
 
     scores = Scores(
         composite=composite,
