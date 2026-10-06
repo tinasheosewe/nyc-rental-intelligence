@@ -9,7 +9,7 @@
 
 import type { Listing, ScoreGroupKey } from "@/lib/types";
 import { GROUP_BY_KEY } from "@/lib/types";
-import { formatPrice, formatBeds, scoreColor, getGroupScore, scoreLabel } from "@/lib/utils";
+import { formatPrice, formatBeds, getGroupScore, scoreLabel } from "@/lib/utils";
 import { useStore } from "@/lib/store";
 import FlagList from "@/components/ui/FlagList";
 import ScoreBadge from "@/components/ui/ScoreBadge";
@@ -83,8 +83,6 @@ function generateSummary(
   groups: ScoreGroupKey[],
   kidsMode: boolean = false,
 ): string {
-  const avgComposite = all.reduce((a, l) => a + l.scores.composite, 0) / all.length;
-
   const strengths: string[] = [];
   const weaknesses: string[] = [];
 

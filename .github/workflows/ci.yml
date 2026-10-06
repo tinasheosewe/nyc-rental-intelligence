@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: Python tests and API smoke test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.12'
+        cache: 'pip'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    - name: Run unit tests
+      run: python -m unittest discover -s tests -t . -v
+
+    # The rest runs on the synthetic sample listings and the two scorers that
+    # need no open-data downloads, so nothing here depends on NYC Open Data
+    # being reachable.
+    - name: Build a sample database
+      env:
+        APTHUNT_DB_PATH: ${{ runner.temp }}/apthunt.db
+      run: |
+        python ingest.py
+        python run_scores.py --only deal,unit_amenities --no-fast
+        python scripts/compute_composites.py
+
+    # /api/listings is asked without min_data_quality: the web app's default
+    # ("limited") hides listings with fewer than four scored dimensions, and
+    # this database has two.
+    - name: Start the API and query it
+      env:
+        APTHUNT_DB_PATH: ${{ runner.temp }}/apthunt.db
+      run: |
+        set -euo pipefail
+        base=http://127.0.0.1:8000
+        uvicorn api.app:app --host 127.0.0.1 --port 8000 > "$RUNNER_TEMP/uvicorn.log" 2>&1 &
+        server=$!
+        trap 'kill "$server" 2>/dev/null || true; echo "--- uvicorn log"; cat "$RUNNER_TEMP/uvicorn.log"' EXIT
+
+        for attempt in $(seq 1 30); do
+          if curl --silent --fail --output /dev/null "$base/api/health"; then break; fi
+          sleep 1
+        done
+
+        curl --silent --show-error --fail "$base/api/health" \
+          | jq -e '.status == "ok" and .database.api_visible_listings > 0'
+        curl --silent --show-error --fail "$base/api/listings?page_size=5" > "$RUNNER_TEMP/listings.json"
+        jq -e '.total > 0 and (.listings | length) > 0' "$RUNNER_TEMP/listings.json"
+        id="$(jq -r '.listings[0].id' "$RUNNER_TEMP/listings.json")"
+        curl --silent --show-error --fail "$base/api/listings/$id" > "$RUNNER_TEMP/detail.json"
+        jq -e --arg id "$id" '.id == $id' "$RUNNER_TEMP/detail.json"
+
+  frontend:
+    name: Web app lint and build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: frontend
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Node
+      uses: actions/setup-node@v4
+      with:
+        node-version: '22'
+        cache: 'npm'
+        cache-dependency-path: frontend/package-lock.json
+
+    - name: Install dependencies
+      id: install
+      run: npm ci
+
+    # ESLint errors fail the job. The warnings it still prints are
+    # @next/next/no-img-element: listing photos are plain <img> tags because
+    # their URLs point at arbitrary remote hosts.
+    - name: Lint
+      run: npm run lint
+
+    # Type-checks and builds the app. The build fetches the Geist font from
+    # Google Fonts; it does not call the API. It runs even when lint fails,
+    # so that one run reports both results.
+    - name: Build
+      if: ${{ !cancelled() && steps.install.outcome == 'success' }}
+      env:
+        NEXT_PUBLIC_API_URL: http://127.0.0.1:8000
+        NEXT_TELEMETRY_DISABLED: '1'
+      run: npm run build

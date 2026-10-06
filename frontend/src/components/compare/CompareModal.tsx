@@ -7,11 +7,11 @@
 
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { useStore } from "@/lib/store";
 import type { ScoreGroupKey, CompareTab } from "@/lib/types";
-import { SCORE_GROUPS, GROUP_BY_KEY, getEffectiveGroups } from "@/lib/types";
+import { getEffectiveGroups } from "@/lib/types";
 import CompareTable from "./CompareTable";
 import CompareFlags from "./CompareFlags";
 import clsx from "clsx";
@@ -42,13 +42,19 @@ export default function CompareModal() {
   );
   const [activeTab, setActiveTab] = useState<CompareTab>("table");
 
-  // Reset selections when modal opens or priorities change
-  useEffect(() => {
+  // Reset selections when modal opens or priorities change. Done while
+  // rendering (comparing against the previous values) rather than in an
+  // effect, so the modal never renders the previous selection first.
+  const [prevOpen, setPrevOpen] = useState(compareOpen);
+  const [prevPriorities, setPrevPriorities] = useState(priorities);
+  if (compareOpen !== prevOpen || priorities !== prevPriorities) {
+    setPrevOpen(compareOpen);
+    setPrevPriorities(priorities);
     if (compareOpen) {
       setSelectedGroups(new Set(priorities.slice(0, 4) as ScoreGroupKey[]));
       setStep("pick");
     }
-  }, [compareOpen, priorities]);
+  }
 
   // Gather listings from both queues
   const allQueued = useMemo(

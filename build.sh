@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
 # build.sh — Render build script for the backend service.
-# Installs dependencies and downloads the pre-built SQLite database
-# from a hosted copy (avoids rebuilding it on every deploy).
+# Installs dependencies and makes sure a valid SQLite database exists:
+#   - APTHUNT_DB_URL set  → download that pre-built database
+#   - otherwise           → build the demo database from the synthetic
+#                           sample listings (scripts/bootstrap_sample.sh)
 set -euo pipefail
 
 PYTHON_BIN="${PYTHON_BIN:-python3}"
+export PYTHON_BIN
 
 echo "▸ Installing Python dependencies"
 "$PYTHON_BIN" -m pip install -r requirements.txt
 
-DB_FILE="${APTHUNT_DB_FILE:-apthunt.db}"
-DB_URL="${APTHUNT_DB_URL:-https://example.com/apthunt.db}"
+DB_FILE="${APTHUNT_DB_PATH:-${APTHUNT_DB_FILE:-apthunt.db}}"
+DB_URL="${APTHUNT_DB_URL:-}"
 
 validate_db() {
   local db_path="$1"
@@ -58,7 +61,7 @@ download_db() {
   curl --fail --location --retry 3 --retry-all-errors --output "$tmp_file" "$DB_URL"
 }
 
-if [ ! -f "$DB_FILE" ]; then
+if [ ! -f "$DB_FILE" ] && [ -n "$DB_URL" ]; then
   TMP_DB="$(mktemp "${TMPDIR:-/tmp}/apthunt.db.XXXXXX")"
   trap 'rm -f "$TMP_DB"' EXIT
   download_db "$TMP_DB"
@@ -66,6 +69,11 @@ if [ ! -f "$DB_FILE" ]; then
   mv "$TMP_DB" "$DB_FILE"
   trap - EXIT
   echo "✔ Database downloaded ($(du -h "$DB_FILE" | cut -f1))"
+elif [ ! -f "$DB_FILE" ]; then
+  echo "▸ No database and no APTHUNT_DB_URL — building the demo database"
+  APTHUNT_DB_PATH="$DB_FILE" ./scripts/bootstrap_sample.sh
+  validate_db "$DB_FILE"
+  echo "✔ Demo database built ($(du -h "$DB_FILE" | cut -f1))"
 else
   echo "▸ Validating existing database at $DB_FILE"
   validate_db "$DB_FILE"

@@ -13,17 +13,13 @@ import { useStore } from "@/lib/store";
 import { fetchListing } from "@/lib/api";
 import type {
   Listing,
-  ScoreDimension,
   ScoreGroupKey,
-  TransitStation,
   ComparableListing,
-  POI,
 } from "@/lib/types";
 import {
   DIMENSION_LABELS,
   DIMENSION_BREAKOUT,
   SCORE_GROUPS,
-  GROUP_BY_KEY,
   GROUP_LABELS,
   SCORE_GROUP_KEYS,
   getEffectiveGroups,
@@ -70,16 +66,14 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
 
   // Lazy-load detail data (transit stations, comparables, neighborhood info, etc.)
   const [detail, setDetail] = useState<Listing | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop the previous listing's detail before fetching this one
     setDetail(null);
-    setDetailLoading(true);
     fetchListing(listing.id)
       .then((d) => { if (!cancelled) setDetail(d); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setDetailLoading(false); });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [listing.id]);
 
@@ -728,8 +722,6 @@ export default function FeedCard({ listing, direction }: FeedCardProps) {
 // ── Comparable listing mini-card ─────────────────────────────
 
 function ComparableCard({ comp }: { comp: ComparableListing }) {
-  const addToWatchlist = useStore((s) => s.addToWatchlist);
-
   return (
     <div className="flex items-center gap-3 p-2 rounded-lg bg-[#F3F0EB] border border-[#E5E0D8]">
       {/* Photo */}

@@ -9,7 +9,7 @@
 
 import { useMemo } from "react";
 import { useStore } from "@/lib/store";
-import { SCORE_GROUPS, getEffectiveGroups } from "@/lib/types";
+import { getEffectiveGroups } from "@/lib/types";
 import clsx from "clsx";
 
 export default function SortChips() {

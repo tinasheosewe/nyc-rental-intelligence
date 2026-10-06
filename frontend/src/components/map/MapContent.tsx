@@ -16,6 +16,7 @@ import {
   ZoomControl,
   useMap,
 } from "react-leaflet";
+import L from "leaflet";
 import type { Listing, ScoreDimension } from "@/lib/types";
 import { formatPrice, formatBeds, scoreLabel } from "@/lib/utils";
 import HeatmapLayer from "./HeatmapLayer";
@@ -123,9 +124,8 @@ export default function MapContent({
     const highlighted = listings.filter((l) => highlightIds.has(l.id));
     if (highlighted.length < 2) return;
 
-    const L = require("leaflet");
     const bounds = L.latLngBounds(
-      highlighted.map((l) => [l.latitude, l.longitude]),
+      highlighted.map((l): L.LatLngTuple => [l.latitude, l.longitude]),
     );
 
     if (initialMount.current) {
@@ -157,7 +157,7 @@ export default function MapContent({
     <>
       <TileLayer
         url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-        attribution='&copy; <a href="https://carto.com/">CARTO</a>'
+        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
       />
       <ZoomControl position="topright" />
 

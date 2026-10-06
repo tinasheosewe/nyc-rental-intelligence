@@ -170,6 +170,8 @@ class StreetDangerScorer(Scorer):
         listings: list[dict],
     ) -> list[ScorerResult]:
         self._store.ensure_downloaded("street_collisions", quiet=True)
+        # Per-household rates divide by PLUTO residential units.
+        self._store.ensure_downloaded("pluto", quiet=True)
 
         # The dataset may still be mid-download in another process — probe
         # once and degrade gracefully if the table isn't there yet.

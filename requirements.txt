@@ -1,10 +1,19 @@
+# API, scoring and ingestion
 fastapi>=0.115,<1
 haversine>=2.9,<3
 httpx>=0.27,<1
-plotly>=6.5,<7
 pydantic>=2.10,<3
 pygeohash>=3.2,<4
 requests>=2.31,<3
 sodapy>=2.2,<3
-streamlit>=1.50,<2
 uvicorn>=0.30,<1
+
+# Scoring fast path (in-memory KD-trees and rasters). Optional at run time:
+# without numpy/scipy the scorers fall back to plain SQLite queries.
+numpy>=1.26,<3
+scipy>=1.11,<2
+
+# Streamlit dashboard (dashboard.py) only
+pandas>=2.2,<3
+plotly>=6.5,<7
+streamlit>=1.50,<2

@@ -1,361 +1,392 @@
 # NYC Rental Intelligence
 
-## Overview
+Ranks New York City apartment listings by two questions: is the rent a good
+deal against comparable listings, and what is it like to live at that
+address. Each listing gets 17 scores: a deal score, an amenities score, and
+15 block- and building-level scores (crime, street noise, road noise, pests,
+bedbugs, building violations, landlord record, transit, parks, greenery and
+more) computed from NYC Open Data, MTA data and OpenStreetMap. A FastAPI
+service serves the ranked listings with a one-sentence explanation per
+score, and a Next.js app shows them as a list, a map with citywide heatmaps,
+and a compare view.
 
-NYC Rental Intelligence is a signal-first apartment hunt platform built
-specifically for New York City.
+**The listings in this repository are synthetic.** A seeded generator
+produces 300 fictional apartments, placed in real neighborhoods so the
+scorers run on real city data. Listing ingestion is a small plug-in
+interface; adapters for real listing sources are not included. The scorers
+were tuned on real listing data, which is not included either; measurements
+quoted in code comments and commit messages refer to that data.
 
-Unlike traditional listing sites that optimize for browsing and
-engagement, this system optimizes for **decision compression**. It
-centralizes listings from any source, detects true freshness, ranks
-underpriced units, scores micro-block quality, and only surfaces
-apartments worth acting on.
+## What is in here
 
-The goal is simple: **Show the top 3 apartments that matter today.
-Suppress everything else.**
+- **19 scorers behind one interface** (`apthunt/scoring/`). Each computes one
+  signal and writes a 0–100 score plus the components behind it. 17 feed the
+  composite; flood zone and rent stabilization are flags. Every scorer's
+  module docstring states its formula, radii and weights.
+- **Absolute scores from frozen citywide baselines**
+  (`apthunt/scoring/baseline.py`, `scripts/build_baseline.py`). A raw metric
+  is mapped to its percentile in a frozen citywide distribution: the scorer
+  is run over a sample of residential blocks from the PLUTO tax-lot file and
+  a 1001-point quantile grid is stored. A single listing then scores the
+  same as it would in a batch of thousands; before, scores were ranks within
+  whatever batch was being scored. Transit and air quality are deliberately
+  absolute instead (meters of walk, pollutant levels).
+- **Corrections for what complaint data actually measures.** Area counts
+  become per-household rates with a kernel-weighted PLUTO unit count as the
+  denominator, so dense blocks are not scored as dangerous or loud for being
+  dense. Incidents are weighted by distance (Gaussian kernels) and recency
+  (180-day half-life), complaint volume is normalized by month, and repeat
+  complaints from one location are capped. Building-level rates are shrunk
+  toward the citywide rate (empirical Bayes), so a clean record on 3 units is
+  weaker evidence than a clean record on 300.
+- **A local data layer** (`apthunt/data/data_store.py`). 48 dataset
+  definitions (46 Socrata, 2 OpenStreetMap via Overpass) are downloaded into
+  SQLite with typed geo columns and swapped in atomically. Two NYPD feeds are
+  merged into one derived table. Major roads are sampled into points every
+  50 m, so road queries are ordinary radius queries.
+- **An optional in-memory fast path** (`apthunt/data/spatial_index.py`):
+  KD-trees behind the same `query_circle` API, hash maps for per-building
+  lookups, and 10 m rasters for sightline and road-crossing checks. The
+  SQLite path stays as the reference, and `scripts/bench_fast_path.py`
+  compares the two.
+- **Validation scripts** (`scripts/validate_scores.py`,
+  `scripts/audit_cache_drift.py`). The first checks that the dimensions
+  spread across the 0–100 range and that 13 pairs of known-contrast
+  locations come out in the right order (a quiet Williamsburg side street
+  must beat the nightlife core half a kilometer away on noise). The second
+  recomputes a sample of stored scores from scratch to catch a formula that
+  changed while its cache key did not.
+- **Map layers produced by the scorers themselves**
+  (`scripts/generate_heatmap_scores.py`): the citywide grids in
+  `frontend/public/heatmap/` come from the same code path as listing scores.
+- **API and UI** (`api/`, `frontend/`): composite with group weights and
+  dealbreaker caps, explanations, flags, comparables, neighborhood peer
+  context and a per-building record lookup; a Next.js client with list, map,
+  detail, compare and shortlist views.
 
-## Production DB Seed
+## Quick start
 
-The Render backend expects a valid SQLite file at startup.
+Needs Python 3.9+ and Node 20.9+.
 
-- `build.sh` downloads `apthunt.db` from `APTHUNT_DB_URL` when the file is missing.
-- The build now fails if the URL returns a non-200 response, if the downloaded file is not valid SQLite, or if it does not contain the `listings` table.
-- The API health check returns `503` when the database has no API-visible active listings.
-- Optional overrides: `APTHUNT_DB_URL`, `APTHUNT_DB_PATH`, `APTHUNT_REQUIRE_LISTINGS`.
+```bash
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+(cd frontend && npm install)
 
----
-
-## Core Philosophy
-
-- Inventory-first platforms create noise.
-- This platform creates **signal**.
-- Users should not scroll endlessly.
-- Users should not wonder if a listing is new.
-- Users should not manually evaluate every block.
-- If nothing meets criteria, the system says so clearly.
-- **No single source owns the data model.** Sources are adapters.
-  The canonical schema is driven by what the intelligence layer needs
-  to score, rank, and alert — not by what any upstream API happens
-  to expose.
-
----
-
-## Canonical Listing Schema
-
-The schema is defined by two questions:
-
-1. **What does the scoring engine need?** Every field must feed at
-   least one of: deal scoring, freshness tracking, micro-block
-   intelligence, survival modeling, or user preference filtering.
-2. **Can any source reasonably provide it?** A field belongs in the
-   schema if at least one realistic source can populate it. Fields
-   that no source can fill are omitted, not left perpetually null.
-
-```json
-{
-  "id": "uuid",
-  "source": "<adapter name> | manual",
-  "source_id": "1234567",
-  "url": "https://...",
-
-  "address": "123 Example Avenue",
-  "unit": "4A",
-  "neighborhood": "Crown Heights",
-  "borough": "Brooklyn",
-  "zip": "11213",
-  "lat": 40.6700,
-  "lon": -73.9400,
-
-  "price": 3000,
-  "net_effective_price": 2750,
-  "no_fee": false,
-  "months_free": 1.5,
-  "lease_term_months": 14,
-
-  "beds": 1,
-  "baths": 1.0,
-  "sqft": 650,
-  "amenities": ["washer_dryer", "dishwasher"],
-  "pets_allowed": true,
-  "furnished": false,
-  "description": "Renovated 1BR with...",
-
-  "photos": ["https://..."],
-  "available_at": "2026-02-24",
-
-  "broker_name": "Jane Smith",
-  "broker_firm": "Example Realty",
-  "broker_phone": "212-555-0100",
-  "broker_email": "jane@example.com",
-
-  "first_seen_at": "2026-02-24T00:00:00Z",
-  "last_seen_at": "2026-02-26T18:00:00Z",
-  "status": "active"
-}
+./start.sh          # API on :8000, web app on :3000
 ```
 
-### Why each field exists
+`start.sh` first kills whatever is listening on ports 8000 and 3000, then
+starts both dev servers; Ctrl-C stops them. It activates `.venv` if one
+exists. If there is no database yet it builds a demo one
+(`scripts/bootstrap_sample.sh`). The same steps by hand:
 
-| Field               | Feeds                                          |
-| ------------------- | ---------------------------------------------- |
-| `price`, `net_effective_price`, `months_free` | Deal scoring, comp deviation |
-| `no_fee`, `lease_term_months`                 | True cost calculation        |
-| `beds`, `baths`, `sqft`, `amenities`          | Comp grouping, user filters  |
-| `lat`, `lon`, `neighborhood`, `zip`           | Micro-block scoring, comps   |
-| `pets_allowed`, `furnished`                   | User preference filters      |
-| `photos`                                      | Relist detection (hash diff) |
-| `description`                                 | NLP extraction, amenity fill |
-| `available_at`                                | Urgency / survival model     |
-| `broker_name`, `broker_firm`, `broker_phone`, `broker_email` | Actionability — user needs to contact someone |
-| `first_seen_at`, `last_seen_at`               | True freshness engine        |
-| `source`, `source_id`, `url`                  | Dedup, provenance, linking   |
-
-### What is intentionally excluded
-
-- **Building metadata** (year built, unit count, building type).
-  Useful for enrichment but does not drive any scoring model.
-  Can live in a separate `buildings` table if needed later.
-- **Media counts, 3D tour flags, video flags.** Cosmetic. Don't
-  affect deal score, freshness, or survival probability.
-- **Source-specific taxonomy** (area codes, building type
-  enums, source type labels). These are adapter-internal concerns,
-  not canonical fields.
-- **Nearby transit.** Derived from geo coordinates + MTA GTFS data.
-  Not a listing attribute — it's a computed micro-block metric.
-
----
-
-## Source Adapter Model
-
-Each listing source is an adapter behind a common interface:
-
-```
-┌──────────────┐     ┌──────────────┐     ┌──────────────┐
-│  Source A    │     │  Source B    │     │  Listings    │
-│   Adapter    │     │   Adapter    │     │  Project     │
-│              │     │              │     │  Adapter     │
-│  API →       │     │  Feed →      │     │  Email →     │
-│  canonical   │     │  canonical   │     │  canonical   │
-└──────┬───────┘     └──────┬───────┘     └──────┬───────┘
-       │                    │                    │
-       └────────────────────┼────────────────────┘
-                            ▼
-                   ┌────────────────┐
-                   │  Canonical DB  │
-                   │  (unified)     │
-                   └────────┬───────┘
-                            ▼
-                   ┌────────────────┐
-                   │  Intelligence  │
-                   │  Pipeline      │
-                   └────────────────┘
+```bash
+python3 ingest.py                                                          # 300 synthetic listings -> apthunt.db
+python3 run_scores.py --no-fast --only deal,unit_amenities                 # no downloads
+python3 run_scores.py --no-fast --only transit,schools,parks,convenience   # small NYC Open Data / MTA / OSM downloads
+python3 scripts/compute_composites.py                                      # persist the default composite
 ```
 
-**Adapter contract:** Each adapter must:
+Then open <http://localhost:3000>. The API has interactive docs at
+<http://localhost:8000/docs>.
 
-1. **Paginate** through its source's full active inventory.
-2. **Map** source fields → canonical schema. Unmappable fields are
-   dropped, not shoehorned into the schema.
-3. **Yield** canonical listing dicts. The adapter does not touch the
-   DB — the sync orchestrator handles upsert, dedup, and freshness.
-4. **Report** sync metadata (total count, pages pulled, errors).
+`requirements.txt` is grouped. The API, the scorers and the tests need only
+the first group; numpy and scipy (the fast path) and the Streamlit group
+(`dashboard.py`) are optional.
 
-### Per-adapter notes
+What to expect from the demo database:
 
-| Adapter | Source | Broker data? | Unique value |
-| ------- | ------ | ------------ | ------------ |
-| **Listings Project** | Email digest / web | Usually included | Curated, personal landlord listings |
-| **Manual / email** | User-submitted | User provides | Fills gaps from direct landlord postings |
+- Six of the 17 dimensions are scored. Listings are marked "Limited data"
+  and the unscored dimensions are simply absent. Without network access the
+  open-data step is skipped, too few dimensions are scored, and the feed's
+  default Data Availability filter hides every listing until it is set to
+  "Any".
+- No citywide baseline exists yet, so each scorer uses its documented
+  fallback (a batch z-score for deal, for example). Composites are
+  percentiles among the sample listings.
+- Each sample listing sits at a random point in its neighborhood. Block
+  scores are real for that spot. Building-level scores and facts describe
+  whichever real tax lot is nearest, not the fictional apartment.
+- Sample listings have no photos, link or broker.
+- The demo is scored with `--no-fast`, straight from SQLite. The in-memory
+  fast path (on by default, needs numpy and scipy) is built for runs over
+  the full dataset; on a database that lacks the tables it preloads it logs
+  that those parts stay on the SQLite path and carries on.
 
----
+Tests run offline:
 
-## Enrichment Sources
-
-These fill gaps that no listing adapter can cover.
-
-| Source                   | Fills                         | Access              |
-| ------------------------ | ----------------------------- | ------------------- |
-| **NYC Open Data**        | Crime, 311, DOB violations    | Free API            |
-| **MTA GTFS**             | Transit proximity + routes    | Free data           |
-| **FEMA / NYC Planning**  | Flood zone overlays           | Free GIS data       |
-| **REBNY / RLS feed**     | Agent name, phone, firm       | Licensed brokers    |
-| **NYC ACRIS**            | Building ownership records    | Public data         |
-| **User-submitted**       | Forwarded listing emails      | Email parsing       |
-
----
-
-## Feature Set
-
-### 1. Multi-Source Inventory Sync
-
-- Adapter-based ingestion — each source is a plugin
-- Hourly sync cadence per adapter
-- SQLite storage with upsert (first_seen / last_seen tracking)
-- Cross-source dedup (address + unit normalization)
-- Exponential backoff on errors, per-adapter sync logging
-
-### 2. True Freshness Engine
-
-Track:
-- First seen timestamp (our clock, not the source's)
-- Last seen timestamp
-- Price changes (diff between syncs)
-- Relisting detection (listing disappears then reappears)
-- Photo hash similarity (detect relists with new photos)
-
-Display:
-- True market age (days since first_seen_at)
-- Price change history
-- Relist flag
-
-### 3. Micro-Block Intelligence
-
-NYC Open Data + MTA GTFS integrations:
-- Crime density (per census block)
-- 311 complaint density
-- NYCHA proximity
-- DOB violations (active violations on building)
-- Flood zone overlays
-- Subway entrance proximity (computed from lat/lon + GTFS)
-
-Output: **Block Quality Score (0–100)**
-
-### 4. Deal Scoring
-
-For each listing:
-- Compare against micro-area comps (same neighborhood, same bed count)
-- Compare against building comps when available
-- Adjust for true cost (no-fee, months free, net effective)
-- Adjust for seasonality
-
-Output:
-- Underpriced delta ($)
-- **Deal Score (0–100)**
-
-### 5. Survival Probability Model
-
-Estimate:
-- Probability listing disappears in 24h
-- Probability listing disappears in 72h
-
-Based on:
-- Price band
-- Neighborhood
-- Season
-- Historical time-on-market curves (built from our sync data)
-
-### 6. Signal-First Dashboard
-
-- Top ranked listings only
-- No infinite scroll
-- Clear explanation for each score
-- "Nothing worth acting on today" state
-
-### 7. Priority Alerts
-
-- SMS alerts for high-score listings
-- Push notifications
-- Email fallback
-
----
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                     INGESTION                            │
-│                                                         │
-│  Adapter interface (common contract)                    │
-│    ├─ ListingsProjectAdapter → email/web     [planned]  │
-│    └─ ManualAdapter        → user-submitted  [planned]  │
-│                                                         │
-│  Sync orchestrator (hourly cron)                        │
-│    ├─ Calls each adapter's paginate + map               │
-│    ├─ Upserts into canonical DB                         │
-│    ├─ Handles dedup (address + unit + photo hash)       │
-│    └─ Logs sync metadata per adapter                    │
-├─────────────────────────────────────────────────────────┤
-│                    PROCESSING                            │
-│                                                         │
-│  ├─ Address normalization + geocoding                   │
-│  ├─ NLP extraction from descriptions                    │
-│  ├─ Amenity classification                              │
-│  ├─ Micro-block scoring (NYC Open Data + MTA)           │
-│  ├─ Comp calculation + deal scoring                     │
-│  └─ Survival probability estimation                     │
-├─────────────────────────────────────────────────────────┤
-│                     STORAGE                              │
-│                                                         │
-│  SQLite (single file, portable)                         │
-│    ├─ listings          (canonical schema, all sources)  │
-│    ├─ sync_log          (per-adapter audit trail)        │
-│    ├─ price_history     (change tracking)                │
-│    ├─ block_scores      (micro-block metrics)            │
-│    └─ comps             (neighborhood medians)           │
-├─────────────────────────────────────────────────────────┤
-│                   PRESENTATION                           │
-│                                                         │
-│  ├─ Signal dashboard (top N only)                       │
-│  ├─ SMS / push / email alerts                           │
-│  └─ "Nothing today" zero-state                          │
-└─────────────────────────────────────────────────────────┘
+```bash
+python3 -m unittest discover -s tests -t .
 ```
 
----
+### Continuous integration
 
-## Development Phases
+`.github/workflows/ci.yml` runs on pushes to `main`, on pull requests and on
+demand. It uses no secrets and downloads no open data. Two jobs:
 
-### Phase 1 — Foundation (current)
+- **Python tests and API smoke test** (Python 3.12). Installs
+  `requirements.txt` and runs the unit tests. Then it builds a database from
+  the sample listings (`ingest.py`, the `deal` and `unit_amenities` scorers,
+  `scripts/compute_composites.py`), starts the API, and requests
+  `/api/health`, `/api/listings` and the detail of the first listing
+  returned. Any response other than 200, or an empty feed, fails the job.
+- **Web app lint and build** (Node 22). `npm ci`, `npm run lint` and
+  `npm run build` in `frontend/`. An ESLint error or a failed build, which
+  includes the TypeScript check, fails the job. ESLint still prints
+  `@next/next/no-img-element` warnings: listing photos are plain `<img>` tags
+  because their URLs point at arbitrary remote hosts.
 
-- [ ] Define adapter interface (abstract base class)
-- [ ] Canonical DB schema (source-agnostic)
-- [ ] Run first full sync, validate data
-- [ ] Price change tracking (diff between syncs)
-- [ ] Basic deal scoring (vs. neighborhood median)
-- [ ] Minimal CLI dashboard
+## Scoring every dimension
 
-### Phase 2 — Intelligence + Second Source
+The remaining scorers download what they need on first use, and several of
+those tables are large. With the filters in the dataset registry, the 46
+Socrata datasets held about 12.6 million rows when counted in October 2026.
+The biggest are HPD violations and DOB violations (about 1.8 million rows
+each), 311 noise, rodent and heat complaints (1.2 million), HPD complaints
+(1.0 million), NYPD complaints (1.0 million across two feeds) and PLUTO
+(0.86 million). Expect a long first run and a large database.
 
-- [ ] Second source adapter (proves the adapter model works)
-- [ ] Cross-source dedup engine
-- [ ] Micro-block scoring (NYC Open Data integration)
-- [ ] Survival probability model (from historical sync data)
-- [ ] Relisting detection
-- [ ] SMS alerts for high-score listings
-- [ ] Broker enrichment pipeline
+```bash
+export SODA_APP_TOKEN=...               # optional; anonymous Socrata requests are throttled
+python3 manage_data.py                  # download every dataset (--only a,b for some, --status for freshness)
+python3 run_scores.py                   # every scorer (--only to pick, --list to see them)
+python3 scripts/build_baseline.py       # freeze citywide baselines from 8,000 residential cells
+python3 scripts/build_baseline.py --from-listings --only deal,unit_amenities,building_violations,management,pest,bedbug
+python3 run_scores.py                   # rescore against the baselines
+python3 scripts/compute_composites.py
+python3 scripts/validate_scores.py      # spread gates and ground-truth pairs
+```
 
-### Phase 3 — Product
+Deal and unit amenities can only be baselined from listings. The four
+building-level dimensions are baselined against buildings that have listings
+rather than all residential blocks, for the reason given in
+`scripts/build_baseline.py`. That mode needs at least 100 scored listings
+per dimension. Building-level rates use the baseline median as their prior,
+so they settle after a second baseline-and-rescore cycle.
 
-- [ ] Web dashboard
-- [ ] Listings Project adapter
-- [ ] Manual / email submission adapter
-- [ ] Commute-time scoring overlay
-- [ ] Negotiation leverage signals (days on market, price drops)
-- [ ] Lifestyle scoring (nightlife, parks, grocery proximity)
+Other scripts, each with its usage in the docstring:
 
----
+| Script | Purpose |
+| --- | --- |
+| `scripts/audit_cache_drift.py` | Recompute sampled listings from scratch and compare with stored components |
+| `scripts/bench_fast_path.py` | Parity check and timings, fast path against SQLite (needs numpy and scipy) |
+| `scripts/generate_heatmap_scores.py` | Regenerate `frontend/public/heatmap/*.json` |
+| `scripts/repair_park_geometry.py` | Replace degenerate park outlines in the Parks feed with OpenStreetMap geometry |
+| `scripts/repair_geocodes.py` | Correct listing coordinates that disagree with the PLUTO address |
+| `scripts/migrate_geo_types.py` | One-time migration for databases created before geo columns were typed |
 
-## Monetization Model
+## The dimensions
 
-**Primary:**
-- 60-day Hunt Pass
-- Premium positioning
-- High-signal renter focus
+Groups are the unit of weighting in the composite. "Baseline" means the
+score is a percentile of the frozen citywide (or listing-population)
+distribution once one has been built.
 
-**Future:**
-- Concierge tier
-- Commute optimization add-on
-- Advanced negotiation insights
+| Dimension | Group | What is measured | Scale |
+| --- | --- | --- | --- |
+| `deal` | value | Rent against comparable listings (same neighborhood and bed count): price, $/sqft, size, tenant tenure estimated from relist history, fresh price cuts | baseline |
+| `unit_amenities` | value | Weighted count of in-unit and building amenities | baseline |
+| `transit` | access | Walk to the nearest subway entrance, lines within 800 m (lines that reach the Manhattan core count more), bus routes, penalty for crossing major roads | absolute |
+| `crime` | safety | NYPD complaints within 400 m by severity, offense and premise type, plus shootings, per 1,000 households | baseline |
+| `street_danger` | safety | Pedestrian and cyclist crash injuries within 300 m, weighted by whether the crash is on the listing's own street or on an arterial it only crosses, per 1,000 households | baseline |
+| `shelter` | safety | 311 encampment complaints within 200 m; homeless-services facilities and NYCHA developments within 800 m | baseline |
+| `noise` | neighborhood | 311 noise complaints within 150 m per 1,000 households, with a liquor-license density prior | baseline |
+| `road_exposure` | neighborhood | Highway distance (reduced when rows of buildings stand in between), arterial density, truck routes, elevated trains, bus corridors, firehouses | baseline |
+| `air_quality` | neighborhood | PM2.5 and NO2 for the community district, adjusted for nearby major roads | absolute |
+| `parks` | neighborhood | Best nearby park by distance, size tier and type | baseline |
+| `greenery` | neighborhood | Street trees, canopy and community gardens | baseline |
+| `convenience` | neighborhood | Groceries and supermarkets by size, pharmacies, gyms, laundromats and restaurants within 500 m | baseline |
+| `schools` | neighborhood | Best public high school within about 1.5 km by attendance and student safety; counted only in "kids mode" | baseline |
+| `building_violations` | building | Open DOB and HPD violations weighted by type, class and age, per unit | baseline |
+| `management` | building | HPD complaints across the owner's portfolio per unit, own-building heat complaints, HPD litigation, evictions | baseline |
+| `pest` | building | Rodent inspection failures and 311 rodent complaints within 100 m, plus the building's HPD pest complaints | baseline |
+| `bedbug` | building | Annual bedbug filings per unit, re-infestations weighted double, adjacent buildings included | baseline |
+| `flood_risk` | flag | FEMA flood-zone flags on the nearest tax lot | flag |
+| `rent_stabilized` | flag | Built before 1974 with six or more units (a building-level heuristic) | flag |
 
----
+The composite (`api/composite.py`) averages scored dimensions within each
+group and averages the groups with equal weights. A user can boost up to two
+groups and ignore individual dimensions. Missing dimensions are left out
+rather than counted as zero. The result is shown as its percentile among
+active listings, and a bottom-tier score on bedbugs, violations, management,
+pests or crime caps it at 55.
 
-## Success Criteria
+These scores are built from complaint, inspection and enforcement records,
+which reflect who reports and who gets inspected as well as actual
+conditions. The corrections above reduce that; they do not remove it.
 
-The product succeeds if:
+## Listing ingestion
 
-- Users stop browsing multiple platforms.
-- Users act faster on high-signal listings.
-- Users save money or avoid poor micro-locations.
-- Users confidently see when no good options exist.
+A listing source is anything that yields listings in the canonical shape.
+The contract is in `apthunt/ingest/__init__.py`:
 
-**This is not a listing site. This is NYC rental intelligence.**
+- Subclass `ListingSource`, give it a `name`, and yield one dict per
+  currently available listing from `fetch()`. `source_id`, `price`, `beds`,
+  `lat` and `lon` are required; any key outside the canonical field list is
+  an error.
+- Register it with `register_source` and run
+  `python3 ingest.py --source <name>`.
+- The source never touches the database. `sync()` owns the schema, upserts
+  on `(source, source_id)`, sets `first_seen_at` on first sight and
+  `last_seen_at` on every sight, marks listings the source no longer reports
+  as inactive, and writes one `sync_log` row per run. A listing that fails
+  validation fails the whole run.
+
+The one source included is `sample` (`apthunt/ingest/sample.py`):
+deterministic for a given seed and date, with invented street names, rents,
+concessions and price histories.
+
+Canonical fields:
+
+| Group | Fields |
+| --- | --- |
+| Provenance | `source_id`, `url` |
+| Location | `address`, `unit`, `neighborhood`, `borough`, `zip`, `lat`, `lon` |
+| Cost | `price`, `net_effective_price`, `no_fee`, `months_free`, `lease_term_months` |
+| Unit | `beds`, `baths`, `sqft`, `amenities`, `pets_allowed`, `furnished`, `description` |
+| Media, availability | `photos`, `available_at` |
+| Contact | `broker_name`, `broker_firm`, `broker_phone`, `broker_email` |
+| History | `price_history` (list of `{date, price, event}`), `relist_count` |
+| Building | `building_year`, `building_stories` |
+| Raw payload | `raw_json`; the deal scorer reads `price_delta`, `price_changed_at` and `months_free` from it when present |
+| Managed by `sync()` | `id`, `source`, `first_seen_at`, `last_seen_at`, `status` |
+
+## API
+
+`uvicorn api.app:app` serves:
+
+| Endpoint | Returns |
+| --- | --- |
+| `GET /api/listings` | Paginated feed. Filters: beds, price range, neighborhoods, rent stabilized, minimum composite, minimum sqft, available before, amenities, data availability. Sort: composite, price, a group or a dimension. Weights: `priorities`, `ignore`, `kids_mode` |
+| `GET /api/listings/{id}` | One listing with score components, a one-sentence explanation per dimension, flags, transit stations, nearby places, similar and "also consider" listings, neighborhood peer context and building records |
+| `GET /api/neighborhoods`, `GET /api/amenities` | Values for the filter controls |
+| `GET /api/health` | Database summary; 503 when there are no active listings with coordinates |
+
+Neighborhood peer context appears only where at least 20 listings in the
+neighborhood have a score for the dimension, which the default 300-listing
+sample does not reach. Building records need the HPD, DOB and DOF datasets.
+
+Environment variables:
+
+| Variable | Used by | Meaning |
+| --- | --- | --- |
+| `APTHUNT_DB_PATH` | everything | SQLite file (default `apthunt.db` in the repository root) |
+| `APTHUNT_REQUIRE_LISTINGS` | API | `false` lets the API start on a database with no visible listings |
+| `CORS_ORIGINS` | API | Extra allowed origins, comma-separated (`http://localhost:3000` is always allowed) |
+| `SODA_APP_TOKEN` | data downloads | Socrata app token |
+| `NEXT_PUBLIC_API_URL` | web app | Backend that `/api/*` is proxied to (default `http://localhost:8000`) |
+| `APTHUNT_DB_URL` | `build.sh` | Pre-built database to download instead of building the demo one |
+
+## Web app and dashboard
+
+`frontend/` is the main client; see `frontend/README.md`. Its interface
+carries the project's working brand, RESIDE; the Python package and API are
+named `apthunt`.
+
+`dashboard.py` is a Streamlit admin view over the same database (map, score
+distributions, neighborhood table, listing detail):
+
+```bash
+streamlit run dashboard.py
+```
+
+## Repository layout
+
+```
+apthunt/ingest/      listing source interface, canonical schema, sync, sample generator
+apthunt/scoring/     Scorer interface, engine, 19 scorers, baselines, shared statistics
+apthunt/data/        dataset registry and downloads, block cache, in-memory indexes, GTFS loader
+api/                 FastAPI app: feed, detail, composite, flags, explanations, comparables
+frontend/            Next.js web app; public/heatmap/ holds the precomputed score grids
+scripts/             baselines, composites, validation, heatmaps, data repairs, demo bootstrap
+tests/               offline tests: generator, sync semantics, offline scorers, API
+data/                MTA subway GTFS files (see below)
+ingest.py  run_scores.py  manage_data.py     command-line entry points
+dashboard.py         Streamlit admin dashboard
+start.sh             local dev servers
+build.sh  render.yaml                        Render deployment
+design.html  color.html                      static look-and-feel mockups (dark and light palette) with placeholder content
+ARCHITECTURE.md  BLOCK_QUALITY_SCORE.md  UI_PLAN.md   early design documents, each with a note on what changed
+.claude/launch.json  dev-server launch configuration for Claude Code
+.github/workflows/ci.yml                     GitHub Actions workflow (see "Continuous integration")
+```
+
+## Data sources and licences
+
+Downloaded at run time, not redistributed here:
+
+- [NYC Open Data](https://opendata.cityofnewyork.us/): PLUTO, NYPD
+  complaints, shootings and collisions, 311 service requests, DOB and HPD
+  violations, complaints, litigation and registrations, marshal evictions,
+  bedbug filings, rodent inspections, parks, street trees, community
+  gardens, the Facilities Database, NYCHA buildings, truck routes, the
+  Community Air Survey and others. The dataset ids are in
+  `apthunt/data/data_store.py`.
+- [New York State Open Data](https://data.ny.gov/): MTA subway entrances,
+  stations and bus stops, retail food stores, liquor licences.
+- [OpenStreetMap](https://www.openstreetmap.org/copyright) through the
+  Overpass API: shops and amenities, major roads, and park outlines used to
+  repair the Parks feed. © OpenStreetMap contributors, available under the
+  Open Database License.
+
+Included in the repository:
+
+- `data/stops.txt`, `routes.txt`, `trips.txt` and `stop_times.txt` are four
+  files of the MTA's static subway GTFS feed, added in February 2026 and
+  included as published. They were obtained from the MTA and are
+  redistributed under the
+  [MTA data feed terms](https://www.mta.info/developers/terms-and-conditions).
+  This project is not affiliated with or endorsed by the MTA. The files give
+  each station its routes for the detail view and let the transit scorer run
+  without a download. `stop_times.txt` is 36 MB.
+- `frontend/public/heatmap/*.json` are 120 × 123 grids of scores for crime,
+  noise, pests, transit, green space and convenience, generated in July 2026
+  by `scripts/generate_heatmap_scores.py` from the sources above. They are
+  statistics derived from those datasets. The transit, green-space and
+  convenience layers include OpenStreetMap-derived inputs, so OpenStreetMap's
+  attribution and Open Database License terms apply to them.
+- The web map uses CARTO basemap tiles (© OpenStreetMap contributors,
+  © CARTO), loaded from CARTO at run time.
+- `design.html` and `color.html` reference three Unsplash photos by URL.
+
+## Deployment
+
+`render.yaml` describes two Render services, the API and the web app.
+
+- `build.sh` makes sure a database exists: it downloads one from
+  `APTHUNT_DB_URL` when that is set, and otherwise builds the demo database
+  from the sample listings.
+- The build fails if the database is missing, is not valid SQLite, has no
+  `listings` table or has no listings.
+- The API refuses to start, and the health check returns `503`, when the
+  database has no active listings with coordinates.
+
+## Status
+
+Built: the ingestion interface and sync, the 19 scorers, citywide baselines,
+the validation and audit scripts, the API, the web app, heatmap generation,
+the Streamlit dashboard, a Render blueprint.
+
+Planned in the original design and not built:
+
+- Cross-source deduplication and scheduled sync. `sync()` does not diff
+  prices between runs or detect relists; price history and relist counts are
+  whatever the source supplies.
+- A survival model (how soon a listing will be gone).
+- Alerts by SMS, push or email.
+- Extracting amenities from description text; relist detection from photos.
+- Commute-time scoring; broker enrichment.
+
+## Background
+
+The project started from one idea: listing sites optimize for browsing and
+engagement, and a renter needs the opposite, which the first README called
+decision compression: a short ranked list with the reasons attached. Two
+design rules from that first sketch still shape the code. No single
+source owns the data model: sources are adapters, and the canonical schema
+is driven by what the scoring needs. And scores are the same for every
+user; preferences change weights and filters, never the scores themselves.
+
+`ARCHITECTURE.md`, `BLOCK_QUALITY_SCORE.md` and `UI_PLAN.md` are the design
+documents from February 2026. Each opens with a note on what was built
+differently.

@@ -29,7 +29,12 @@ from api.models import (
     Trends,
 )
 from api.flags import generate_flags
-from api.composite import compute_composite, compute_group_scores, SCORE_KEYS
+from api.composite import (
+    SCORE_GROUPS,
+    SCORE_KEYS,
+    compute_composite,
+    compute_group_scores,
+)
 from api.neighborhood import (
     categorize_amenities,
     extract_pet_policy,
@@ -43,9 +48,6 @@ router = APIRouter(tags=["listings"])
 
 
 # ── Helpers ─────────────────────────────────────────────────────
-
-_PHOTO_PREFIX = "https://photos.example.com/"
-
 
 def _days_on_market(first_seen: str | None) -> int | None:
     """Compute days since first_seen_at, or None if missing."""
@@ -62,31 +64,17 @@ def _days_on_market(first_seen: str | None) -> int | None:
 
 
 def _parse_photos(raw: Optional[str]) -> list[str]:
-    """Parse photos JSON and rewrite source photo URLs to local API paths."""
+    """Parse the photos JSON column into a list of image URLs."""
     if not raw:
         return []
     try:
         parsed = json.loads(raw)
         if not isinstance(parsed, list):
             return []
-        return [
-            f"/api/photos/{url.removeprefix(_PHOTO_PREFIX)}"
-            if isinstance(url, str) and url.startswith(_PHOTO_PREFIX)
-            else url
-            for url in parsed
-        ]
+        return [url for url in parsed if isinstance(url, str)]
     except (json.JSONDecodeError, TypeError):
         return []
 
-
-# ── Grade curve ─────────────────────────────────────────────────
-#
-# Raw scores are on a 0-100 scale where the median is ~50.
-# Psychologically 50 reads as an F.  A concave power curve pushes
-# the median into B-/C+ territory so averages "feel" acceptable
-# and only genuinely bad areas look bad.
-#
-#   raw 0 → 0  |  25 → 55  |  50 → 76  |  75 → 90  |  100 → 100
 
 def _row_to_scores(row: dict) -> dict[str, float | None]:
     """Extract score values from a DB row into a flat dict.
@@ -426,36 +414,34 @@ def _row_to_listing(
 
 # ── Sort column mapping ────────────────────────────────────────
 
+def _group_sort_sql(group: str, exclude_schools: bool = False) -> str:
+    """SQL for a group's score: the mean of its scored (non-NULL)
+    dimensions, NULL when none is scored — the same rule as
+    compute_group_scores(), so sorting by a group orders listings by the
+    group score the API reports."""
+    cols = [
+        f"{dim}_score" for dim in SCORE_GROUPS[group]
+        if not (exclude_schools and dim == "schools")
+    ]
+    total = " + ".join(f"COALESCE({c}, 0)" for c in cols)
+    scored = " + ".join(f"({c} IS NOT NULL)" for c in cols)
+    return f"(({total}) * 1.0 / NULLIF({scored}, 0))"
+
+
 _SORT_MAP: dict[str, str] = {
     "composite": "",  # computed — handled specially
     "price": "price",
     # Individual dimensions
-    "deal": "deal_score",
-    "transit": "transit_score",
-    "crime": "crime_score",
-    "noise": "noise_score",
-    "building_violations": "building_violations_score",
-    "parks": "parks_score",
-    "schools": "schools_score",
-    "management": "management_score",
-    "convenience": "convenience_score",
-    "unit_amenities": "unit_amenities_score",
-    "shelter": "shelter_score",
-    "pest": "pest_score",
-    "greenery": "greenery_score",
-    # Group-level sorts (average of member dimensions)
-    "value": "(COALESCE(deal_score,0) + COALESCE(unit_amenities_score,deal_score)) / 2.0",
-    "access": "transit_score",
-    "neighborhood": "(COALESCE(convenience_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0) + COALESCE(schools_score,0)) / 4.0",
-    "neighborhood_no_schools": "(COALESCE(convenience_score,0) + COALESCE(parks_score,0) + COALESCE(greenery_score,0)) / 3.0",
-    "safety": "(COALESCE(crime_score,0) + COALESCE(noise_score,0) + COALESCE(shelter_score,0)) / 3.0",
-    "building": "(COALESCE(building_violations_score,0) + COALESCE(management_score,0) + COALESCE(pest_score,0)) / 3.0",
+    **{key: f"{key}_score" for key in SCORE_KEYS},
+    # Group-level sorts (mean of the group's scored dimensions)
+    **{group: _group_sort_sql(group) for group in SCORE_GROUPS},
+    "neighborhood_no_schools": _group_sort_sql("neighborhood", exclude_schools=True),
 }
 
 
 # ── Score coverage SQL helper ──────────────────────────────────
 
-_SCORE_DB_COLS = [f"{k}_score" for k in SCORE_KEYS]  # 13 columns
+_SCORE_DB_COLS = [f"{k}_score" for k in SCORE_KEYS]
 
 
 def _coverage_sql(exclude_schools: bool) -> str:

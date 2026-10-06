@@ -12,9 +12,10 @@
 
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import dynamic from "next/dynamic";
 import { useStore } from "@/lib/store";
+import { useMounted } from "@/lib/useMounted";
 import type { Listing } from "@/lib/types";
 
 // Dynamically import MapContainer + MapContent (no SSR — Leaflet needs window)
@@ -30,6 +31,16 @@ const FOCUSED_ZOOM = 15;
 
 export default function MapOverlay() {
   const mapOpen = useStore((s) => s.mapOpen);
+  const mounted = useMounted();
+
+  // The panel is mounted only while the map is open, so its tile-ready
+  // state starts over each time the map re-opens.
+  if (!mapOpen || !mounted) return null;
+
+  return <MapOverlayPanel />;
+}
+
+function MapOverlayPanel() {
   const setMapOpen = useStore((s) => s.setMapOpen);
   const activeTab = useStore((s) => s.activeTab);
   const viewMode = useStore((s) => s.viewMode);
@@ -45,17 +56,7 @@ export default function MapOverlay() {
   const addToShortlist = useStore((s) => s.addToShortlist);
   const mapColorOverlay = useStore((s) => s.mapColorOverlay);
 
-  const [mounted, setMounted] = useState(false);
   const [tilesReady, setTilesReady] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  // Reset tile-ready state when map re-opens
-  useEffect(() => {
-    if (mapOpen) setTilesReady(false);
-  }, [mapOpen]);
 
   const handleTilesLoaded = useCallback(() => setTilesReady(true), []);
 
@@ -109,8 +110,6 @@ export default function MapOverlay() {
     }
     return { initialCenter: NYC_CENTER, initialZoom: DEFAULT_ZOOM };
   }, [focusedId, displayListings]);
-
-  if (!mapOpen || !mounted) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-[#FAF7F2]">

@@ -32,6 +32,13 @@ if [[ "${1:-}" == "--kill" ]]; then
   exit 0
 fi
 
+# ── First run: no database yet → build the demo one ─────────────
+DB_FILE="${APTHUNT_DB_PATH:-$DIR/apthunt.db}"
+if [[ ! -f "$DB_FILE" ]]; then
+  echo "▸ No database at $DB_FILE — building one from synthetic sample listings"
+  "$DIR/scripts/bootstrap_sample.sh"
+fi
+
 # ── Start backend (FastAPI + uvicorn) ───────────────────────────
 echo "▸ Starting backend on :8000"
 python3 -m uvicorn api.app:app --reload --host 127.0.0.1 --port 8000 &

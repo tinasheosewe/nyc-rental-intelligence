@@ -1,5 +1,26 @@
 # Architecture
 
+> **Status, October 2026.** This is the design sketch from the first day of
+> the project (26 February 2026). The split it describes still holds:
+> ingestion writes canonical rows, scoring computes user-agnostic signals one
+> dimension at a time, and serving combines them with per-user weights. What
+> changed or was never built:
+>
+> - Survival probability and notifications were not built.
+> - Ingestion is a command (`ingest.py`), not a scheduled job. `sync()` tracks
+>   `first_seen_at` / `last_seen_at` and marks listings a source stops
+>   reporting as inactive; price history is whatever the source supplies.
+> - There are 17 scored dimensions rather than the deal score and five block
+>   signals listed below, and flood risk became a flag.
+> - The composite is not a dot product of raw signals. Dimensions are
+>   averaged within five groups and the groups are averaged with equal
+>   weights; a user can boost two groups and ignore dimensions. The value
+>   shown is the listing's percentile among active listings. The default
+>   feed sorts on a composite precomputed by `scripts/compute_composites.py`;
+>   requests with custom weights compute and sort per request.
+>
+> The README describes the system as built.
+
 ## System Boundaries
 
 The system is composed of two independent parts and a thin notification layer.

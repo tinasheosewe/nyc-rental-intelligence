@@ -4,12 +4,16 @@ APTHUNT Admin Dashboard
 Streamlit-based admin dashboard for reviewing, filtering, and visualizing
 NYC rental listings and their computed scores.
 
+Reads the database at APTHUNT_DB_PATH (default: apthunt.db next to this
+file). Build one first with scripts/bootstrap_sample.sh.
+
 Run:
     streamlit run dashboard.py
     # or, if streamlit is not on PATH:
     python3 -m streamlit run dashboard.py
 """
 
+import os
 import pathlib
 import sqlite3
 
@@ -23,12 +27,16 @@ import streamlit as st
 # Config
 # ---------------------------------------------------------------------------
 
-DB_PATH = pathlib.Path(__file__).resolve().parent / "apthunt.db"
+DB_PATH = pathlib.Path(
+    os.environ.get("APTHUNT_DB_PATH")
+    or pathlib.Path(__file__).resolve().parent / "apthunt.db"
+)
 
 # All scorer columns present or expected.  As new scorers land, just append
 # here — the rest of the dashboard adapts automatically.
 SCORE_COLUMNS = [
     "deal_score",
+    "unit_amenities_score",
     "transit_score",
     "crime_score",
     "noise_score",
@@ -37,14 +45,19 @@ SCORE_COLUMNS = [
     "schools_score",
     "rent_stabilized_score",
     "management_score",
-    "amenity_score",
+    "convenience_score",
     "shelter_score",
     "pest_score",
     "greenery_score",
+    "bedbug_score",
+    "street_danger_score",
+    "air_quality_score",
+    "road_exposure_score",
 ]
 
 COMPONENT_COLUMNS = {
     "deal_score": ["comp_median", "comp_set_size", "comp_scope"],
+    "unit_amenities_score": ["unit_amenities_premium", "unit_amenities_standard", "unit_amenities_total"],
     "transit_score": ["transit_station_count", "transit_routes_served", "transit_nearest_m"],
     "crime_score": ["crime_felony_count", "crime_misdemeanor_count", "crime_violation_count", "crime_weighted_total", "crime_trend_ratio", "crime_trend_direction"],
     "noise_score": ["noise_complaint_count", "noise_trend_ratio", "noise_trend_direction"],
@@ -53,15 +66,20 @@ COMPONENT_COLUMNS = {
     "schools_score": ["school_name", "school_rating"],
     "rent_stabilized_score": ["rent_stabilized", "building_year"],
     "management_score": ["mgmt_owner", "mgmt_owner_buildings", "mgmt_owner_units", "mgmt_complaints", "mgmt_hpd_heat", "mgmt_hpd_plumbing", "mgmt_hpd_paint", "mgmt_hpd_safety", "mgmt_heat_complaints", "mgmt_litigations", "mgmt_evictions", "mgmt_complaints_per_unit"],
-    "amenity_score": ["amenity_grocery", "amenity_pharmacy", "amenity_gym", "amenity_laundry", "amenity_dining", "amenity_total"],
+    "convenience_score": ["convenience_grocery", "convenience_pharmacy", "convenience_gym", "convenience_laundry", "convenience_dining", "convenience_total"],
     "shelter_score": ["shelter_count", "shelter_nearest_m", "shelter_nearest_name", "shelter_weighted_total", "project_count", "project_nearest_m", "project_nearest_name"],
     "pest_score": ["pest_hpd_count", "pest_rodent_count", "pest_total", "pest_units", "pest_per_unit"],
     "greenery_score": ["greenery_tree_count", "greenery_canopy_score", "greenery_garden_count"],
+    "bedbug_score": ["bedbug_filings", "bedbug_infested_total", "bedbug_reinfested_total", "bedbug_rate"],
+    "street_danger_score": ["street_danger_injuries", "street_danger_deaths", "street_danger_rate_per_khh"],
+    "air_quality_score": ["air_quality_pm25", "air_quality_no2", "air_quality_index"],
+    "road_exposure_score": ["road_exposure_hwy_dist_m", "road_exposure_arterial", "road_exposure_truck", "road_exposure_index"],
 }
 
 # Pretty labels
 SCORE_LABELS = {
     "deal_score": "Deal",
+    "unit_amenities_score": "Unit Amenities",
     "transit_score": "Transit",
     "crime_score": "Crime",
     "noise_score": "Noise",
@@ -70,32 +88,47 @@ SCORE_LABELS = {
     "schools_score": "School Quality",
     "rent_stabilized_score": "Rent Stabilized",
     "management_score": "Management",
-    "amenity_score": "Amenities",
+    "convenience_score": "Convenience",
     "shelter_score": "Shelters & Projects",
     "pest_score": "Pests",
     "greenery_score": "Greenery",
+    "bedbug_score": "Bedbugs",
+    "street_danger_score": "Street Safety",
+    "air_quality_score": "Air Quality",
+    "road_exposure_score": "Road Noise",
 }
 
-# Methodology descriptions — shown as help text on the Score Analysis tab
+# What each score measures — shown as help text on the Score Analysis tab.
+# Higher is always better. How the raw measure becomes a 0-100 score is in
+# each scorer's docstring (apthunt/scoring/).
 SCORE_DESCRIPTIONS = {
-    "deal_score": "Z-score vs comp-set median. 50 = average deal; higher = below-market. Includes price, $/sqft, sqft, and tenant tenure (when available). Tenure estimated from listing relist history — rapid relists clustered to avoid false short-lease signals.",
-    "transit_score": "Subway stations & routes within 800 m. Linear: 12 pts/station + 3 pts/route, max 100.",
-    "crime_score": "NYPD complaints within 400 m (12 mo), severity-weighted. 50 = median; 100 = zero crime. Includes trend.",
-    "noise_score": "311 quality-of-life complaints within 300 m (12 mo). 50 = median; 100 = zero complaints. Includes trend.",
-    "building_violations_score": "Active building violations per unit, percentile-ranked. 50 = median; higher = fewer violations.",
+    "deal_score": "Value against comparable listings (same neighborhood and bed count): price, $/sqft, size, estimated tenant tenure and fresh price cuts. Tenure estimated from listing relist history — rapid relists clustered to avoid false short-lease signals.",
+    "unit_amenities_score": "In-unit and building amenities from the listing. Premium ones (washer/dryer, dishwasher, private outdoor space) weigh more than standard ones (doorman, elevator, gym).",
+    "transit_score": "Walk to the nearest subway entrance (exponential decay, 400 m scale), scaled by how many lines stop within 800 m, plus a small bonus for bus routes within 300 m.",
+    "crime_score": "NYPD complaints within 400 m, weighted by severity, recency and distance, plus shootings, per 1,000 households. Includes trend.",
+    "noise_score": "311 noise complaints within 150 m (12 mo), weighted by recency and distance, per 1,000 households. Includes trend.",
+    "building_violations_score": "Open DOB and HPD violations on the building, weighted by severity, per residential unit.",
     "parks_score": "Size-weighted proximity. Each park scored by (1 \u2212 dist/reach) \u00d7 quality. Big parks reach further and score higher; best park wins.",
-    "schools_score": "Best nearby HS quality composite (attendance + safety). Score = quality × 100. Absolute: 95 means 95% attendance/safety.",
+    "schools_score": "Best nearby public high school by attendance rate and share of students who feel safe (within ~1.5 km).",
     "rent_stabilized_score": "Binary flag: likely rent-stabilized if built pre-1974 with 6+ units (PLUTO heuristic).",
-    "management_score": "Owner/management company HPD complaint rate across portfolio, percentile-ranked.",
-    "amenity_score": "Absolute convenience score: grocery, pharmacy, gym, laundry, dining within 500 m. sqrt diminishing-returns curve per category, max 100.",
-    "shelter_score": "Homeless shelters/services and NYCHA public housing projects within 800 m, distance-weighted. 50 = median; 100 = none nearby. Inverted: fewer = better.",
-    "pest_score": "HPD pest complaints (building-level by BBL) + 311 rodent complaints (area-level within 100 m), normalised per residential unit, percentile-ranked. Fewer pests per unit = higher score.",
-    "greenery_score": "Absolute street-level greenery score: street trees (200 m), canopy coverage, and community gardens (500 m). sqrt diminishing-returns curve, max 100. Parks are a separate dimension.",
+    "management_score": "HPD complaints across the owner's portfolio per unit, plus the building's own heat complaints, HPD litigation and evictions.",
+    "convenience_score": "Groceries, supermarkets, pharmacies, gyms, laundromats and restaurants within 500 m, distance-weighted with diminishing returns per category.",
+    "shelter_score": "311 encampment complaints within 200 m, and homeless-services facilities and NYCHA developments within 800 m, distance-weighted. Inverted: less = better.",
+    "pest_score": "DOHMH rodent inspection results and 311 rodent complaints within 100 m, plus the building's own HPD pest complaints per unit.",
+    "greenery_score": "Street trees and their canopy within 200 m and community gardens within 500 m, distance-weighted. Parks are a separate dimension.",
+    "bedbug_score": "The building's annual bedbug filings (infested and re-infested units, recent years weigh more) per unit.",
+    "street_danger_score": "Pedestrian and cyclist crash injuries and deaths within 300 m (12 mo), weighted by distance and recency, per 1,000 households.",
+    "air_quality_score": "PM2.5 and NO2 for the community district (NYC Community Air Survey), nudged by the block's road exposure. Absolute scale, not a percentile.",
+    "road_exposure_score": "Road noise: distance to highways (less when rows of buildings stand in between), arterial traffic within 150 m, truck routes, elevated trains, bus corridors and firehouses.",
 }
 
-# Scoring method type — controls how scores are displayed and colored
+# Scoring method on a database WITHOUT baselines — controls how scores are
+# displayed and colored. Once scripts/build_baseline.py has frozen a
+# baseline for a dimension, that dimension is a percentile of the baseline
+# distribution instead (see score_method below).
 SCORE_METHODS = {
     "deal_score": "zscore",
+    "unit_amenities_score": "percentile",
     "transit_score": "linear",
     "crime_score": "median_norm",
     "noise_score": "median_norm",
@@ -104,11 +137,19 @@ SCORE_METHODS = {
     "schools_score": "absolute",
     "rent_stabilized_score": "binary",
     "management_score": "percentile",
-    "amenity_score": "absolute",
+    "convenience_score": "absolute",
     "shelter_score": "median_norm",
     "pest_score": "percentile",
     "greenery_score": "absolute",
+    "bedbug_score": "absolute",
+    "street_danger_score": "absolute",
+    "air_quality_score": "absolute",
+    "road_exposure_score": "absolute",
 }
+
+# These never go through a baseline: transit and air quality are absolute
+# by design, rent stabilization is a flag.
+NEVER_BASELINED = {"transit_score", "air_quality_score", "rent_stabilized_score"}
 
 # Human-readable component labels
 COMPONENT_LABELS = {
@@ -155,12 +196,15 @@ COMPONENT_LABELS = {
     "mgmt_litigations": "HPD litigations (open)",
     "mgmt_evictions": "Eviction filings (building)",
     "mgmt_complaints_per_unit": "Complaints per unit",
-    "amenity_grocery": "Grocery / convenience",
-    "amenity_pharmacy": "Pharmacies",
-    "amenity_gym": "Gyms / fitness",
-    "amenity_laundry": "Laundromats",
-    "amenity_dining": "Restaurants & caf\u00e9s",
-    "amenity_total": "Weighted amenity total",
+    "convenience_grocery": "Grocery / convenience",
+    "convenience_pharmacy": "Pharmacies",
+    "convenience_gym": "Gyms / fitness",
+    "convenience_laundry": "Laundromats",
+    "convenience_dining": "Restaurants & caf\u00e9s",
+    "convenience_total": "Weighted convenience total",
+    "unit_amenities_premium": "Premium amenities",
+    "unit_amenities_standard": "Standard amenities",
+    "unit_amenities_total": "Weighted amenity total",
     "shelter_count": "Shelters within 800 m",
     "shelter_nearest_m": "Nearest shelter (m)",
     "shelter_nearest_name": "Nearest shelter",
@@ -177,6 +221,20 @@ COMPONENT_LABELS = {
     "greenery_canopy_score": "Canopy score (diameter-weighted)",
     "greenery_garden_count": "Community gardens within 500 m",
     "greenery_park_count": "Parks within 500 m",
+    "bedbug_filings": "Bedbug filings on record",
+    "bedbug_infested_total": "Infested units (all filings)",
+    "bedbug_reinfested_total": "Re-infested units (all filings)",
+    "bedbug_rate": "Weighted bedbug rate per unit",
+    "street_danger_injuries": "Pedestrian + cyclist injuries (300 m, 12 mo)",
+    "street_danger_deaths": "Pedestrian + cyclist deaths (300 m, 12 mo)",
+    "street_danger_rate_per_khh": "Weighted casualties per 1,000 households",
+    "air_quality_pm25": "PM2.5 (\u00b5g/m\u00b3, annual)",
+    "air_quality_no2": "NO2 (ppb, annual)",
+    "air_quality_index": "Combined air index",
+    "road_exposure_hwy_dist_m": "Nearest highway (m)",
+    "road_exposure_arterial": "Arterial traffic density",
+    "road_exposure_truck": "Truck-route proximity",
+    "road_exposure_index": "Combined road-noise index",
 }
 
 
@@ -210,6 +268,26 @@ def active_score_columns(df: pd.DataFrame) -> list[str]:
     return [c for c in SCORE_COLUMNS if c in df.columns and df[c].notna().any()]
 
 
+@st.cache_data(ttl=60)
+def baselined_score_columns() -> set[str]:
+    """Score columns whose dimension has a frozen baseline distribution."""
+    conn = sqlite3.connect(str(DB_PATH))
+    try:
+        rows = conn.execute("SELECT dimension FROM baseline_dist").fetchall()
+    except sqlite3.OperationalError:
+        rows = []  # no baseline built yet
+    finally:
+        conn.close()
+    return {f"{dimension}_score" for (dimension,) in rows} - NEVER_BASELINED
+
+
+def score_method(col: str) -> str:
+    """How a score column is computed in THIS database."""
+    if col in baselined_score_columns():
+        return "percentile"
+    return SCORE_METHODS.get(col, "absolute")
+
+
 # ---------------------------------------------------------------------------
 # Page setup
 # ---------------------------------------------------------------------------
@@ -222,6 +300,13 @@ st.set_page_config(
 )
 
 st.title("🏠 APTHUNT Admin Dashboard")
+
+if not DB_PATH.is_file():
+    st.error(
+        f"No database at {DB_PATH}. Build one with "
+        "`./scripts/bootstrap_sample.sh`, or point APTHUNT_DB_PATH at an existing file."
+    )
+    st.stop()
 
 df_raw = load_listings()
 
@@ -278,7 +363,7 @@ binary_filters: dict[str, str] = {}   # col -> "only_yes" | "only_no" | "all"
 scores = active_score_columns(df_raw)
 for col in scores:
     label = SCORE_LABELS.get(col, col)
-    method = SCORE_METHODS.get(col, "linear")
+    method = score_method(col)
 
     if method == "binary":
         # Checkboxes for binary scores instead of a slider
@@ -344,7 +429,7 @@ if "deal_score" in df.columns and df["deal_score"].notna().any():
     k4.metric("Avg Deal Score", f"{df['deal_score'].mean():.1f}")
 else:
     k4.metric("Avg Deal Score", "—")
-if "flood_risk_score" in df.columns:
+if "flood_risk_score" in df.columns and df["flood_risk_score"].notna().any():
     flood_pct = (df["flood_risk_score"] == 0).sum()
     k5.metric("In Flood Zone", f"{flood_pct}")
 else:
@@ -409,7 +494,7 @@ with tab_scores:
         for i, col_name in enumerate(scores):
             with cols[i % len(cols)]:
                 label = SCORE_LABELS.get(col_name, col_name)
-                method = SCORE_METHODS.get(col_name, "linear")
+                method = score_method(col_name)
                 desc = SCORE_DESCRIPTIONS.get(col_name, "")
                 scored = df[col_name].dropna()
                 if scored.empty:
@@ -435,7 +520,10 @@ with tab_scores:
                 else:
                     # Histogram for continuous scores
                     method_tag = {
-                        "percentile": "Percentile",
+                        "percentile": (
+                            "Baseline Percentile"
+                            if col_name in baselined_score_columns() else "Percentile"
+                        ),
                         "zscore": "Z-Score",
                         "median_norm": "Median-Normalized",
                         "linear": "Distance-Based",
@@ -621,7 +709,7 @@ with tab_table:
     }
     for s in scores:
         label = SCORE_LABELS.get(s, s)
-        method = SCORE_METHODS.get(s, "linear")
+        method = score_method(s)
         if method == "binary":
             col_config[s] = st.column_config.CheckboxColumn(
                 label, help=SCORE_DESCRIPTIONS.get(s, ""),
@@ -702,7 +790,7 @@ with tab_detail:
                 val = row.get(s)
                 if pd.notna(val):
                     label = SCORE_LABELS.get(s, s)
-                    method = SCORE_METHODS.get(s, "linear")
+                    method = score_method(s)
 
                     if method == "binary":
                         # Binary scores: show ✅/❌ with Yes/No
@@ -719,7 +807,7 @@ with tab_detail:
                         else:
                             color = "🔴"
                         pctile = int(round(val))
-                        st.markdown(f"{color} **{label}**: {pctile}th percentile")
+                        st.markdown(f"{color} **{label}**: percentile {pctile}")
                     else:
                         # Continuous scores (z-score, linear, median-norm)
                         if val >= 60:

@@ -1,9 +1,11 @@
 """
 Composite score computation.
 
-Groups 12 score dimensions into 5 categories, computes group averages,
-then produces a weighted composite based on group priority ranking.
-Top 2 groups get 3x, middle gets 2x, bottom 2 get 1x.
+Groups the score dimensions into 5 categories and averages each group
+over its scored dimensions. Groups carry equal weight; a caller may
+boost up to two of them (x2) and ignore individual dimensions. The raw
+composite is displayed as its percentile among active listings, and a
+bottom-tier score on a dealbreaker dimension caps the displayed value.
 """
 
 from __future__ import annotations

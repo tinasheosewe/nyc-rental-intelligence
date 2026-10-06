@@ -1,5 +1,37 @@
 # AptHunt — UI Design Plan
 
+> **Status, October 2026.** This is the UI plan written before the frontend
+> existed (28 February 2026). Most of its surfaces were built: feed and scan
+> views, watchlist and shortlist, compare with table, flags and radar tabs, a
+> map with overlays, the filter sheet, settings and the shortlist tray. The
+> result differs from the plan in these ways:
+>
+> - Layout: on desktop the app is three panels (list, map, detail) with the
+>   map always visible. The full-width feed / scan canvas and the top bar
+>   remain on small screens only.
+> - Dimensions: 17 in five groups (value, access, neighborhood, safety,
+>   building), not 11. The sort chips are Composite plus the five groups, and
+>   compare works on groups.
+> - Weights: the drag-to-rank priority list was replaced by "boost up to two
+>   groups" and "ignore dimensions". Saved configs and accounts were not
+>   built.
+> - Scores are shown as tier labels ("Very Safe", "Quiet") with the numbers
+>   in the breakdowns.
+> - Theme: light cream and amber only, with sky / violet / orange / red score
+>   colors. There is no dark mode.
+> - Map: Leaflet on a CARTO basemap. The overlays are precomputed citywide
+>   grids for crime, noise, transit, green space, convenience and pests;
+>   there is no flood layer and there are no amenity markers.
+> - Not built: drag interactions (reordering, drag-to-compare, long-press)
+>   and batch actions other than compare. Of the listed transitions, the feed
+>   slide and the sheet and modal transitions exist; the card-to-grid morph,
+>   cards flying into the compare table and the tray animations do not.
+> - The response shape under "Data Requirements" is an early sketch;
+>   `api/models.py` is the current one. Deployment is a Render blueprint
+>   (`render.yaml`), not Vercel plus Railway or Fly.io.
+>
+> `frontend/README.md` describes the app as built.
+
 ## Design Philosophy
 
 **Sleek, modern, simple, elegant.** AptHunt is not a search engine — it's a scorecard feed. We pre-score every listing across 11 dimensions and present them ranked. Users triage, curate, and compare with depth — not volume.

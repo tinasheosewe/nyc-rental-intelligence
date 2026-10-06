@@ -26,11 +26,17 @@ import { useEffect, useRef } from "react";
 import { useStore } from "./store";
 import type { QueueTab, ViewMode, FilterState, ScoreGroupKey, ScoreDimension } from "./types";
 import {
-  DEFAULT_FILTERS,
   SCORE_GROUP_KEYS,
   SCORE_DIMENSIONS,
   boostsToPriorities,
 } from "./types";
+
+declare global {
+  interface Window {
+    /** Listing id read from the URL, held until the listings have loaded. */
+    __pendingListingId?: string;
+  }
+}
 
 // ── Sentinel to prevent feedback loops ────────────────────────
 let suppressPopstate = false;
@@ -209,7 +215,7 @@ function hydrateFromUrl() {
 
   // Store pending listing for resolution after data loads
   if (state.listing) {
-    (window as any).__pendingListingId = state.listing;
+    window.__pendingListingId = state.listing;
   }
 
   // Load listings with the hydrated state
@@ -231,7 +237,6 @@ export function useUrlState() {
   const boosts = useStore((s) => s.boosts);
   const ignoredDims = useStore((s) => s.ignoredDims);
   const isLoading = useStore((s) => s.isLoading);
-  const setActiveTab = useStore((s) => s.setActiveTab);
   const setViewMode = useStore((s) => s.setViewMode);
   const setFeedIndex = useStore((s) => s.setFeedIndex);
 
@@ -240,13 +245,13 @@ export function useUrlState() {
     if (initialized.current) return;
     initialized.current = true;
     hydrateFromUrl();
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Resolve pending listing once data arrives ───────────────
   useEffect(() => {
-    const pending = (window as any).__pendingListingId;
+    const pending = window.__pendingListingId;
     if (!pending || isLoading || listings.length === 0) return;
-    delete (window as any).__pendingListingId;
+    delete window.__pendingListingId;
 
     const idx = listings.findIndex((l) => l.id === pending);
     if (idx >= 0) {
@@ -306,7 +311,7 @@ export function useUrlState() {
       if (needsReload) {
         // Store pending listing for resolution after data loads
         if (state.listing) {
-          (window as any).__pendingListingId = state.listing;
+          window.__pendingListingId = state.listing;
         }
         useStore.getState().loadListings();
       } else if (state.listing && prev.listings.length > 0) {

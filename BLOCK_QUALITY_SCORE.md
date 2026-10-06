@@ -1,5 +1,34 @@
 # Block Quality Score — Data Feasibility & Design
 
+> **Status, October 2026.** This is the data-feasibility study written before
+> any scorer existed (26 February 2026). It is kept for the reasoning. The
+> implementation went a different way:
+>
+> - No per-listing API calls. Datasets are downloaded in bulk into local
+>   SQLite tables (`apthunt/data/data_store.py`, 48 dataset definitions) and
+>   queried there, so the "Query Examples" and the API-call estimate under
+>   "Caching Strategy" no longer apply.
+> - There is no single weighted Block Quality Score, and the weights in the
+>   table below are not what the composite uses. Each dimension is stored on
+>   its own and the API combines them by group (`api/composite.py`).
+> - Raw metrics are not normalized against a citywide median. Incident
+>   counts become per-household or per-unit rates built with distance
+>   kernels and recency decay, and most dimensions are mapped to percentiles
+>   of a frozen citywide baseline (`apthunt/scoring/baseline.py`). Radii
+>   differ from the table (noise uses 150 m, for example).
+> - Block statistics are cached per geohash-8 cell (about 38 m), and
+>   building-level statistics per tax lot, not per geohash-7 cell.
+> - "Development Trend" and "Zoning & Density" were not built. Active DOB
+>   permits appear only as an informational component of the building score.
+>   Flood risk is a flag, not a weighted component. Schools, listed under
+>   open questions, became a dimension.
+> - Shapely is not used; park geometry is handled in plain Python.
+> - The GTFS URL below is the one used at the time. The scorers now read
+>   subway entrances, stations and bus stops from the State open-data portal
+>   and keep the bundled GTFS files as a fallback.
+>
+> The README lists the dimensions and data sources as built.
+
 ## Summary
 
 The Block Quality Score is a composite numeric rating (0–100) for the

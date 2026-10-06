@@ -157,6 +157,8 @@ class CrimeScorer(Scorer):
         # and YTD upstream feeds into one ds_crime table (deduped, one date
         # column). Scorers never see the seam.
         self._store.ensure_downloaded("crime", quiet=True)
+        # Per-household rates divide by PLUTO residential units.
+        self._store.ensure_downloaded("pluto", quiet=True)
 
         # Parameters
         RADIUS_M = 400

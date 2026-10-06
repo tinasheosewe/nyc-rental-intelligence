@@ -12,7 +12,7 @@
 
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useStore } from "@/lib/store";
 import type { ScoreDimension, ScoreGroupKey } from "@/lib/types";
 import {
@@ -37,13 +37,17 @@ export default function SettingsModal() {
   const [draftBoosts, setDraftBoosts] = useState<ScoreGroupKey[]>(boosts);
   const [draftIgnored, setDraftIgnored] = useState<ScoreDimension[]>(ignoredDims);
 
-  // Re-seed drafts from the store each time the panel opens.
-  useEffect(() => {
+  // Re-seed drafts from the store each time the panel opens. Done while
+  // rendering (comparing against the previous open flag) rather than in
+  // an effect, so the panel never renders a stale draft first.
+  const [wasOpen, setWasOpen] = useState(settingsOpen);
+  if (settingsOpen !== wasOpen) {
+    setWasOpen(settingsOpen);
     if (settingsOpen) {
-      setDraftBoosts(useStore.getState().boosts);
-      setDraftIgnored(useStore.getState().ignoredDims);
+      setDraftBoosts(boosts);
+      setDraftIgnored(ignoredDims);
     }
-  }, [settingsOpen]);
+  }
 
   const toggleBoost = (gk: ScoreGroupKey) => {
     setDraftBoosts((prev) => {

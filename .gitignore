@@ -1,10 +1,8 @@
-# Database
-apthunt.db
-apthunt.db-wal
-apthunt.db-shm
-
-# Cached photos
-photos/
+# Database (generated locally — see README "Quick start")
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
 
 # Python
 __pycache__/
@@ -14,10 +12,15 @@ __pycache__/
 # Environment
 .env
 venv/
+.venv/
 
-# IDE
+# Logs
+*.log
+
+# IDE / local tooling
 .vscode/
 .idea/
+.claude/*.local.json
 
 # OS
 .DS_Store

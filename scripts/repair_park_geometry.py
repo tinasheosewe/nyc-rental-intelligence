@@ -3,11 +3,11 @@
 Repair degenerate park polygons in ds_parks using OSM geometry.
 
 Problem: 289 parks (>1 acre) in the DPR Parks Properties feed ship with
-simplified 4-corner quads — and displaced ones at that (Cooper Park's
-quad sits ~100m south of the real footprint, so doorstep listings on its
-north side measured 135-222m from the park instead of 13-56m, costing
-~21 score points).  The degradation is UPSTREAM: both the SODA API and
-the GeoJSON export serve the same quads, so re-downloading cannot fix it.
+simplified ~5-vertex quads instead of their real outline, so anything
+that measures distance to the park edge or tests whether a point is
+inside the park is working from the wrong shape.  The degradation is
+UPSTREAM: both the SODA API and the GeoJSON export serve the same quads,
+so re-downloading cannot fix it.
 
 Fix: fetch leisure=park/garden polygons for NYC from OSM (Overpass),
 match each degenerate DPR row by centroid containment + proximity + name

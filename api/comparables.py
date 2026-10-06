@@ -2,7 +2,7 @@
 Comparable listings engine.
 
 Finds "similar" and "also consider" listings for a given listing
-using the 13-dimension scoring engine.
+from the five group scores (see api/composite.py).
 
 Similar (5):
     Same beds, nearby (same neighborhood with borough fallback),
@@ -23,7 +23,7 @@ import math
 import sqlite3
 from typing import Optional
 
-from api.composite import SCORE_GROUPS, compute_group_scores
+from api.composite import SCORE_GROUPS, SCORE_KEYS, compute_group_scores
 from api.models import ComparableListing
 
 
@@ -76,12 +76,7 @@ def _grade_curve(raw: float) -> float:
 
 GROUP_KEYS = list(SCORE_GROUPS.keys())  # value, access, neighborhood, safety, building
 
-SCORE_COLS = [
-    "deal_score", "unit_amenities_score", "transit_score",
-    "crime_score", "noise_score", "building_violations_score",
-    "parks_score", "schools_score", "management_score",
-    "convenience_score", "shelter_score", "pest_score", "greenery_score",
-]
+SCORE_COLS = [f"{key}_score" for key in SCORE_KEYS]
 
 
 def _row_to_group_scores(row: dict) -> dict[str, float | None]:
@@ -100,7 +95,6 @@ def _row_to_comparable(
     composite: float,
     better_in: str | None = None,
     distance_km: float | None = None,
-    photo_prefix: str = "https://photos.example.com/",
 ) -> ComparableListing:
     """Convert a DB row to a ComparableListing."""
     import json
@@ -111,10 +105,7 @@ def _row_to_comparable(
             parsed = json.loads(raw_photos)
             if isinstance(parsed, list) and parsed:
                 url = parsed[0]
-                if isinstance(url, str) and url.startswith(photo_prefix):
-                    photos = [f"/api/photos/{url.removeprefix(photo_prefix)}"]
-                else:
-                    photos = [url] if isinstance(url, str) else []
+                photos = [url] if isinstance(url, str) else []
         except (json.JSONDecodeError, TypeError):
             pass
 

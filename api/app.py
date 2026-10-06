@@ -16,7 +16,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from api.routers import listings
-from api import photos
 from apthunt.db import DB_PATH, ensure_database_ready, inspect_database
 
 log = logging.getLogger(__name__)
@@ -61,7 +60,6 @@ def create_app() -> FastAPI:
     )
 
     app.include_router(listings.router, prefix="/api")
-    app.include_router(photos.router, prefix="/api")
 
     @app.get("/api/health")
     def health():

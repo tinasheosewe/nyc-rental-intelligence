@@ -3,6 +3,7 @@
 import { useStore } from "@/lib/store";
 import { useUrlState } from "@/lib/useUrlState";
 import { useEscapeStack } from "@/lib/useEscapeStack";
+import { useMounted } from "@/lib/useMounted";
 import TopBar from "@/components/layout/TopBar";
 import FilterSheet from "@/components/layout/FilterSheet";
 import SettingsModal from "@/components/layout/SettingsModal";
@@ -24,7 +25,7 @@ const MapContent = dynamic(
   { ssr: false },
 );
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo } from "react";
 import type { Listing } from "@/lib/types";
 
 const NYC_CENTER: [number, number] = [40.73, -73.99];
@@ -45,8 +46,7 @@ export default function HomePage() {
   const mapColorOverlay = useStore((s) => s.mapColorOverlay);
 
   // Map state for desktop persistent map
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
+  const mounted = useMounted();
 
   const displayListings = useMemo((): Listing[] => {
     switch (activeTab) {

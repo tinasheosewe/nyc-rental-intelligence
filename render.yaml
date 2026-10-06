@@ -15,8 +15,10 @@ services:
     name: apthunt-api
     runtime: python
     plan: free
-    # Set APTHUNT_DB_URL in the Render dashboard to a valid SQLite seed URL.
-    # The backend build now fails if the file is missing, not SQLite, or empty.
+    # build.sh builds a demo database from the synthetic sample listings.
+    # Set APTHUNT_DB_URL in the Render dashboard to download a pre-built
+    # SQLite database instead. Either way the build fails if the result is
+    # missing, not SQLite, or empty.
     buildCommand: chmod +x build.sh && ./build.sh
     startCommand: uvicorn api.app:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /api/health
@@ -24,7 +26,7 @@ services:
       - key: PYTHON_VERSION
         value: "3.12.8"
       # Optional overrides set manually in Render:
-      #   APTHUNT_DB_URL           -> production seed database URL
+      #   APTHUNT_DB_URL           -> pre-built database to download (default: sample data)
       #   APTHUNT_DB_PATH          -> custom on-disk SQLite path
       #   APTHUNT_REQUIRE_LISTINGS -> set to false only for empty/bootstrap envs
       - key: CORS_ORIGINS

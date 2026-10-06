@@ -70,17 +70,15 @@ export default function DetailPanel() {
 
   // Lazy-load detail data
   const [detail, setDetail] = useState<Listing | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
 
   useEffect(() => {
-    if (!selectedListingId) { setDetail(null); return; }
-    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- drop the previous listing's detail before fetching the selected one
     setDetail(null);
-    setDetailLoading(true);
+    if (!selectedListingId) return;
+    let cancelled = false;
     fetchListing(selectedListingId)
       .then((d) => { if (!cancelled) setDetail(d); })
-      .catch(() => {})
-      .finally(() => { if (!cancelled) setDetailLoading(false); });
+      .catch(() => {});
     return () => { cancelled = true; };
   }, [selectedListingId]);
 

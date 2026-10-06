@@ -241,6 +241,8 @@ class NoiseScorer(Scorer):
         listings: list[dict],
     ) -> list[ScorerResult]:
         self._store.ensure_downloaded("noise", quiet=True)
+        # Per-household rates divide by PLUTO residential units.
+        self._store.ensure_downloaded("pluto", quiet=True)
         try:
             self._store.ensure_downloaded("liquor_licenses", quiet=True)
         except Exception:

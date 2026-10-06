@@ -3,7 +3,7 @@
  */
 
 import type { ScoreDimension, ScoreGroupKey, Scores } from "./types";
-import { GROUP_BY_KEY, getEffectiveGroupByKey, DIMENSION_TIER_LABELS } from "./types";
+import { getEffectiveGroupByKey, DIMENSION_TIER_LABELS } from "./types";
 
 // Re-export score color functions from theme (single source of truth)
 export {
